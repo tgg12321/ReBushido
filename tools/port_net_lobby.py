@@ -984,8 +984,9 @@ def case_four_relay(case):
 
 
 # The second match of the room of four is left in the middle of its fight
-# by one of its players, at this frame of its session.
-FOUR_LEAVE_FRAME = 1900
+# by one of its players, at this frame of its session (its fight begins
+# near frame 3,000, after the partners' grid and the stage page).
+FOUR_LEAVE_FRAME = 3600
 
 
 def case_rooms_four(case):

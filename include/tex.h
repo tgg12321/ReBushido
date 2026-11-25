@@ -134,6 +134,11 @@ extern void tex_QueueScroll(s32 scroll_index);
  * and `dv` move the texture page (in pixels: TPAGE_WIDTH and TPAGE_HEIGHT
  * to the page), `dcx` and `dcy` the colour table (render.c). */
 extern void tex_ShiftBlock(s16 block, s16 du, s16 dv, s16 dcx, s32 dcy);
+#if RB_PORT
+/* Every colour table of the block's meshes given the top bit: they read
+ * two on two's second bank of video memory (port_gpu.h). */
+extern void tex_PortMarkBank(s16 block);
+#endif
 extern void tex_ShiftBlockPages(
     s16 block, s16 du_pages, s16 dv_pages, s16 dcx_pages, s16 dcy_pages);
 /* One mesh of a block. No prototype: the callers pass six ints. */

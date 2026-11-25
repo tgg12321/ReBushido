@@ -45,6 +45,10 @@ typedef struct {
     s32 roster[2];
     s32 weapon[2];
     s32 is_cpu[2];
+    /* two on two's seconds (--partners), if asked for */
+    s32 has_partners;
+    s32 partner_roster[2];
+    s32 partner_weapon[2];
 } PortFight;
 
 /* The stage and the two fighters by the game's names (a fighter may name
@@ -53,6 +57,10 @@ extern s32 port_ChooseFight(
     const char *stage, const char *first, const char *second);
 /* The second fighter is the second pad's, not the CPU's (--fight-2p). */
 extern void port_FightTwoPlayers(void);
+/* `--partners FIGHTER FIGHTER`: two on two's seconds of the fight, as
+ * --fight names a fighter (with --teams; port_duo.h). FALSE, said, if
+ * either is not a fighter. */
+extern s32 port_ChooseFightPartners(const char *first, const char *second);
 /* Both fighters are the CPU's (--fight-cpu). */
 extern void port_FightBothCpu(void);
 /* The fight asked for, which the game's main starts in place of the

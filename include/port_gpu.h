@@ -21,6 +21,46 @@
 #define PORT_VRAM_BYTES (PORT_VRAM_PIXELS * 2)
 #define PORT_PIXEL_MASK_BIT 0x8000
 extern u16 g_port_vram[PORT_VRAM_PIXELS];
+/* Two on two's second bank of video memory (port_duo.h), which the
+ * console has not: the two model slots' part of video memory (from x
+ * PORT_VRAM_BANK_X, PORT_VRAM_BANK_W by PORT_VRAM_BANK_H) once more, in
+ * memory of the game's that two on two gives it (PORT_DUO_BANK_ADDR). A
+ * fighter of a character no slot holds has his textures and colour
+ * tables there, where his slot's would be in the first, and his faces'
+ * colour tables have their top bit (PORT_VRAM_BANK_BIT, CLUT_TOP_BIT,
+ * which the chip does not read) set: such a polygon reads its texels and
+ * its table there, where they are in that part, while the fight has the
+ * bank (port_SetVramBank). Nothing draws into it: what loads a fighter
+ * writes it, and a face's copies, at once. With no bank, or a table's
+ * top bit clear, everything is the console's. */
+#define PORT_VRAM_BANK_X 640
+#define PORT_VRAM_BANK_W 256
+#define PORT_VRAM_BANK_H 256
+#define PORT_VRAM_BANK_PIXELS (PORT_VRAM_BANK_W * PORT_VRAM_BANK_H)
+#define PORT_VRAM_BANK_BIT 0x8000
+/* How such a polygon names its page and table to the remastered picture
+ * (port_remaster.h, gl.h): this much further down, where every other
+ * names them within the console's lines; the card's mirror has the bank
+ * at line 512 and after, where a line of 1024 or more is read
+ * (PORT_VRAM_MIRROR_ROW). */
+#define PORT_VRAM_BANK_NAMED_Y 1024
+#define PORT_VRAM_MIRROR_ROWS (2 * PORT_VRAM_HEIGHT)
+#define PORT_VRAM_MIRROR_ROW(y)                                                \
+    (((y) & (PORT_VRAM_HEIGHT - 1)) | (((y) >> 1) & PORT_VRAM_HEIGHT))
+/* The bank polygons read (src/port/raster.c, a state file): its pixels,
+ * or NULL for none. */
+extern void port_SetVramBank(u16 *bank);
+extern u16 *port_VramBank(void);
+/* While on, LoadImage writes the bank where it would write the first
+ * (src/port/gpu.c): a fighter's textures loaded into it. */
+extern void port_SetVramBankLoading(s32 is_on);
+/* A copy within the bank, done at once (a face's eyes and mouth,
+ * model_face.c): what MoveImage does in the first. */
+extern void port_VramBankMove(
+    s32 from_x, s32 from_y, s32 w, s32 h, s32 to_x, s32 to_y);
+/* A pixel of the bank where the console's video memory has (x, y), or
+ * NULL where the bank has none there. */
+extern u16 *port_VramBankAt(s32 x, s32 y);
 /* Video memory as the card's pictures read it (src/port/gl/gl.h): the
  * window's renderer alone, never the state. */
 extern const u16 *g_port_gl_vram;

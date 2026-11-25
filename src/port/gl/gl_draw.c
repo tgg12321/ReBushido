@@ -3360,6 +3360,44 @@ void port_GlReplayVram(s32 x, s32 y, s32 w, s32 h, const u16 *pixels) {
     port_GlWroteVramFrom(x, y, w, h, pixels);
 }
 
+/* Two on two's second bank of video memory (port_gpu.h): where a fighter
+ * of a character of his own has his textures. Nothing draws into it, and
+ * the step writes it only as it loads him (and his face): each frame the
+ * lines of it that differ from the copy here, which has it at line 512
+ * and after, as the mirror does (PORT_VRAM_MIRROR_ROW), are copied and
+ * sent. */
+static void port_GlUploadBank(void) {
+    const u16 *bank = port_VramBank();
+    s32 row;
+    s32 bound = FALSE;
+
+    if (bank == NULL) {
+        return;
+    }
+    for (row = 0; row < PORT_VRAM_BANK_H; row++) {
+        u32 at = (u32)((PORT_VRAM_HEIGHT + row) * PORT_VRAM_WIDTH +
+                       PORT_VRAM_BANK_X);
+        const u16 *line = &bank[row * PORT_VRAM_BANK_W];
+
+        if (memcmp(&g_gl.staged[at], line, PORT_VRAM_BANK_W * sizeof(u16)) ==
+            0) {
+            continue;
+        }
+        memcpy(&g_gl.staged[at], line, PORT_VRAM_BANK_W * sizeof(u16));
+        if (!bound) {
+            glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
+            bound = TRUE;
+        }
+        glBufferSubData(
+            GL_TEXTURE_BUFFER, (GLintptr)(at * sizeof(u16)),
+            (GLsizeiptr)(PORT_VRAM_BANK_W * sizeof(u16)), &g_gl.staged[at]);
+        g_gl.upload_count += PORT_VRAM_BANK_W;
+    }
+    if (bound) {
+        glBindBuffer(GL_TEXTURE_BUFFER, 0);
+    }
+}
+
 static void port_GlBegin(void) {
     /* The frame that has just been built, before anything of this one is
      * drawn: its shadows darken the ground of the picture it made, and
@@ -3374,6 +3412,7 @@ static void port_GlBegin(void) {
     /* a mod's pictures read beside the game since the last frame, sent
      * to the card: a few megabytes a frame, the rest the next */
     port_GlLoadCollect(LOAD_BYTES_A_FRAME);
+    port_GlUploadBank();
     port_GlForgetOccluders();
     port_GlStageNewFrame();
     port_GlFighterNewFrame();
@@ -3869,7 +3908,8 @@ const char *port_GlStart(
         }
     }
     if (g_gl.staged == NULL) {
-        g_gl.staged = calloc(PORT_VRAM_PIXELS, sizeof(*g_gl.staged));
+        g_gl.staged = calloc(
+            PORT_VRAM_WIDTH * PORT_VRAM_MIRROR_ROWS, sizeof(*g_gl.staged));
         if (g_gl.staged == NULL) {
             port_GlSay("there is no memory for the copy of video memory", NULL);
             return g_gl.problem;
@@ -3971,8 +4011,9 @@ const char *port_GlStart(
     glGenBuffers(1, &g_gl.vram_buffer);
     glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
     glBufferData(
-        GL_TEXTURE_BUFFER, (GLsizeiptr)(PORT_VRAM_PIXELS * sizeof(u16)), NULL,
-        GL_DYNAMIC_DRAW);
+        GL_TEXTURE_BUFFER,
+        (GLsizeiptr)(PORT_VRAM_WIDTH * PORT_VRAM_MIRROR_ROWS * sizeof(u16)),
+        NULL, GL_DYNAMIC_DRAW);
     glGenTextures(1, &g_gl.vram_texture);
     glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R16UI, g_gl.vram_buffer);

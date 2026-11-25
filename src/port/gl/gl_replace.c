@@ -705,6 +705,10 @@ static s32 port_ReplaceRegionOf(
     const PortRemasterPrim *prim, PortTextureRegion *region) {
     s32 i;
 
+    /* (none of two on two's second bank's: port_gpu.h) */
+    if (prim->page_y >= PORT_VRAM_HEIGHT || prim->clut_y >= PORT_VRAM_HEIGHT) {
+        return FALSE;
+    }
     region->bits = prim->texel_bits;
     region->page_x = prim->page_x;
     region->page_y = prim->page_y;

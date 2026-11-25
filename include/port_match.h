@@ -169,6 +169,12 @@ typedef struct {
     u8 page_teams;
     u8 default_teams;
     u8 teams;
+    /* and each side's second of a character and weapon of his own: the
+     * second place the select screen picked for him (crew[side][1], as
+     * its Crew picks a crew's places), or versus the CPU the CPU's */
+    u8 partner_picked[2];
+    PortCrewPick partner[2];
+    u32 pads_held; /* the third and fourth pads', at the select screen */
 } PortMatch;
 
 extern PortMatch g_port_match;
@@ -266,6 +272,18 @@ extern void port_MatchCrewStageBack(void);
 /* Triangle on the grid of a crew's later place, nothing picked: back to
  * the place before (TRUE), its picks taken again. */
 extern s32 port_MatchCrewBackOne(void);
+/* Two on two (port_duo.h): side `side`'s second's fighter (enum
+ * CharacterId) and weapon, TRUE if he has a pick of his own; FALSE where
+ * he is his first's (a fight with no select screen, a side picked for
+ * by none). */
+extern s32 port_MatchPartner(s32 side, s32 *fighter, s32 *weapon);
+/* ... given (the CPU's, versus the CPU; --partners, port_platform.h). */
+extern void port_MatchSetPartner(s32 side, s32 fighter, s32 weapon);
+/* A frame of the select screen (select.c): while two on two with four
+ * players has its partners picked, each side's half of the pads' `held`
+ * and `pressed` is the third pad's (the first side) or the fourth's,
+ * where that pad is plugged in. */
+extern void port_MatchPartnerPads(s32 *held, s32 *pressed);
 /* The crew of `side` already has `fighter` (enum CharacterId) in a place
  * taken: the select refuses it. */
 extern s32 port_MatchCrewHas(s32 side, s32 fighter);

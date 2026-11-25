@@ -7005,7 +7005,10 @@ prefix allowed, or the number: `--fight tatara-shrine kannuki
 mikado:nodachi`. A fighter's weapon follows a colon (a katana if none),
 the second fighter is the CPU's (`--fight-2p`: the second pad's;
 `--fight-cpu`: the first is the CPU's too, a fight that plays itself, as
-the select screen's own choice of two CPUs), the mode is versus. A
+the select screen's own choice of two CPUs), the mode is versus. With
+`--teams cpu` or `pads` it is two on two, each team two of its first
+unless `--partners FIGHTER FIGHTER` names the seconds the same way
+(`--partners tatsumi:nodachi utsusemi:yari`; "Two on two"). A
 stage's name that is no stage's is a mod's arena's (MODS.md, "Custom
 arenas": the fight is on the stage it stands in for, with the arena in
 play); a fighter's name not known prints the names, and a stage's that no
@@ -9625,26 +9628,82 @@ the falling pair, the blades met, the lock's five) is kept for each of
 the four pairs of enemies (`PortDuoPair`, `port_DuoPairKeep`,
 `port_DuoPairTake`).
 
-**A team is one character and weapon, twice.** Video memory holds two
-characters' textures (the model slots' pages at x 640 and 768; x 896
-up is the effects'), and the RAM two motion files, and a model's
-textures are addressed by its meshes' own texture pages: a third or a
-fourth character has nowhere to go. So a team is two of its first
-fighter's character with his weapon, which the select screen picks as
-it does for one on one. The second's model is a copy of the first's
-(`port_DuoCloneModel`): the `Model` copied and its pointers into itself
-moved (`model_Rebase`, as the arena moves a model), its own nodes,
-matrices and cloth (the cloth's block copied and made again, the cloth
-pool 20 in the port, `CLOTH_COUNT`), the meshes, textures and colour
-tables shared. The copy follows its model when the arena moves it
-(`port_DuoModelMoved`), and the slots' own models go back into them
-before anything may move them (`model_Rebase`, a fight's start:
-`port_DuoModelsHome`). Things that are the slot's and not the fighter's
-stay shared: the face's texture (a team mate's hurt face shows on the
-other's), the point light's target, the model's sound bank (the same
-voice, which it is). The four fighters' primitives overflow the
-console's buffers: in a fight of four the port's larger buffers are the
-game's (`port_DuoPrimBuffers`, at a frame's start), where the run has the
+**Each fighter his own character and weapon.** The select screen picks
+each team's second as it picks its first: in a match of two on two the
+grid and the weapons come up a second time, the place a Crew's second
+place is (port_match.h: `port_MatchPlaces` is two for the teams), each
+side's first then his partner (`PortMatch.partner`, `port_MatchPartner`);
+with four players the third and fourth pads pick the partners
+(`port_MatchPartnerPads`, the pad unplugged leaving it to his first's);
+versus the CPU the CPU's partner is drawn from the run's opponents as a
+Crew's places are (`port_MatchOpponentChosen`). A fight with no select
+screen (`--fight`) takes `--partners FIGHTER FIGHTER`, or has each team
+two of its first. What the game holds of two characters is then held of
+four:
+
+- **The model.** A second of a model no slot has is loaded beside the
+  game's (`port_DuoLoadPartners`, in `fight_Init` before the weapons):
+  his file read where the slots' are staged and what it keeps copied out
+  of the arena, into a room of the console's RAM that the game leaves
+  alone (`PORT_DUO_AREA_ADDR`, `0x80010000` up to the common sound bank:
+  the PlayStation's own program is there, and the port's program is
+  elsewhere, Memory above), his meshes two tables of the renderer's of
+  their own (`PORT_DUO_RELOC_BLOCK`, 10 to 13), skeleton, nodes, cloth and
+  shadows made as `model_Load` makes a slot's (`model_PortLoadPartner`,
+  model.c). Of the same model as his first, his model is the first's
+  copy as before (`port_DuoCloneModel`).
+- **The textures: a second bank of video memory.** Video memory holds two
+  characters (the slots' pages at x 640 and 768, x 896 up the effects',
+  the lower half the stage's), and a model's textures are named by its
+  meshes' own pages and colour tables: a third or fourth has nowhere to
+  go in the console's 1024 by 512. The port's GPU has a second bank of the
+  slots' part (x 640 to 895, lines 0 to 255: `PORT_VRAM_BANK_X`, `_W`,
+  `_H`; port_gpu.h), 128 KB at the head of the partners' room of the RAM
+  (`PORT_DUO_BANK_ADDR`), so the state saves and hashes it with the RAM
+  and the program's own variables are no larger. A partner's textures
+  and colour tables are loaded there where his slot's are in the first
+  (`port_SetVramBankLoading`: `LoadImage` writes the bank), and his
+  meshes' colour tables have their top bit set (`tex_PortMarkBank`,
+  through `tex_ShiftBlock`), which the chip never reads: a polygon whose
+  table has it reads its texels and table from the bank where the bank
+  has them, while the fight has one (`port_SetVramBank`;
+  `PortPaint.bank`, raster.c). Nothing draws into it: a face's eyes and
+  mouth are copied within it at once (`port_VramBankMove`, model_face.c),
+  not by the GPU. With no bank, or a table's top bit clear, everything is
+  the console's: one on one is the game's, pixel for pixel.
+- **The motions.** Each fighter's motion file, the decoder of its stream
+  and his win pose go with him into his slot (`PortDuoMotion`:
+  `port_DuoMotionKeep` and `port_DuoMotionTake` beside his `Fighter`,
+  `PortDuo.motions_out`), as his model does: the file in the game's two
+  rooms where it is one of theirs, else read into his room of the area
+  (`port_DuoLoadPartnerMotions`, with WIN.DAT's part of his character),
+  and each fighter's `motion_slot` his slot's, so that whoever is stepped
+  reads his own file through the slot's decoder. The game's own go back
+  as the next fight is set up (`port_DuoMotionsHome`). With the seconds
+  their firsts' characters and weapons none of this happens: the fight of
+  four is what it was.
+- **The weapon.** The second's weapon and what he throws are asked for
+  with the firsts' (`port_DuoAskWeapons`), from the one weapons file.
+
+What stays the slot's: the model's sound bank (a partner shouts with his
+first's voice) and the weapons' sounds (the file of the two firsts'
+kinds), the point light's target, the sounds a thrown thing makes. The
+remastered picture draws the second bank too: a polygon of it names its
+page and table 1024 lines further down (`PORT_VRAM_BANK_NAMED_Y`,
+remaster.c), the card's mirror of video memory has the bank's lines after
+the console's, at line 512 and after (`port_GlUploadBank`, each frame the
+lines that differ; `vram()` of gl.h reads a line of 1024 or more there),
+a fighter's colour tables are read from the bank for his model's tints
+(gl_fighter.c, `port_VramBankAt`), and a
+partner's meshes are a fighter's to the renderer
+(`port_RemasterNoteFighter`, render_asm.c), so **each of the four is
+drawn from his own model** (`fighter_models`) where one is given. A mod's
+picture of a whole page is not laid over the second bank's (gl_replace.c,
+gl_scene.c leave it to the textures as loaded).
+
+The four fighters' primitives overflow the console's buffers: in a
+fight of four the port's larger buffers are the game's
+(`port_DuoPrimBuffers`, at a frame's start), where the run has the
 console's (and the state keeps them, by the pages written).
 
 **A frame** (`fight_UpdateDuo`, fight.c): the side view over all four
@@ -9723,8 +9782,9 @@ count a team's fight as a side's. A fight's second fighters stand beside
 their firsts, square to the line between the teams, at 1,600 (or 900,
 or behind), where the way is clear and the ground level
 (`port_DuoFindPlace`), the two seconds facing each other as the firsts
-do. Versus the CPU, the CPU's team is its opponent twice, the player's
-partner the CPU's or the third pad's.
+do. Versus the CPU, the CPU's team is its opponent and a partner drawn
+from the run's opponents, the player's partner the CPU's or the third
+pad's, picked at the second grid.
 
 **The pads.** The input has four pads (`PORT_INPUT_PADS`): the game's
 two, which its reads see, and the third and fourth, which only two on
@@ -9769,6 +9829,16 @@ host's pixels have textures of their own now, none written again for
 three pictures (`port_GlShowPixels`, gl_draw.c: the card 7.45 ms
 median before, 3.10 after).
 
+With four characters (2026-11-25, the RTX 3090's PC at 5% load; the
+bench's 2v2 cases pick them at the second grid, `TEAM_CASES`): `ra1-2v2`
+the window's processor 2.62 ms median and 4.77 at 95% (ra1 1.50 and
+2.68), the card 4.20 and 5.10 (ra1 4.29 and 5.18), the step's own thread
+3.60, 0.7% of the fight's blanks over 6.94 ms; `--rollback` with other
+agents' work beside it: a rollback of the whole window 12.8 ms
+(`rollback-2v2`) and 14.9 (`rollback-4p`) against 5.7 one on one, the
+worst frames (70 ms) those of the fight's load, which reads the
+partners' files.
+
 **How it is proved.** `tools/port_duo.py` (`make port-stage-select`),
 both sizes, the traces the same line for line:
 
@@ -9776,17 +9846,20 @@ both sizes, the traces the same line for line:
 | --- | --- |
 | `retarget` | `--fight` Kannuki against Mikado, every fighter a person's, only the first played: 1 targets 2 as the fight starts, R2 turns him to 4, his blow lands on 4 (counted against 4, by 1, none on 2), 4 falls and 1 is turned to 2 by himself, 2 falls: the second team out, the winner the first, the fight resting on 1 and 2 (the last to fall), the game's fall, replay and menu |
 | `pads` | the third pad: 3 turns from 4 to 2 with his R2 and his blows land (on 4, beside 2) |
-| `menu` | ReBushido's main menu: the rule page to Stock 2 and two on two with the CPU's partners, the grid, the stage; three fights of four, the score's card between, the result's |
+| `menu` | ReBushido's main menu: the rule page to Stock 2 and two on two with the CPU's partners, the grid, the grid again for the partners (the first's one place down, the second's his first's), the stage; fights of four characters (Kannuki and Mikado, Gengoro and Kaun), the score's card between, the result's; the second player strikes too, so that no fight stands off |
+| `menu_pads` | the same with four players: the partners picked by the third and fourth pads (`P3`, `P4`), one place and two down, their weapons one along; a first fight of four characters |
+| `vscpu` | versus the CPU from ReBushido's main menu: the rule page's Fighters row to the CPU's partners, the player's fighter and weapon, his partner one place down; the CPU's opponent and his partner drawn, another character: four characters, a fight to one team out |
 | `cpu` | all four the CPU's: a fight that plays itself to a team out |
 | `second_wins` | the firsts written down (a `poke`), the fight goes on with the seconds, then 3: the second team's win |
 | `draw` | all four written down at once: both teams out, the game's draw |
 | `stock` | `--match stock:2`, the CPU's partners: two fights, the score's card, the next fight with all four up, the result |
+| `four` | `--fight` Kannuki against Mikado, `--partners tatsumi:nodachi utsusemi:yari`, all four the CPU's: four characters and four weapons (`port_duo_character_1` to `_4`), a fight to one team out, the game's own fall, replay and winner's view |
 
-`retarget`, `pads` and `cpu` are recorded as replays and played back by
-both sizes with `--replay-check`, every hash the same (and `pads`' input
-of the third pad with them). `make port-rollback` rolls back `retarget`,
-`pads` and `stock` every 24 frames on both sizes, plain and quietly,
-with no difference. Online: NETPLAY.md, section 18.
+`retarget`, `pads`, `cpu` and `four` are recorded as replays and played
+back by both sizes with `--replay-check`, every hash the same (and `pads`'
+input of the third pad with them). `make port-rollback` rolls back
+`retarget`, `pads`, `stock` and `four` every 24 frames on both sizes,
+plain and quietly, with no difference. Online: NETPLAY.md, section 18.
 
 **Four players online** (NETPLAY.md, section 18): a session of four pads
 (`--players 4`, four PCs, or `2x2`, two on each of two) is two on two

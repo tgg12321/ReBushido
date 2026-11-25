@@ -17,10 +17,13 @@
  * what a pair has (the game's pair globals) is kept for each of the four
  * pairs of enemies.
  *
- * Video memory holds two characters' textures and the RAM two motion
- * files, so a team is two of its first fighter's character with his
- * weapon: the second of each team is a copy of the first's model (its
- * own nodes, matrices and cloth, the meshes and textures shared).
+ * Each team's second is a character and weapon of his own, picked at the
+ * select screen after his first (port_match.h, port_MatchPartner): of
+ * his first's model, his is a copy of it (its own nodes, matrices and
+ * cloth, the meshes and textures shared); of another, his own, loaded
+ * beside the game's (below), his textures in a second bank of video
+ * memory (port_gpu.h). His motion file and win pose go with him into his
+ * slot as his model does.
  *
  * Each fighter targets an enemy (his `other` while he is stepped); a
  * press of the retarget button (R2, which the fight does not read) turns
@@ -63,6 +66,40 @@ enum {
     PORT_TEAMS_CHOICES = 3
 };
 
+/* Each team's second may be a character and weapon of his own, picked on
+ * the select screen as his first is (port_match.h, port_MatchPartner).
+ * What the game holds for two is held for him beside it: a model of a
+ * character no slot has is loaded outside the arena, into this room of
+ * the console's RAM, which the game leaves alone (below the common sound
+ * bank, where the PlayStation's program is: src/port/memory.c), his
+ * textures into the second bank of video memory (port_gpu.h), and his
+ * motion file and win pose, where they are not a slot's, into the same
+ * room; his meshes are two tables of the renderer's of their own. The
+ * room is the game's memory: saved, put back and hashed with it. */
+#define PORT_DUO_AREA_ADDR 0x80010000U
+#define PORT_DUO_AREA_END 0x8010DB00U /* SYS_SOUND_VAB_ADDR */
+/* first the second bank of video memory (port_gpu.h): its
+ * PORT_VRAM_BANK_PIXELS, two bytes each; then each partner's win pose
+ * (MOTION_WIN_SECTORS of WIN.DAT), his motion file (the game's room for
+ * one) and his model */
+#define PORT_DUO_BANK_ADDR PORT_DUO_AREA_ADDR
+#define PORT_DUO_BANK_BYTES 0x20000
+#define PORT_DUO_WIN_BYTES 0x3800
+#define PORT_DUO_MOTION_BYTES 0x48000
+#define PORT_DUO_WIN_ADDR(slot)                                                \
+    (PORT_DUO_BANK_ADDR + PORT_DUO_BANK_BYTES +                                \
+     (u32)(slot) * PORT_DUO_WIN_BYTES)
+#define PORT_DUO_MOTION_ADDR(slot)                                             \
+    (PORT_DUO_WIN_ADDR(2) + (u32)(slot) * PORT_DUO_MOTION_BYTES)
+#define PORT_DUO_MODEL_BYTES                                                   \
+    ((PORT_DUO_AREA_END - PORT_DUO_MOTION_ADDR(2)) / 2 & ~0xFFFU)
+#define PORT_DUO_MODEL_ADDR(slot)                                              \
+    (PORT_DUO_MOTION_ADDR(2) + (u32)(slot) * PORT_DUO_MODEL_BYTES)
+/* the renderer's tables of a partner's meshes and shadows (RELOC_...),
+ * the last of the renderer's that anything uses: a fighter's (the
+ * remastered picture's port_RemasterNoteFighter, render_asm.c) */
+#define PORT_DUO_RELOC_BLOCK(slot) (10 + 2 * (slot))
+
 /* A fighter's slot (its team) and his team mate. */
 #define PORT_DUO_SLOT(who) ((who) & 1)
 #define PORT_DUO_MATE(who) ((who) ^ 2)
@@ -73,6 +110,25 @@ enum {
  * loaded): whether it is two on two (the match's choice, in a mode that
  * has matches), and the slots' own models back in them. */
 extern void port_DuoFightBegin(void);
+/* The fight's fighters asked for, the game's two models loaded and its
+ * weapons not yet (fight_Init, `staging` its room to read a file in):
+ * each team's second of a character of his own has his model loaded, and
+ * his weapon and the things he throws asked for. */
+extern void port_DuoLoadPartners(s32 staging);
+/* The game's motion files loaded (fight_Init): a team's second's own,
+ * where no slot's is his, and his win pose. */
+extern void port_DuoLoadPartnerMotions(void);
+/* The model is a partner's own, whose textures are in the second bank of
+ * video memory (port_gpu.h). */
+extern s32 port_DuoModelIsBanked(const struct Model *model);
+/* While on, the textures loaded go to the second bank (model.c, as a
+ * partner of his own is loaded). */
+extern void port_DuoBankLoading(s32 is_on);
+/* A face's part copied for `model` (model_face.c): TRUE if it is a
+ * partner's own, whose face is in the second bank, where it is copied at
+ * once; FALSE for the game's copy by the GPU. */
+extern s32 port_DuoFaceMove(const struct Model *model, s32 from_x, s32 from_y,
+                            s32 w, s32 h, s32 to_x, s32 to_y);
 /* The fight set up (fight_Init, its two fighters in their first moves):
  * the second of each team made, his model copied, all four placed. */
 extern void port_DuoFightSet(void);

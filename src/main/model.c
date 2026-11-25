@@ -126,6 +126,67 @@ Model *model_Load(s32 slot, s32 model_id, s32 staging_addr) {
     return model;
 }
 
+#if RB_PORT
+/* Two on two's partner of a character of his own (port_duo.h): his model
+ * file, read at `file_addr`, made ready in `model` as model_Load makes a
+ * slot's, outside the arena and its slots. What the file keeps (all but
+ * its sound bank and textures) is copied to `data`, `room` bytes with the
+ * cloth after it; his meshes are table `mesh_block`, his shadows' the
+ * next; his textures go to the second bank of video memory where slot
+ * `slot`'s are in the first, and his meshes' colour tables say so
+ * (port_gpu.h). His voice is the slot's sound bank. FALSE if the file
+ * does not fit. */
+s32 model_PortLoadPartner(Model *model, s32 slot, s32 model_id, s32 file_addr,
+                          s32 data, s32 room, s32 mesh_block) {
+    s32 *file = (s32 *)ADDR(file_addr);
+    s32 count = file[0];
+    s32 *textures = (s32 *)ADDR(file_addr + ALIGN4(file[count]));
+    s32 kept = count >= MODEL_FILE_WITH_VAB ? ALIGN4(file[count - 1])
+                                            : ALIGN4(file[count]);
+
+    if (kept <= 0 || kept + MODEL_PORT_CLOTH_ROOM > room) {
+        return FALSE;
+    }
+    memset(model, 0, sizeof(*model));
+    model->slot = (s16)slot;
+    model->model_id = (s16)model_id;
+    model->load_status = MODEL_STATUS_DONE;
+    model->mesh_block = (s16)mesh_block;
+    model->shadow_block = (s16)(mesh_block + 1);
+    model->light_setup_index = (s16)slot;
+    model->outline_color.word = 0x8000; /* green */
+    model->data = data;
+    mem_MoveWords(file_addr, data, kept);
+    file = (s32 *)ADDR(data);
+    reloc_RelocateBlock(
+        (s32 *)ADDR((s32)file + ALIGN4(file[MODEL_FILE_MESHES])), mesh_block);
+    reloc_RelocateBlock(
+        (s32 *)ADDR((s32)file + ALIGN4(file[MODEL_FILE_SHADOWS])),
+        mesh_block + 1);
+    model->cloth_params = (s32)file + ALIGN4(file[MODEL_FILE_CLOTH]);
+    port_DuoBankLoading(TRUE);
+    if (slot == 0) {
+        tex_LoadGroup(textures, 0);
+    } else {
+        tex_LoadGroupAt(textures, 0, MODEL_SECOND_SLOT_DX, 0);
+    }
+    port_DuoBankLoading(FALSE);
+    if (slot != 0) {
+        tex_ShiftBlockPages(
+            mesh_block, MODEL_SECOND_SLOT_PAGES, 0, MODEL_SECOND_SLOT_PAGES, 0);
+    }
+    tex_PortMarkBank(mesh_block);
+    tex_PortMarkBank(mesh_block + 1);
+    SET_PTR(model->cloth, (void *)ADDR(data + kept));
+    model_BuildSkeleton(model);
+    model_AssignMeshes(model);
+    cloth_SetupModel(model, 0);
+    cloth_RequestRebuild(model);
+    model_BuildShadows(model);
+    return TRUE;
+}
+#endif
+
 /* Does what a model's file needs once it is read: opens its sound bank,
  * fixes up its mesh tables, uploads its textures, and gives back the part of
  * its arena block that held what has now gone to the sound and video

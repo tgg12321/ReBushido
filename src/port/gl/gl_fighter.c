@@ -1948,9 +1948,13 @@ static s32 port_GlFighterPalette(const FighterModel *model, s32 place) {
     }
     for (c = 0; c < model->clut_count; c++) {
         const PortFighterClut *clut = &model->clut[c];
-        const u16 *row =
-            &g_port_gl_vram[((clut->y + p->dy) & (PORT_VRAM_HEIGHT - 1)) *
-                            PORT_VRAM_WIDTH];
+        s32 y = clut->y + p->dy;
+        /* (a fighter of two on two's second bank names its tables further
+         * down: port_gpu.h) */
+        const u16 *row = y < PORT_VRAM_BANK_NAMED_Y
+                             ? &g_port_gl_vram[(y & (PORT_VRAM_HEIGHT - 1)) *
+                                               PORT_VRAM_WIDTH]
+                             : NULL;
 
         for (k = 0; k < 256; k++) {
             float *at = out + (c * 256 + k) * 4;
@@ -1962,7 +1966,13 @@ static s32 port_GlFighterPalette(const FighterModel *model, s32 place) {
                 at[0] = at[1] = at[2] = at[3] = 0.0f;
                 continue;
             }
-            now = row[(clut->x + p->dx + k) & (PORT_VRAM_WIDTH - 1)];
+            if (row != NULL) {
+                now = row[(clut->x + p->dx + k) & (PORT_VRAM_WIDTH - 1)];
+            } else {
+                const u16 *banked = port_VramBankAt(clut->x + p->dx + k, y);
+
+                now = banked != NULL ? *banked : 0;
+            }
             was = clut->color[k];
             for (i = 0; i < 3; i++) {
                 at[i] = (float)((s32)((now >> (5 * i)) & 31) -

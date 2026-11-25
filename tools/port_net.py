@@ -232,6 +232,36 @@ shot = false
 SESSION_SELECT = ["select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
                   "select+1180 CROSS"]
 
+# Two on two's partners (docs/PORT.md, "Two on two"): the grid comes up
+# again for each side's second (port_match_crew_picked 1), after the stage
+# page in a session, before it in a room (whose rule is chosen before the
+# grid). The first player's partner one place down from his first, the
+# second's his first's character again, then their weapons; with four
+# players the third and fourth pads', each one place down.
+PARTNER_CHECKPOINT = '''
+[[checkpoint]]
+name = "partner"
+when = "port_match_crew_picked == 1"
+within = %d
+shot = false
+'''
+PARTNER_PRESSES = ["partner+60 DOWN", "partner+90 CROSS", "partner+100 P2 CROSS", "partner+300 CROSS",
+                   "partner+340 P2 CROSS"]
+PARTNER_PRESSES_FOUR = ["partner+60 P3 DOWN", "partner+70 P4 DOWN", "partner+90 P3 CROSS", "partner+100 P4 CROSS",
+                        "partner+300 P3 CROSS", "partner+340 P4 CROSS"]
+# a room's stage page, after the partners: the page's next stage, as the
+# session's two on two
+STAGE_AFTER_PARTNERS = ["partner+1000 RIGHT", "partner+1030 CROSS"]
+# the four fighters each a character of his own
+FOUR_CHARACTERS = ['port_duo_character_3 != port_duo_character_1', 'port_duo_character_4 != port_duo_character_2',
+                   'port_duo_character_3 != port_duo_character_2', 'port_duo_character_4 != port_duo_character_1']
+
+
+def with_partner(text, within):
+    """Checkpoints with the partners' place before the fight's."""
+    head = '\n[[checkpoint]]\nname = "fight"'
+    return text.replace(head, PARTNER_CHECKPOINT % within + head, 1)
+
 
 def port_game_fight():
     """port_game's presses in the fight, as written there."""
@@ -317,7 +347,9 @@ SESSION_MATCHES = {
     # Purple Cavern does not come down to him)
     'duo': (SESSION_MATCH + ['--teams', 'cpu', '--net-seed', '4242'], dict(
         SESSION_MATCH_EXPECT, fight='expect = ["mode == FIGHT_MODE_VS", "port_duo_on == 1", '
-                                    '"port_match_teams == 1", "stage == 24"]\n'),
+                                    '"port_match_teams == 1", "stage == 24", '
+                                    '"port_duo_character_3 != port_duo_character_1", '
+                                    '"port_duo_character_4 == port_duo_character_2"]\n'),
         "session: the host's teams are two on two"),
     # a custom arena chosen on the stage select's arenas' page (docs/MODS.md,
     # "Custom arenas"): both machines have the sample arena as a mod, and
@@ -344,6 +376,7 @@ def session_checkpoints(match):
         # on after the first player's presses end
         text = text.replace('within = 4000\nshot = false\nexpect = ["p1_defeated',
                             'within = 16000\nshot = false\nexpect = ["p1_defeated')
+        text = with_partner(text, 4000)
     for name, expect in SESSION_MATCHES[match][1].items():
         head = 'name = "%s"\n' % name
         start = text.index(head)
@@ -386,7 +419,7 @@ def write_session_plan(program, side, folder, match=None):
         # rooftop the cursor is on first, a fighter the plan leaves lying
         # may lie on a roof below, where his enemies' CPU partners do not
         # come)
-        select = SESSION_SELECT[:-1] + ['select+1150 RIGHT'] + SESSION_SELECT[-1:]
+        select = SESSION_SELECT[:-1] + ['select+1150 RIGHT'] + SESSION_SELECT[-1:] + PARTNER_PRESSES
     elif match == 'arena':
         # the arenas' page (Select), and Cross there on its first
         select = SESSION_SELECT[:-1] + ['select+1150 SELECT'] + SESSION_SELECT[-1:]
@@ -563,17 +596,18 @@ def write_room_plan(program, folder, crew=False, duo=False, four=False):
     fight = port_game_fight()
     presses = SESSION_SELECT + fight
     if duo:
-        presses = SESSION_SELECT[:-1] + ['select+1150 RIGHT'] + SESSION_SELECT[-1:] + fight
+        presses = SESSION_SELECT[:-1] + PARTNER_PRESSES + STAGE_AFTER_PARTNERS + fight
     if crew:
         presses = ROOM_CREW_PRESSES + wounding_fight() + finishing_fight()
     if four:
-        presses = four_presses()
+        presses = four_presses(room=True)
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
         f.write('about = "A room of several\'s matches, both pads."\n')
         f.write('discs = ["port"]\nlimit = 200000000\nseconds = %d\n' % SECONDS)
         f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
         f.write(ROOM_CREW_CHECKPOINTS.replace('WOUNDED_P1', WOUNDED % {'s': 1}).replace(
-            'WOUNDED_P2', WOUNDED % {'s': 2}) if crew else ROOM_CHECKPOINTS)
+            'WOUNDED_P2', WOUNDED % {'s': 2}) if crew else
+                with_partner(ROOM_CHECKPOINTS, 100000000) if duo or four else ROOM_CHECKPOINTS)
     playtest.PORT_PROGRAM = program
     playtest.PORT_SYMBOLS = program + '.sym'
     test = playtest.Test(toml)
@@ -934,7 +968,7 @@ def check_session_replays(label, program, folder, window, more=()):
 # presses, so that every pad's guesses are wrong now and then and roll
 # the session back, on every program.
 FOUR_SELECT = ["select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
-               "select+1150 RIGHT", "select+1180 CROSS"]
+               "select+1150 RIGHT", "select+1180 CROSS"] + PARTNER_PRESSES_FOUR
 # (a plan has 1024 presses at most: every pad's rounds in one plan fit)
 FOUR_ROUNDS = 80
 FOUR_ROUNDS_OF = {
@@ -952,12 +986,20 @@ shot = false
 expect = ["mode == FIGHT_MODE_VS"]
 
 [[checkpoint]]
+name = "partner"
+when = "port_match_crew_picked == 1"
+within = 6000
+shot = false
+
+[[checkpoint]]
 name = "fight"
 when = "screen == SCREEN_FIGHT_UPDATE && port_duo_on == 1"
 at_frame = true
 within = 6000
 shot = false
-expect = ["mode == FIGHT_MODE_VS", "port_match_teams == 2", "p1_cpu == 0", "p2_cpu == 0"]
+expect = ["mode == FIGHT_MODE_VS", "port_match_teams == 2", "p1_cpu == 0", "p2_cpu == 0",
+          "port_duo_character_3 != port_duo_character_1", "port_duo_character_4 != port_duo_character_2",
+          "port_duo_character_3 != port_duo_character_2", "port_duo_character_4 != port_duo_character_1"]
 
 [[checkpoint]]
 name = "kill"
@@ -980,15 +1022,19 @@ shot = false
 FOUR_LEAVE_FRAMES = 400
 FOUR_LEAVE_CHECKPOINTS = FOUR_CHECKPOINTS.split('[[checkpoint]]\nname = "kill"')[0] + \
     '[[checkpoint]]\nname = "stay"\nafter = 100000\nshot = false\n'
-FOUR_ORDER = ['select', 'fight', 'kill', 'after_fight', 'end', 'stay']
+FOUR_ORDER = ['select', 'partner', 'fight', 'kill', 'after_fight', 'end', 'stay']
 
 
-def four_presses():
-    """Every pad's presses of the session of four, as P1 to P4."""
+def four_presses(room=False):
+    """Every pad's presses of the session of four, as P1 to P4. `room`: a
+    room's, whose stage page is after the partners'."""
     def rounds(pad, pattern, rounds_=FOUR_ROUNDS, start=60):
         return ['fight+%df %s%s' % (start + n * 60 + offset, '' if pad == 1 else 'P%d ' % pad, button)
                 for n in range(rounds_) for offset, button in pattern]
-    presses = FOUR_SELECT + ['fight+20f P3 R2']
+    select = FOUR_SELECT
+    if room:
+        select = FOUR_SELECT[:4] + PARTNER_PRESSES_FOUR + STAGE_AFTER_PARTNERS
+    presses = select + ['fight+20f P3 R2']
     for pad in (1, 2, 3, 4):
         presses += rounds(pad, FOUR_ROUNDS_OF[pad])
     return presses
@@ -1061,6 +1107,21 @@ def four_cpu_plays_on(case):
     return leaver is not None and leaver != 0 and len(pcs) == 4
 
 
+def four_character_problems(label, who, out, plan):
+    """What a program of four players printed at the fight's start against
+    FOUR_CHARACTERS: each of the four fighters a character of his own
+    (docs/NETPLAY.md, section 20)."""
+    names = [line.split()[1] for line in read(plan).split('\n') if line.startswith('var ')]
+    for line in out.split('\n'):
+        words = line.split()
+        if len(words) > 3 and words[0] == 'cp' and words[1] == 'fight':
+            values = dict(playtest.header_names())
+            values.update(zip(names, (int(v) for v in words[3:])))
+            return ['four: %s: %s: at the fight, not %s' % (label, who, claim)
+                    for claim in FOUR_CHARACTERS if not playtest.evaluate(claim, values)]
+    return []
+
+
 def check_four(label, program, args, base, case):
     """A session of four players (FOUR_CASES' `case`) between headless
     programs set up by --host --players and --join, every one over a
@@ -1128,6 +1189,7 @@ def check_four(label, program, args, base, case):
         if code != 0:
             problems.append('four: %s: %s ended with %s (%s/side%d.err)' % (label, who, code, folder, side))
         out_text = read(os.path.join(folder, 'side%d.out' % side))
+        problems += four_character_problems(label, who, out_text, plans[side])
         printed = [name for name in FOUR_ORDER if 'cp %s ' % name in out_text]
         wanted = 'fight' if leaver is not None and (side == leaver or not cpu) else 'kill'
         if wanted not in printed and not any(FOUR_ORDER.index(n) > FOUR_ORDER.index(wanted) for n in printed):

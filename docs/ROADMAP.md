@@ -540,9 +540,12 @@ the stage").
     section 18), the owner's "go ahead" of 2026-11-21: the game's two
     slots hold four, a team a slot, each fighter's record, model, points
     and replay frames put in as his step comes, each pair of enemies'
-    globals kept (`src/port/duo.c`); a team is two of its first player's
-    character and weapon (video memory holds two characters), the
-    second's model a copy; R2 retargets (a fallen target is left by
+    globals kept (`src/port/duo.c`); each fighter a character and
+    weapon of his own (2026-11-25: the grid again for each team's
+    second, the third and fourth pads' with four players; a model no slot
+    has loaded beside the game's, its textures in a second bank of the
+    port's video memory, its motions and win pose going with him; of his
+    first's model a copy; protocol 18, NETPLAY.md, section 20); R2 retargets (a fallen target is left by
     itself, the CPU turns to a nearer enemy), every blow and kill between
     enemies, none between team mates, a lock or a throw between two; the
     side view over all four; a team out loses, the game's own fall,
@@ -570,10 +573,10 @@ the stage").
     headless on this PC, by address and through a local lobby (a punched
     hole, the relay), in a room of several with a spectator and a leave,
     on Linux and Windows, every hash the same on all; replays of the fight
-    of four played back. Left: four real PCs and players; teams of
-    different characters (video memory
-    for four); the owner's eye on the band, the tags and the pages
-    (`tmp/2v2/`).
+    of four played back. Left: four real PCs and players; the partners'
+    own voices (the sound chip's memory holds two characters' banks); the
+    owner's eye on the band, the tags and the pages (`tmp/2v2/`) and on
+    fights of four characters (`tmp/2v2-chars/`).
 25. **A ladder and Elo** (longer term): ranked matches through the
     lobby server, an Elo (or Glicko) rating per player, a ladder page;
     identities, anti-cheat by replay checks (item 23), and the

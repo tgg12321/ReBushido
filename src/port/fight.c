@@ -169,23 +169,44 @@ static s32 port_FightFind(const char *text, const char *end, const char *prefix,
     return -1;
 }
 
-/* One fighter: NAME or NAME:WEAPON, into the side's place. */
-static s32 port_FightFighter(const char *text, s32 side) {
+/* One fighter: NAME or NAME:WEAPON, into `roster` and `weapon`. */
+static s32 port_FightFighterInto(const char *text, s32 *roster, s32 *weapon) {
     const char *colon = text;
 
     while (*colon != 0 && *colon != ':') {
         colon++;
     }
-    g_port_fight.roster[side] =
-        port_FightFind(text, colon, "roster_", g_port_fight_roster,
-                       COUNT(g_port_fight_roster));
-    g_port_fight.weapon[side] = WEAPON_ID_KATANA;
+    *roster = port_FightFind(text, colon, "roster_", g_port_fight_roster,
+                             COUNT(g_port_fight_roster));
+    *weapon = WEAPON_ID_KATANA;
     if (*colon == ':') {
-        g_port_fight.weapon[side] =
+        *weapon =
             port_FightFind(colon + 1, NULL, "weapon_id_", g_port_fight_weapons,
                            COUNT(g_port_fight_weapons));
     }
-    return g_port_fight.roster[side] >= 0 && g_port_fight.weapon[side] >= 0;
+    return *roster >= 0 && *weapon >= 0;
+}
+
+/* ... into the side's place. */
+static s32 port_FightFighter(const char *text, s32 side) {
+    return port_FightFighterInto(
+        text, &g_port_fight.roster[side], &g_port_fight.weapon[side]);
+}
+
+/* Two on two's seconds of the fight (port_platform.h). */
+s32 port_ChooseFightPartners(const char *first, const char *second) {
+    if (!port_FightFighterInto(first, &g_port_fight.partner_roster[0],
+                               &g_port_fight.partner_weapon[0]) ||
+        !port_FightFighterInto(second, &g_port_fight.partner_roster[1],
+                               &g_port_fight.partner_weapon[1])) {
+        port_Log("--partners: %s or %s is not a fighter (NAME or "
+                 "NAME:WEAPON); the fighters:\n",
+                 first, second);
+        port_FightList(g_port_fight_roster, COUNT(g_port_fight_roster));
+        return FALSE;
+    }
+    g_port_fight.has_partners = TRUE;
+    return TRUE;
 }
 
 /* The fight to start (port_platform.h). */

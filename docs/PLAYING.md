@@ -727,13 +727,17 @@ room for the next match.
 ## Two on two
 
 Versus, Vs. CPU and online can be fought **two on two**: four fighters,
-two teams. Each side picks its fighter and weapon on the character
-select as for one on one, and its team is **two of that fighter**: the
-game keeps two characters in the console's video memory, so a team is
-one character twice (told apart by the tags over their heads). The
-second of each team is the CPU's, or played from the **third and fourth
-pads** (the third controller plugged in is player three's, the team of
-player one; the fourth is player four's, with player two).
+two teams, **each fighter a character and weapon of his own**. Each side
+picks its fighter and weapon on the character select as for one on one,
+then the grid comes up again (the strip under it says *pick the
+partner*) and each side picks its **partner** and his weapon: any
+fighter, the same as the first or another. The second of each team is
+the CPU's, or played from the **third and fourth pads** (the third
+controller plugged in is player three's, the team of player one; the
+fourth is player four's, with player two), and then players three and
+four pick their own fighters on that second grid. Versus the CPU, the
+CPU's partner is drawn from the run's opponents. The partner's voice is
+his first's, the one thing of his that is not his own.
 
 **Choosing it.** On the Battle type page before the character select
 (ReBushido's main menu) the third row, **Fighters**: One on one, Two on
@@ -742,8 +746,8 @@ the rows, Left and Right change one. It goes with Single fight, Stock and
 First to (each fight is the teams'); not with Crew, whose row is not
 shown. The settings menu's **Teams** (`teams = one|cpu|pads` in
 `rebushido.cfg`) is where the page starts, and what a mode with no page
-plays. Versus the CPU, the CPU's team is the opponent twice and your
-partner the CPU's or player three's.
+plays. Versus the CPU, the CPU's team is the opponent and a partner of
+another character, and your partner the CPU's or player three's.
 
 **Fighting.** Each fighter has an enemy he faces and walks towards, as
 in one on one; **R2 turns him to the other enemy** (remapped as every
@@ -765,8 +769,9 @@ target. A **team loses when both its fighters have fallen**; then, as in
 one on one, the replay (of the last to fall and his enemy), the
 winner's view and the menu, or the match's card.
 
-**Online** the host's choice holds. In a session of two players each
-player's partner is the CPU's; in a session of **four players** (four
+**Online** the host's choice holds, and the partners are picked at the
+second grid as offline. In a session of two players each player's
+partner is the CPU's (each picks his own); in a session of **four players** (four
 PCs, or two on each of two: "Four players online" below) every fighter is
 a player's, players 1 and 3 one team and 2 and 4 the other. In a room of
 several the matches are the room host's, and spectators watch all four.

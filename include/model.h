@@ -195,6 +195,13 @@ extern void model_SetOutline(s32 slot, s32 on);
 /* The native port's two on two puts a fighter's own model in a slot as
  * it puts him there (port_duo.h). */
 extern void model_PortPut(s32 slot, Model *model);
+/* ... and loads a partner of a character of his own outside the arena,
+ * his textures in the second bank of video memory (model.c, port_duo.h):
+ * FALSE if the file does not fit in `room` bytes at `data`. */
+#define MODEL_PORT_CLOTH_ROOM 0x4000
+extern s32 model_PortLoadPartner(
+    Model *model, s32 slot, s32 model_id, s32 file_addr, s32 data, s32 room,
+    s32 mesh_block);
 #endif
 
 /* ---- the tiny model ----

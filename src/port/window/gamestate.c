@@ -245,9 +245,11 @@ s32 port_MatchShown(void) {
             /* the rule's page, before the grid */
             return PORT_MATCH_SHOWN_RULE;
         }
-        /* a Crew match's later places being picked (or, the rule chosen
-         * before the grid, every place) */
-        return match->page_rule == PORT_MATCH_CREW &&
+        /* a Crew match's later places being picked, or two on two's
+         * partners (or, the rule chosen before the grid, every place) */
+        return (match->page_rule == PORT_MATCH_CREW ||
+                match->page_teams != PORT_TEAMS_ONE) &&
+                       match->crew_size != 0 &&
                        (match->crew_picked > 0 || match->rule_first) &&
                        match->crew_picked < match->crew_size
                    ? PORT_MATCH_SHOWN_PICK

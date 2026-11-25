@@ -78,8 +78,12 @@
  * section 19), and the session goes on to the match's end. 17: the hello
  * and the welcome carry the custom arenas' sum beside the gameplay mods'
  * (MEET_ARENAS), so a guest whose arenas are not the host's is told that
- * it is the arenas (REFUSE_ARENAS). */
-#define SESSION_PROTOCOL 17
+ * it is the arenas (REFUSE_ARENAS). 18: two on two's second of each team
+ * is a character and weapon of his own, picked at the grid as his first
+ * is (the third and fourth pads' with four players; port_match.h), his
+ * model, textures and motions in the state beside the slots' (port_duo.h,
+ * docs/NETPLAY.md, section 20). */
+#define SESSION_PROTOCOL 18
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)

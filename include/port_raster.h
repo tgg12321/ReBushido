@@ -42,6 +42,9 @@ typedef struct {
     s32 page_y;
     s32 clut_x; /* the colour table's first pixel */
     s32 clut_y;
+    /* two on two's second bank (port_gpu.h), which its texels and table
+     * are read from where it has them, or NULL */
+    const u16 *bank;
 } PortPaint;
 
 /* A copy into or out of video memory that is under way. */

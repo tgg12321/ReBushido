@@ -13,8 +13,8 @@ and `--join` or the settings menu's Play online page, proved between two
 window programs on one PC (section 13). Then the lobby and its ways
 (section 14), sessions begun in the running program (15), rooms of several
 (16), the ranked ladder (17), two on two online, four players on four
-PCs among them (18), and the CPU playing on for one of four who leaves
-(19). What is left is play between two real PCs,
+PCs among them (18), the CPU playing on for one of four who leaves
+(19), and teams of four characters (20). What is left is play between two real PCs,
 and what section 13 leaves to the owner.
 
 **In short:** the game step is already deterministic and repeatable from its
@@ -2421,3 +2421,45 @@ several fights with a leaver in its first is not run by a test (the
 tests' are of one): the next fight's first step makes the fighter the
 CPU's again, but whether the game's menu between fights waits on the
 second pad, where its player has left, is not seen. Four real PCs.
+
+## 20. Teams of four characters
+
+ROADMAP 24's last piece of the game's (docs/PORT.md, "Two on two":
+"Each fighter his own character and weapon"): each team's second is a
+character and weapon of his own, picked at the select screen after his
+first. Nothing of it is carried beside the session's inputs, because all
+of it is the game's state and its inputs:
+
+- **The picks** are the select screen's, which every machine runs from
+  the same pads: the grid comes up a second time for the partners
+  (`PortMatch.crew`, its second place; `PortMatch.partner` as the match
+  begins), picked by the first two pads in a session of two players (the
+  partners the CPU's) and by the third and fourth in a session of four
+  players (`port_MatchPartnerPads`, the third and fourth pads of
+  `g_port_input`, which netplay fills). Versus the CPU the CPU's partner is
+  drawn by the crew's dice, in the state. A room's rule is chosen before
+  its grid, so its partners are picked before its stage page, a
+  session's after it.
+- **What is loaded for them** is loaded by the game's own step on every
+  machine alike (`fight_Init`): a partner's model and what it keeps into
+  the console's RAM below the common sound bank (`PORT_DUO_AREA_ADDR`),
+  saved and hashed with the rest of the RAM; his textures into the second
+  bank of the port's video memory, which is the head of the same room
+  (port_gpu.h), so saved and hashed with it; his motion file and win pose
+  into the same room. Each fighter's motion file, its
+  decoder and his win pose are put into his slot with him
+  (`PortDuoMotion`, a state file's). A rollback puts all of it back as it
+  puts back the fight.
+
+**Protocol 18** (`SESSION_PROTOCOL`, setup codes `P18-...`): a program
+before it plays a fight of four with each team two of one character, and
+its select screen has no second grid, so the two would part at the first
+partner's pick; 17 and 18 do not meet. The lobby is unchanged (version 4).
+
+**How it is proved.**
+
+| Case | Programs | What runs | Result |
+| --- | --- | --- | --- |
+| `port_net.py session`: `duo` | two headless, each size | two players, the CPU's partners: after the stage page the grid again, the first player's partner one place down, the second's his own character again | 131 hashes the same on both (64-bit, the last `898E901344900095` at frame 3,930; 32-bit `C3AAB0DB4E6670FD`), the fight's replay the same on both and played back |
+| `port_net.py four`: `four`, `couch`, `four-leave`, `four-host-leave` | four (or two) headless, each size | the third and fourth pads pick the partners, each one place down: four characters at the fight's start (`port_duo_character_1` to `_4`, held by the test) | 143 hashes the same on all (64-bit, the last `8F736001F9937252` at frame 4,290; 32-bit `94C5E39E7CC96A86`); `four-leave` 147 the same on the three who stayed, the CPU taking player 4's fighter at frame 2,357; the replays the same on all and played back |
+| `port_net_lobby.py`: `rooms-duo`, `four-punch`, `four-relay`, `rooms-four` | headless, a local lobby | a room's rule before its grid: the partners picked before the stage page; `rooms-four`'s leave moved to frame 3,600 (the fight starts near 3,000 now) | all ok; `rooms-four`: match 1 147 hashes the same on all four, Sora 78; match 2 199, Sora 130, the CPU playing Dai's fighter from frame 3,603 |

@@ -916,6 +916,11 @@ s32 select_Update(s32 held, s32 pressed) {
     s32 pool_frame;
 
     g_select_db = &g_disp_db[g_disp_frame_count & 1];
+#if RB_PORT
+    /* two on two's partners picked by the third and fourth pads
+     * (port_match.h) */
+    port_MatchPartnerPads(&held, &pressed);
+#endif
     g_select_held = held;
     g_select_pressed = pressed;
     if (g_select_mode == FIGHT_MODE_PRACTICE) {
