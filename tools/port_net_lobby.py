@@ -1541,7 +1541,8 @@ def case_win_room(case):
         return case.start(label, [WINDOW, '--config', cfg, '--log', os.path.join(case.folder, label + '.log'),
                                   '--out', os.path.join(case.folder, label)] + common + more, DUMMY)
 
-    keys = ('down accept down down down accept shot up accept until:room wait:10 shot '
+    # Room for: two players, four on four PCs, two on each of two, several
+    keys = ('down accept down down down accept accept accept shot up accept until:room wait:10 shot '
             'until:message wait:10 shot accept until:message wait:10 shot accept')
     host = window('hostess', 'net_room = Group room\nnet_delay = 2\nnet_port = %d\n' % case.port(1),
                   ['--online-at', '120', '--online-keys', keys, '--escape-at', ROOM_ESCAPES,
