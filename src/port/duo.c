@@ -513,8 +513,9 @@ void port_DuoForget(void) {
     duo->own_model[0] = duo->own_model[1] = NULL;
     duo->in_slot[0] = 0;
     duo->in_slot[1] = 1;
-    /* the game's motion files are made again from nothing after this */
-    duo->motions_out = FALSE;
+    /* the game's own motion files back in its rooms, so that what it
+     * reads into them next is read there */
+    port_DuoMotionsHome();
     port_SetVramBank(NULL);
 }
 
