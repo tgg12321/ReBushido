@@ -7423,14 +7423,100 @@ renders of the game's and the new model are in the main checkout's
 `tmp/models/renders/M101-fable/`, and the passes as the owner saw them
 in `tmp/models/versions/` (`tools/model_viewer/`).
 
-**What is left** (the owner's list): the joints, the shoulders first and
-then the elbows, the hips and the knees, which bend as the game's do
-(a rigid piece each side and a few triangles stretched between) and
-want edge loops and weights of their own; the clipping (a collar, a
+**What is left** (the owner's list): the joints, which the renderer now
+blends for every model ("The joints blended", below), and which a
+remade fighter may still want edge loops of its own for (a joint of the
+game's mesh has a ring or two of vertices each side to bend); the clipping (a collar, a
 sleeve, the hair through another part), which is the game's own and
 would be taken out motion by motion; the other fighters; the port
 choosing among the levels of detail.
 
+### The joints blended
+
+The game builds a fighter of rigid parts, one a bone, and joins two parts
+by a few vertices of its own (a place on the parent and an offset the
+child turns, "A joint as the game builds it") and triangles stretched
+between. When the parts turn against each other the seam opens, creases
+or passes through itself; the shoulders, the elbows, the waist, the hips
+and the knees of every fighter show it. ROADMAP 19 left a choice: each
+joint rebuilt by hand per fighter, or the renderer blending them for all.
+This is the second (`src/port/gl/gl_joints.c`, `joints = blended|rigid`,
+built in `blended`; Remastered, and only where a fighter is drawn from a
+model of his own).
+
+- **The bands, worked out once a model as it loads**
+  (`port_GlJointsWeigh`). A table of joints of the skeleton every model
+  shares: the neck (2-3), each shoulder (4-5, 8-9), each elbow (5-6,
+  9-10), the waist (2-12, the chest and the hips on the body's place),
+  each hip (12-13, 12-16) and each knee (13-14, 16-17). A joint's place is
+  its second bone's place at the bind pose and its way is that bone's x
+  axis (the game's bones run along x). Each vertex is given the bone that
+  carries it (the turning bone of a game's joint vertex, else its largest
+  share of place, as `geometry.py`'s `carry_bone`). For a vertex of the
+  joint's two parts: how far along the way it lies, from the first part's
+  end of the band (a share of that part's own length from the joint,
+  measured from the model's vertices) to the second's, smoothed, is how
+  much the second bone carries it; less, back to its own bone, the farther
+  it lies from the joint's axis, past 1.25 times the second part's
+  thickness there (the 90th centile of its vertices' distances from the
+  axis in the band) to nothing at 1.75 times. A vertex near two joints
+  takes the one that moves it most; one moved by less than a hundredth
+  is left as it was. The result is a buffer of four floats a vertex (the
+  two bones and the share), the model's vertex array's attribute 15.
+- **Each pose** (`port_GlJointsDuals`): each bone's skinning matrix (its
+  world matrix times its inverse bind matrix) as a **dual quaternion**,
+  made rigid about the bone's own place, 21 of them, from the same
+  matrices the layer is drawn with (a picture between two frames mixes
+  its bones first, so the blend follows). A vertex of a band is its two
+  bones' dual quaternions mixed by its share (the second turned to the
+  first's half of the sphere), made unit and applied to its bind place,
+  its normal turned by the same rotation: a turn of the band about the
+  joint, which keeps its volume where a linear mix of matrices shrinks it
+  and twists a candy wrapper. A vertex in no band is drawn by its terms
+  exactly as before.
+- **Where it holds**: the fighters' layer (`gl_fighter.c`), the body the
+  card poses for the cloth to be kept out of (`gl_fighter_card.c`, whose
+  keys and the held cloths' take the setting in), and the shadows cast
+  from the models and the sun's maps (`gl_shadow.c`, both frames' dual
+  quaternions): the shadow is the body drawn. The reflections and the
+  ambient occlusion read the layer. The boxes of the layer and the shadows
+  hold a band turned (a vertex stays as far from the joint, which stays as
+  far from its bones' places: `port_GlJointsReach`).
+- **What stays rigid**: the head and the face (the neck's band is the
+  chest's end alone, up to the head's place; a band through the head
+  turned the chin and the hair with a head that turns some 120 degrees on
+  the chest in a stance), the hands, which hold the weapon on their bone
+  (no wrist is in the table, so a weapon and the hand on it never part),
+  and the feet on the ground. **The shoulder** is the shoulder's own piece
+  (bone 4 or 8) carried toward the upper arm, the arm itself rigid: a band
+  across both bent the arm's top toward the shoulder's bone, which turns
+  far from the chest, and pushed it out through Kannuki's vest; a band
+  into the chest (2-4) dragged the chest's side with a bone that turns up
+  to 165 degrees on it.
+- **The game's state is not touched.** Over a CPU fight of 3,000 blanks
+  (Tatsumi against Utsusemi, every fighter's own model from the disc), the
+  traces of `rigid` and `blended` are the same, 1,322 lines, and
+  `--rollback-test 8` passes with each (54 rounds, 432 frames compared).
+
+**Seen.** Every fighter's own model (`fighter_export.py --models all`,
+the game's mesh), in CPU fights of 3,000 blanks two by two through the
+whole roster (`kannuki story` to `last 2`, 33 entries, 17 fights: the
+story fighters, the bosses and the henchmen), on the chanbara stage (Tatsumi
+against Kaun, Jo against Mikado) and the practice stage (Kannuki against
+Sidearm 1), with their stances, strikes, falls and kills, every 150th
+blank at four times the console's size, `rigid` beside `blended`; the six pictures of each fight that differ most, and each fighter in them cropped close, were made, and those of Tatsumi, Utsusemi, Kannuki, Gengoro, Kaun, the armoured man, Tsubame, Sazanka and the last boss against the victim were looked at closely. The
+pictures, the fight camera and each fighter cropped close, are in the main
+checkout's `tmp/joints19/` (`fights/`, `close/`). The hips, knees and
+waist bend round instead of folding (the hakama's and the coat's skirt no
+longer opens at the hip, a crouching knee no longer shows its inside
+corner), the elbows lose their notch and the shoulder's piece stays on
+the arm. No vertex astray, no candy wrapper, no hand off its weapon was
+found in them. What a band cannot do: a joint of the game's mesh has a
+ring or two of vertices a side, so a deep bend is rounded across a few
+large triangles, not a smooth curve; a remade model with edge loops at
+the joints (`tools/port_models/`) bends smoother by the same blend.
+
+**Cost.** COST_PLACEHOLDER
 ### The effects
 
 **How the game draws them** (`src/main/eff.c`, `include/eff.h`). Blood,

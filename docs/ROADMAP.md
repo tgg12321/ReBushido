@@ -403,9 +403,12 @@ the stage").
     occlusion-roughness-metal maps. The owner's rule (2026-11-18): the
     game's own design, cleaned, not a new one. Tatsumi is the first: the
     game's mesh made smooth (sixteen triangles for one, bending as the
-    game's), its texture cleaned and sharp in a layout of its own. Left:
-    the joints (shoulders first) and the clipping, which are the game's
-    own; the other fighters (`tools/port_models/README.md`); the port
+    game's), its texture cleaned and sharp in a layout of its own.
+    **The joints blended** (2026-11-25; PORT.md, "The joints blended"):
+    the renderer bends every model's shoulders, elbows, waist, hips and
+    knees as one skin by dual quaternions, the head, hands and feet
+    rigid, `joints = blended|rigid`. Left: the clipping, which is the
+    game's own; the other fighters (`tools/port_models/README.md`); the port
     choosing among the levels of detail.
 20. **Time of day and many lights** (the owner, 2026-11-19: the sun must
     not be every stage's only light): each stage gets a time-of-day
