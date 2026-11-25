@@ -1,6 +1,100 @@
-# Handoff, 2026-11-20
+# Handoff, 2026-11-25
 
-Where ReBushido stands after the session of 2026-11-18 to 20 (lighting,
+Where ReBushido stands after the session of 2026-11-20 to 25. The
+handoff of 2026-11-20 follows; what it says of the VPS, releases and
+lessons still holds unless this section says otherwise.
+
+## The state
+
+- `main` holds every agent branch of the session; the gate passed on the
+  last merge (ROADMAP 17's second pass) before it was pushed. No agent
+  worktree is left.
+- **The lobby on the VPS is version 4** (four PCs, 2026-11-25), session
+  protocol 15. Versions 1 to 3 are kept on the VPS as
+  `/root/rebushido-relay-src.v{1,2,3}-backup`; the ladder's store is
+  `/var/lib/private/rebushido-relay` (daily backups). The internet test
+  passed on version 4 (82 hashes alike, punch and relay). No release is
+  published yet, so nothing older needs serving.
+
+## What the session built (all merged)
+
+- **Match rules**: Crew battle (five fighters and five weapons are the
+  lives, all different; wounds kept; the session ends at the main menu;
+  a between-rounds report, nothing more in the fight); wounds kept in
+  Stock too, not in First to N; the battle type chosen before the first
+  character select.
+- **Menus**: the online pages and the settings menu in the game's look,
+  its music and sounds going on; "Main Menu" and "Character Select";
+  the group battle card in Shippori; the match strip replaces WINS 00.
+- **Online**: rooms of several, spectators, the rotation of three,
+  leaving a fight, the list's ping (ROADMAP 22); the ladder (25:
+  Ed25519 identities, ranked play, Glicko-2, disputes by replay); two on
+  two (24: four fighters, retargeting, four pads, CPU partners, and four
+  PCs as a star through the host).
+- **Looks**: the movies on the card and made larger (`movies-hd`,
+  realesr-animevideov3) and the static art (`art`, Real-ESRGAN, the
+  upscaler in `prepare/upscaler/`: MIT program, BSD-3 ncnn and weights);
+  "Map 2"; Remastered Classic stages (17, both passes: all 38 dressed,
+  rain and puddles on 29 and 30, smoke, motes, shafts, spray, water with
+  depth, foam and flow; stage 37 by `--fight 37`); the screens no dump
+  reached (11); the joints blended by dual quaternions (19, `joints =
+  blended`); ROADMAP 10 (music by stage, fighters' texture pages, mod
+  weapons on the select).
+- **Fixes**: the group battle crash (a loading screen's ordering table
+  on the stack); two bench regressions (mod pictures loaded at once for
+  every sprite; the fighters' pages rekeyed every frame by writes of the
+  same pixels).
+
+## Waiting on the owner
+
+1. **The online test** from a GitHub release (the last one, at
+   3035423cd, opened a room nobody joined; the relay's log agrees).
+2. **Looks to judge**: the dressing (`tmp/stages17b/`, all 38 stages
+   before and after, day and night, and `closeup-*.png`); **the water's
+   reflections have never been seen** (a hidden window's pictures hold
+   none of the reflection pass): look in a visible window.
+3. **Fighters from the disc for all**, which the blended joints need
+   but which changes their shading.
+4. **The release zip** with the upscaler (62 MB) or without (29 MB, the
+   art then left unenlarged).
+5. The modern control layout, and `-O2` for the port.
+
+## Next, what needs no owner
+
+- `python tools/baseline.py --store` on a quiet machine: main's stored
+  baselines are about 70 commits old, so `--against main` compares with
+  `d8466884f` and the bench calls its baseline stale.
+- ROADMAP 24's gaps: a CPU taking over a player who leaves; different
+  characters per team.
+- 17's leftovers: foliage in the sun's maps, gulls over the ship, more
+  pieces as meshes, the shafts drawn over a fighter in front of them.
+- ROADMAP 18's arenas; replay export and dispute tooling; the kanabo's
+  window model.
+- The ra2 fight's first-frame stall (21 to 25 ms, older than the
+  session; no budget holds it).
+
+## Lessons of the session
+
+- **The bench copies the disc-made mods** into `build/bench/mods/`
+  instead of linking them (`ca10d3d4f`): on 2026-11-25 `tmp/mods/art`
+  was emptied (and `stages-hd` since 11-19) by something deleting
+  through a link; both were restored from the root's `mods/`. If one is
+  empty, rebuild or copy it back before a bench.
+- **Protocol numbers and doc sections collide** between parallel
+  branches (two took protocol 10, two took NETPLAY section 17): give
+  each agent its number at the brief, or renumber at the merge.
+- **The bench's processor figures** catch a per-frame cost a prover
+  never will (the fighters' pages): read the ra0 CPU line after any
+  change to `gl_draw.c`'s upload path.
+- The dressing's shots tool read the window's bytes as BGR until
+  `6842ba9c3`: pictures of the first pass in `tmp/stages17/` have red
+  and blue swapped.
+
+---
+
+# Earlier: the handoff of 2026-11-20
+
+Where ReBushido stood after the session of 2026-11-18 to 20 (lighting,
 models, menus, online, match rules, replays, releases). The standing
 rules are in [`CLAUDE.md`](../CLAUDE.md) and [`AGENTS.md`](../AGENTS.md);
 the plan is [`ROADMAP.md`](ROADMAP.md) (items 14 to 25 are this
