@@ -4765,7 +4765,14 @@ sixth of the window's thread's time in a fight on the owner's PC
 `port_TexturePageKey`). Both now send the pixels without telling the
 stage (`port_GlRestoreVram`), and a write that holds none of the
 stage's own pixels (the fog's colour tables lie inside the pages'
-rectangles) no longer makes a page stale. A stage whose array is full
+rectangles) no longer makes a page stale. Nor does a write that changes
+no pixel of the backend's copy (`port_GlMarkMirrorFrom` says whether
+one did): since a fighter's pages are keyed too (MODS.md, "A fighter's
+pages"), the 16 by 32 pixels the game writes again, the same, at the
+corner of each fighter's first page every frame looked some thirty
+pages up again a frame, 2.5 ms of the processor, and put `port-bench`'s
+`ra0` at 9.9 ms and the lighting's 95th centile at 2.8 (2026-11-25;
+6.4 and 0.8 after). A stage whose array is full
 says so once, not at every lookup (Lost Bridge's log had 20,000 such
 lines).
 

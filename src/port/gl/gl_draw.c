@@ -2142,8 +2142,8 @@ const u16 *port_GlVramAt(s32 x, s32 y) {
  * is copied into the backend's own copy at once, and sent with the rest
  * the next time the card reads it (port_GlUploadMirror). A rectangle
  * that goes round an edge is taken as the whole of that way, as
- * port_AddDirtyRect takes it. */
-static void port_GlMarkMirrorFrom(
+ * port_AddDirtyRect takes it. FALSE where no pixel of it changed. */
+static s32 port_GlMarkMirrorFrom(
     s32 x, s32 y, s32 w, s32 h, const u16 *pixels) {
     PortDirtyRect rect;
     size_t bytes;
@@ -2153,7 +2153,7 @@ static void port_GlMarkMirrorFrom(
     s32 row;
 
     if (w <= 0 || h <= 0) {
-        return;
+        return FALSE;
     }
     port_ClearDirtyRect(&rect);
     port_AddDirtyRect(&rect, x, y, w, h);
@@ -2179,17 +2179,18 @@ static void port_GlMarkMirrorFrom(
         last = row;
     }
     if (first < 0) {
-        return;
+        return FALSE;
     }
     rect.top = first;
     rect.bottom = last;
     port_AddDirtyRect(&g_gl.mirror, rect.left, rect.top,
                       rect.right - rect.left + 1, rect.bottom - rect.top + 1);
     port_GlKeepMirrorRect(&rect);
+    return TRUE;
 }
 
-static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
-    port_GlMarkMirrorFrom(x, y, w, h, NULL);
+static s32 port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
+    return port_GlMarkMirrorFrom(x, y, w, h, NULL);
 }
 
 const u16 *g_port_gl_vram = g_port_vram;
@@ -3265,6 +3266,7 @@ static void port_GlWroteVramFrom(
     s32 x, s32 y, s32 w, s32 h, const u16 *pixels) {
     PortGlBlit blit;
     PortDirtyRect *rect = &blit.rect;
+    s32 is_changed;
     s32 was;
     s32 kept;
     s32 i;
@@ -3278,13 +3280,19 @@ static void port_GlWroteVramFrom(
     was = port_ProfileSwitch(PORT_PROFILE_CARD);
     /* into the copy here first: while a picture between frames is drawn,
      * what is read below is read from it (gl.h, g_port_gl_vram) */
-    port_GlMarkMirrorFrom(x, y, w, h, pixels);
+    is_changed = port_GlMarkMirrorFrom(x, y, w, h, pixels);
     /* pixels of the picture the game has put there itself: where they
      * fall over a shadow already painted, that shadow is covered
      * (gl_shadow.h) */
     port_GlShadowWroteVram(x, y, w, h);
-    /* a page of the stage written over is looked up again (gl_scene.h) */
-    port_GlSceneWroteVram(x, y, w, h);
+    /* a page of the stage or of a fighter written over is looked up
+     * again (gl_scene.h); a write of the pixels already there cannot
+     * change a page's key: the game writes the same corner of each
+     * fighter's page every frame, which looked some thirty pages up again
+     * a frame, 2.5 ms of the processor (2026-11-25) */
+    if (is_changed) {
+        port_GlSceneWroteVram(x, y, w, h);
+    }
     port_ClearDirtyRect(rect);
     port_AddDirtyRect(rect, x, y, w, h);
     /* a picture a mod has a picture of (gl_replace.h) */
@@ -3571,6 +3579,8 @@ static const PortRemasterBackend g_gl_backend = {
 const PortRemasterBackend *port_GlBackend(void) { return &g_gl_backend; }
 
 void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
+    s32 is_changed;
+
     if (!g_gl.is_started || w <= 0 || h <= 0) {
         return;
     }
@@ -3581,9 +3591,12 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     if (g_told.pixels == NULL) {
         port_PaintSyncRead(x, y, w, h);
     }
-    port_GlMarkMirror(x, y, w, h);
+    is_changed = port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
-    port_GlSceneWroteVram(x, y, w, h);
+    /* as port_GlWroteVramFrom's */
+    if (is_changed) {
+        port_GlSceneWroteVram(x, y, w, h);
+    }
 }
 
 s32 port_GlMirrorHold(void) {

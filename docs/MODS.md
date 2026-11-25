@@ -398,6 +398,13 @@ whoever loaded the table the faces name.
   so the tinted clothes are a page of their own, dumped and replaced on
   their own. A fade or the fog's colours after that are followed as the
   stage's are (the colours now over the colours the picture was made from).
+- **A write that changes nothing is passed over.** The game writes the
+  same 16 by 32 pixels at the corner of each fighter's first page every
+  frame; looking his pages up again for each (some thirty keys of a whole
+  page a frame) cost 2.5 ms of the processor in a fight and put
+  `port-bench` over its budget (2026-11-25). A rectangle written into
+  video memory looks a page up again only where it changed a pixel of
+  the backend's copy (`port_GlMarkMirrorFrom`, `src/port/gl/gl_draw.c`).
 - **Not gated by the stage's kind.** A stage fought Classic draws the
   stage's faces from the game's own textures, not a mod's pages; a
   fighter's pages are his on every stage.
