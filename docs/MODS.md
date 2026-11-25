@@ -284,9 +284,9 @@ of its own.
 - **The scene's faces by the piece**: each face reads a small piece of
   its page that is not a texture of its own, so its key would be a piece
   of a fighter, and a fighter's texture would be hundreds of files. The
-  stage's faces are replaced by whole page instead ("The scene's textures
-  by page", below); the fighters and their weapons are not (their own
-  models are: PORT.md, "The fighters' own models").
+  stage's faces and the fighters' are replaced by whole page instead ("The
+  scene's textures by page", below); the weapons in their hands are not
+  (their own models are: PORT.md, "The fighters' own models").
 - **The fight drawn again under the pause** is the scene as well.
 - **The movie**, which the console shows in its 24-bit mode and the
   remastered picture leaves to the software GPU (smoothed). The title
@@ -363,10 +363,66 @@ makes its pictures from.
 - With no mod's textures nothing is looked up and no shader takes the
   path; with `--gl-exact` neither.
 
-What it leaves to video memory: a face of a fighter or a weapon, a page
-of 16-bit texels, a face read through a texture window, and a face the
-side channel has no depth for (the game's own tiles where the ground is
-not drawn as one mesh are partly that).
+What it leaves to video memory: a face of a weapon, a page of 16-bit
+texels, a face read through a texture window, and a face the side channel
+has no depth for (the game's own tiles where the ground is not drawn as
+one mesh are partly that).
+
+### A fighter's pages
+
+**The fighters are replaced by whole page too**, the same way: a mod's
+picture of one of a fighter's pages, seen through one of his colour
+tables, stands in for every face of his that reads that page through that
+table. The key is the stage's, `page-256x256-D-HASH`, made the same way,
+but **of the fighter's own texels**: as each fighter's model loads
+(`model.c`, slot 0 the first fighter's, slot 1 the second's, two pages to
+the right), it says which TIMs it loaded and where
+(`port_RemasterBeginFighterTextures`, port_remaster.h; `tex_LoadTim` notes
+each), and a texel of the page that no TIM of that fighter wrote is hashed
+as 0, whatever the stage or the other fighter put there. So video memory's
+pixels have an owner each -- the stage, the first fighter or the second --
+and a page and table are keyed by their owner's pixels, the owner being
+whoever loaded the table the faces name.
+
+- **The table is the one the model's file loaded.** On a stage whose fog
+  falls on a fighter (`stage_GetFoggedModel`), his faces name the fog's
+  block of tables, which the fog writes over all through the frame; the
+  key takes the colours from the plain copy of them the game loads below
+  that block, as the stage's come from the row below the fog's. A fogged
+  fighter's extra textures (the groups `model_LoadExtraTextures` loads on
+  request) are loaded straight into the fog's rows with no plain copy, and
+  are left to video memory.
+- **The second fighter's tint.** Where the game tints the second fighter's
+  clothes (`model_TintOpponent`, a fighter against himself), it writes his
+  tables: the page is looked up again and its key is of the tinted colours,
+  so the tinted clothes are a page of their own, dumped and replaced on
+  their own. A fade or the fog's colours after that are followed as the
+  stage's are (the colours now over the colours the picture was made from).
+- **Not gated by the stage's kind.** A stage fought Classic draws the
+  stage's faces from the game's own textures, not a mod's pages; a
+  fighter's pages are his on every stage.
+- **With the other replacements.** A face is drawn from a page only where
+  no 2D replacement (a texture of the 2D layer, by its own key) stands in
+  for it, and a fighter drawn by his own model (`models/M100.glb` and the
+  rest: PORT.md, "The fighters' own models") draws none of the game's
+  faces, so his pages are not read at all. A page of the stage and one of a
+  fighter never stand in for each other's faces: the lookup knows whose
+  table it holds.
+
+`--dump-textures FOLDER` writes a fighter's pages into `FOLDER/pages/` as
+the stage's, the list beside each naming its owner (`owner stage`, `owner
+fighter 1` or `2`) and that owner's own textures in it;
+`tools/port_stage_hd.py` makes the stage's alone larger.
+
+**How it is proved** (the GL prover, `port_game`'s plan, Graphics:
+Remastered, no mod but this): the first fighter's pages dumped from the
+fight (27 pages and tables), each given its colours turned (red to green,
+green to blue, blue to red) at four times the size, and put in a mod. The
+pictures are the plain run's, pixel for pixel, until the fight; in the
+fight the first fighter alone differs, his clothes and skin in the turned
+colours, the stage, the second fighter and the lettering as they were. The
+trace of the run is the plain run's, and so are both sizes' of the port
+with the mod.
 
 ## The stages' pages made larger
 
@@ -1967,8 +2023,9 @@ ending a kind's files must have.
 
 ## What is next
 
-- **The fighters' textures by page**, as the stage's are: their own
-  models are the larger step, and are taken already.
+- **The weapons' textures by page**, as the fighters' are ("A fighter's
+  pages"): `resource_RequestWeapon` loads their tables into a block of
+  their own, which would need its TIMs noted as a model's are.
 - **More of the lettering in a font**: what no tour of the dumps
   reached (the setup mode's own pages, the slash mode's, the results of
   the other modes, the endings) is the art mod's, made larger; each is a
