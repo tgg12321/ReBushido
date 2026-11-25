@@ -253,7 +253,8 @@ PARTNER_PRESSES_FOUR = ["partner+60 P3 DOWN", "partner+70 P4 DOWN", "partner+90 
 # session's two on two
 STAGE_AFTER_PARTNERS = ["partner+1000 RIGHT", "partner+1030 CROSS"]
 # the four fighters each a character of his own
-FOUR_CHARACTERS = ['port_duo_character_3 != port_duo_character_1', 'port_duo_character_4 != port_duo_character_2']
+FOUR_CHARACTERS = ['port_duo_character_3 != port_duo_character_1', 'port_duo_character_4 != port_duo_character_2',
+                   'port_duo_character_3 != port_duo_character_2', 'port_duo_character_4 != port_duo_character_1']
 
 
 def with_partner(text, within):
@@ -1021,7 +1022,7 @@ shot = false
 FOUR_LEAVE_FRAMES = 400
 FOUR_LEAVE_CHECKPOINTS = FOUR_CHECKPOINTS.split('[[checkpoint]]\nname = "kill"')[0] + \
     '[[checkpoint]]\nname = "stay"\nafter = 100000\nshot = false\n'
-FOUR_ORDER = ['select', 'fight', 'kill', 'after_fight', 'end', 'stay']
+FOUR_ORDER = ['select', 'partner', 'fight', 'kill', 'after_fight', 'end', 'stay']
 
 
 def four_presses(room=False):
@@ -1106,6 +1107,21 @@ def four_cpu_plays_on(case):
     return leaver is not None and leaver != 0 and len(pcs) == 4
 
 
+def four_character_problems(label, who, out, plan):
+    """What a program of four players printed at the fight's start against
+    FOUR_CHARACTERS: each of the four fighters a character of his own
+    (docs/NETPLAY.md, section 20)."""
+    names = [line.split()[1] for line in read(plan).split('\n') if line.startswith('var ')]
+    for line in out.split('\n'):
+        words = line.split()
+        if len(words) > 3 and words[0] == 'cp' and words[1] == 'fight':
+            values = dict(playtest.header_names())
+            values.update(zip(names, (int(v) for v in words[3:])))
+            return ['four: %s: %s: at the fight, not %s' % (label, who, claim)
+                    for claim in FOUR_CHARACTERS if not playtest.evaluate(claim, values)]
+    return []
+
+
 def check_four(label, program, args, base, case):
     """A session of four players (FOUR_CASES' `case`) between headless
     programs set up by --host --players and --join, every one over a
@@ -1173,6 +1189,7 @@ def check_four(label, program, args, base, case):
         if code != 0:
             problems.append('four: %s: %s ended with %s (%s/side%d.err)' % (label, who, code, folder, side))
         out_text = read(os.path.join(folder, 'side%d.out' % side))
+        problems += four_character_problems(label, who, out_text, plans[side])
         printed = [name for name in FOUR_ORDER if 'cp %s ' % name in out_text]
         wanted = 'fight' if leaver is not None and (side == leaver or not cpu) else 'kill'
         if wanted not in printed and not any(FOUR_ORDER.index(n) > FOUR_ORDER.index(wanted) for n in printed):
