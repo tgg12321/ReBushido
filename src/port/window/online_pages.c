@@ -187,6 +187,18 @@ enum {
     HOST_ROWS
 };
 
+/* The kinds of room to host: of two players; of four, a PC each (the host
+ * meeting three guests: docs/NETPLAY.md, section 18) or two on each of two
+ * PCs; of several, its matches of two or of four. */
+enum {
+    HOST_KIND_TWO,
+    HOST_KIND_FOUR,
+    HOST_KIND_COUCH,
+    HOST_KIND_SEVERAL,
+    HOST_KIND_SEVERAL_FOUR,
+    HOST_KINDS
+};
+
 /* The room of several's page. */
 enum { ROOM_WATCH, ROOM_PLAY, ROOM_RULE, ROOM_SIDE, ROOM_LEAVE, ROOM_ROWS };
 
@@ -237,8 +249,9 @@ static struct {
     char password[PASSWORD_LENGTH + 1];
     char room_password[PASSWORD_LENGTH + 1];
     char code[CODE_LENGTH + 1];
-    /* a room to host: of several (else of two), and its rotation */
-    s32 group;
+    /* a room to host: its kind (HOST_KIND_...), and a room of several's
+     * rotation */
+    s32 kind;
     s32 rotation;
     /* in a room of several: a match it asks for, and when it begins */
     PortRoomNext room_next;
@@ -286,6 +299,9 @@ static struct {
     /* the page being drawn (port_OnlinePagesDraw) */
     PortLook *look;
 } g_pages = {.until = -1, .rotation = PORT_ROOM_RULE_FIXED};
+
+/* Whether the room to host is one of several. */
+static s32 port_PagesIsGroup(void) { return g_pages.kind >= HOST_KIND_SEVERAL; }
 
 /* ---- places and letters ---- */
 
@@ -629,22 +645,37 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
         } else if (row == HOST_OPEN) {
             snprintf(name, name_room, "Open the room");
             snprintf(value, value_room, "%s",
-                     g_pages.group ? "of several" : "for two players");
-            *help = g_pages.group ? "Then the room's page: its members, its "
-                                    "matches and who watches"
-                                  : "Then wait for the other player here";
+                     port_PagesIsGroup()             ? "of several"
+                     : g_pages.kind == HOST_KIND_TWO ? "for two players"
+                                                     : "for four players");
+            *help = port_PagesIsGroup()
+                        ? "Then the room's page: its members, its matches "
+                          "and who watches"
+                    : g_pages.kind == HOST_KIND_TWO
+                        ? "Then wait for the other player here"
+                        : "Then wait here for the others: two on two, every "
+                          "fighter a player's";
         } else if (row == HOST_KIND) {
             snprintf(name, name_room, "Room for");
-            snprintf(value, value_room, "%s",
-                     g_pages.group ? "several: up to eight, players and "
-                                     "spectators"
-                                   : "two players");
-            *help = "Several: matches in turn, the others watching them";
+            static const char * const kinds[HOST_KINDS] = {
+                "two players", "four players, a PC each",
+                "four players, two on each of two PCs",
+                "several: up to eight, players and spectators",
+                "several, matches of four (two on two)"};
+
+            snprintf(value, value_room, "%s", kinds[g_pages.kind]);
+            *help = g_pages.kind == HOST_KIND_FOUR
+                        ? "Four PCs: three others join your room"
+                    : g_pages.kind == HOST_KIND_COUCH
+                        ? "You and a friend on this PC, a team, against "
+                          "two on another"
+                        : "Several: matches in turn, the others watching "
+                          "them";
         } else if (row == HOST_ROTATION) {
             snprintf(name, name_room, "Rotation");
             snprintf(
                 value, value_room, "%s",
-                !g_pages.group ? "(a room of several's)"
+                !port_PagesIsGroup() ? "(a room of several's)"
                 : g_pages.rotation == PORT_ROOM_RULE_WINNER ? "the winner stays"
                 : g_pages.rotation == PORT_ROOM_RULE_FIXED
                     ? "a fixed turn: A+B, B+C, C+A"
@@ -678,10 +709,13 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
             const PortRoom *room = &g_pages.rooms[row];
             const char *differs = port_PagesDiffer(room->setup);
 
-            s32 most = room->group ? PORT_ROOM_MEMBERS : 2;
+            s32 most = room->group ? PORT_ROOM_MEMBERS : room->seats;
 
             snprintf(name, name_room, "%s%s%s", room->locked ? "[locked] " : "",
-                     room->group ? "[several] " : "", room->name);
+                     room->group       ? "[several] "
+                     : room->seats > 2 ? "[four] "
+                                       : "",
+                     room->name);
             if (differs != NULL) {
                 snprintf(value, value_room, "%s   %d/%d   not for you: %s",
                          room->player, room->players, most, differs);
@@ -1391,6 +1425,14 @@ static s32 port_PagesStart(s32 role, const PortRoom *room, const char *code) {
     start.delay = g_port_settings.net_delay;
     start.portmap = g_port_settings.net_portmap && !is_local;
     start.player = port_PlayerName();
+    if (role == PORT_NET_ROLE_ROOM || role == PORT_NET_ROLE_HOST) {
+        /* four players, as the host's room is to be */
+        start.players =
+            g_pages.kind == HOST_KIND_FOUR || g_pages.kind == HOST_KIND_COUCH
+                ? PORT_RELAY_FOUR
+                : 2;
+        start.pcs = g_pages.kind == HOST_KIND_FOUR ? PORT_RELAY_FOUR : 2;
+    }
     snprintf(
         bind, sizeof(bind), "%s:%d", is_local ? ADDRESS_LOCAL : ADDRESS_ALL,
         role == PORT_NET_ROLE_JOIN || role == PORT_NET_ROLE_ROOMS
@@ -1477,6 +1519,7 @@ static s32 port_PagesRoom(const char *code, const char *password) {
                   g_port_settings.net_room[0] != 0 ? g_port_settings.net_room
                                                    : port_PlayerName(),
                   port_PlayerName(), g_pages.password, g_pages.rotation, TRUE,
+                  g_pages.kind == HOST_KIND_SEVERAL_FOUR ? PORT_RELAY_FOUR : 2,
                   why, sizeof(why))
             : port_RoomEnter(g_port_settings.net_lobby, code, port_PlayerName(),
                              password, TRUE, why, sizeof(why));
@@ -1757,8 +1800,12 @@ static void port_PagesQuickMatch(void) {
     for (i = 0; i < g_pages.room_count; i++) {
         const PortRoom *room = &g_pages.rooms[i];
 
-        if (!room->locked && room->players < 2 &&
-            port_PagesDiffer(room->setup) == NULL) {
+        /* of the kind the host page says, two players or four on four
+         * PCs */
+        s32 seats = g_pages.kind == HOST_KIND_FOUR ? PORT_RELAY_FOUR : 2;
+
+        if (!room->locked && !room->group && room->seats == seats &&
+            room->players < seats && port_PagesDiffer(room->setup) == NULL) {
             port_Note("online pages: Quick Match joins room %s (%s)",
                       room->code, room->name);
             g_pages.room_password[0] = 0;
@@ -1769,6 +1816,9 @@ static void port_PagesQuickMatch(void) {
     port_Note("online pages: Quick Match found no room to join: it opens "
               "one");
     g_pages.password[0] = 0;
+    if (g_pages.kind != HOST_KIND_FOUR) {
+        g_pages.kind = HOST_KIND_TWO;
+    }
     port_PagesStart(PORT_NET_ROLE_ROOM, NULL, NULL);
 }
 
@@ -1993,7 +2043,7 @@ static void port_PagesChooseRoom(s32 which) {
         port_PageNote(text, COLOR_WARN);
         return;
     }
-    if (room->players >= (room->group ? PORT_ROOM_MEMBERS : 2)) {
+    if (room->players >= (room->group ? PORT_ROOM_MEMBERS : room->seats)) {
         port_PageNote("That room is full.", COLOR_WARN);
         return;
     }
@@ -2048,12 +2098,12 @@ static void port_PagesAccept(void) {
             port_PagesType(FIELD_ROOM, g_port_settings.net_room);
         } else if (row == HOST_PASSWORD) {
             port_PagesType(FIELD_PASSWORD, g_pages.password);
-        } else if (row == HOST_OPEN && g_pages.group) {
+        } else if (row == HOST_OPEN && port_PagesIsGroup()) {
             port_PagesRoom(NULL, NULL);
         } else if (row == HOST_OPEN) {
             port_PagesStart(PORT_NET_ROLE_ROOM, NULL, NULL);
         } else if (row == HOST_KIND) {
-            g_pages.group = !g_pages.group;
+            g_pages.kind = (g_pages.kind + 1) % HOST_KINDS;
         } else if (row == HOST_ROTATION) {
             g_pages.rotation =
                 (g_pages.rotation + 1) % (PORT_ROOM_RULE_WINNER + 1);

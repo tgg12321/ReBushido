@@ -101,9 +101,11 @@ static u32 port_NetWords(char *out, u32 room) {
     if (stats.leave_ms != 0) {
         /* the leave asked once: the second leaves (port_online.h) */
         snprintf(out, room, "%s",
-                 stats.watching ? "Press F1 or Escape again to stop watching"
-                                : "Press F1 or Escape again to leave the "
-                                  "fight: the other player wins it");
+                 stats.watching   ? "Press F1 or Escape again to stop watching"
+                 : stats.pads > 2 ? "Press F1 or Escape again to leave the "
+                                    "fight: the other team wins it"
+                                  : "Press F1 or Escape again to leave the "
+                                    "fight: the other player wins it");
         return COLOR_WAIT;
     }
     if (stats.watching) {
@@ -123,13 +125,26 @@ static u32 port_NetWords(char *out, u32 room) {
     }
     if (stats.state == PORT_NETPLAY_WAITING ||
         stats.state == PORT_NETPLAY_LOADING) {
-        snprintf(out, room, "%s   %u.%u s",
+        snprintf(out, room, "%s%s   %u.%u s",
                  stats.state == PORT_NETPLAY_LOADING
                      ? "Loading: waiting for the other player"
                      : "Waiting for the other player",
-                 stats.waited_ms / MS_PER_SECOND,
+                 stats.pads > 2 ? "s" : "", stats.waited_ms / MS_PER_SECOND,
                  stats.waited_ms % MS_PER_SECOND / (MS_PER_SECOND / 10));
         return COLOR_WAIT;
+    }
+    if (stats.pads > 2) {
+        /* four players: this PC's, and the worst way's ping */
+        snprintf(
+            out, room,
+            "Online: player %d%s of 4   |   %s   |   ping %u ms   |   "
+            "rollback %u   |   delay %u",
+            stats.pad + 1,
+            stats.local_mask == 0x5U   ? " and 3"
+            : stats.local_mask == 0xAU ? " and 4"
+                                       : "",
+            port_GetSessionPath(), stats.ping_ms, stats.rollback, stats.delay);
+        return COLOR_TEXT;
     }
     snprintf(out, room,
              "Online: player %d   |   %s   |   ping %u ms   |   rollback %u   "

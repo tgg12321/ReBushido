@@ -7,7 +7,7 @@
  * lasts: the session's settings (session.c, port_SessionSettings); the
  * start of its latest fight as a replay keeps it, compressed as soon as
  * it is final (replay.c, port_ReplayServe), a kilobyte a datagram; and
- * from that start's frame on, every frame's two pads once both are known,
+ * from that start's frame on, every frame's four pads once all are known,
  * with every final hash. The server says what it has, and the host sends
  * what it has not, as the cards are sent in a meeting (session.c).
  *
@@ -38,10 +38,13 @@
 #define NO_START 0xFFFFFFFFU
 /* the frames kept, from the session's first: over two hours */
 #define FRAMES_MAX 0x40000
-#define INPUT_BYTES 4
-/* eight hashes' frames: every hash among them fits in a datagram */
-#define INPUTS_A_DATAGRAM 240
-#define HASHES_A_DATAGRAM 8
+/* a frame's input: the four pads' buttons, a half-word each, the first
+ * pad first (lobby version 4; a match of two's last two 0) */
+#define PADS 4
+#define INPUT_BYTES (PADS * HALF_BYTES)
+/* four hashes' frames: every hash among them fits in a datagram */
+#define INPUTS_A_DATAGRAM 120
+#define HASHES_A_DATAGRAM 4
 #define HASH_BYTES 12
 #define HASHES_KEPT 256
 #define HASHES_MASK (HASHES_KEPT - 1)
@@ -137,9 +140,9 @@ static struct {
     u32 start_had; /* the server's start frame, NO_START for none */
     u8 map[CHUNK_MAP_BYTES];
     u32 next_chunk;
-    /* the frames' inputs, from the session's first, and the server's
-     * next wanted */
-    u32 *inputs;
+    /* the frames' inputs, from the session's first (PADS a frame), and
+     * the server's next wanted */
+    u16 *inputs;
     u32 fed;
     u32 server_next;
     WatchHash hashes[HASHES_KEPT];
@@ -215,11 +218,15 @@ void port_FeedBegin(const PortRoomMatch *match) {
 
 s32 port_FeedIsOn(void) { return g_feed.on; }
 
-void port_FeedFrame(u32 frame, u16 first, u16 second) {
+void port_FeedFrame(u32 frame, const u16 *pads) {
+    u32 pad;
+
     if (!g_feed.on || frame >= FRAMES_MAX || frame != g_feed.fed) {
         return;
     }
-    g_feed.inputs[frame] = (u32)first | ((u32)second << (2 * BITS_PER_BYTE));
+    for (pad = 0; pad < PADS; pad++) {
+        g_feed.inputs[frame * PADS + pad] = pads[pad];
+    }
     g_feed.fed = frame + 1;
 }
 
@@ -329,9 +336,11 @@ static void port_FeedInputs(void) {
         out[FEED_BODY + WORD_BYTES + HALF_BYTES] = (u8)hashes;
         out[FEED_BODY + WORD_BYTES + HALF_BYTES + 1] = 0;
         at = FEED_INPUT_HASHES + hashes * HASH_BYTES;
-        for (i = 0; i < count; i++) {
-            port_NetPutWord(
-                out + at + i * INPUT_BYTES, g_feed.inputs[first + i]);
+        for (i = 0; i < count * PADS; i++) {
+            u16 input = g_feed.inputs[first * PADS + i];
+
+            out[at + i * HALF_BYTES] = (u8)input;
+            out[at + i * HALF_BYTES + 1] = (u8)(input >> BITS_PER_BYTE);
         }
         port_RoomSend(out, at + count * INPUT_BYTES);
         first += count;
@@ -450,7 +459,7 @@ static struct {
     u32 have;
     u8 map[CHUNK_MAP_BYTES];
     s32 started; /* put in: the inputs are asked for */
-    u32 *inputs;
+    u16 *inputs;
     u32 from;  /* the start's frame */
     u32 known; /* every frame before it has come */
     WatchHash hashes[HASHES_KEPT];
@@ -588,8 +597,14 @@ static void port_WatchTakeInputs(const u8 *in, s32 bytes) {
         u32 frame = first + i;
 
         if (frame == g_watch.known && frame < FRAMES_MAX) {
-            g_watch.inputs[frame] =
-                port_NetGetWord(in + inputs + i * INPUT_BYTES);
+            const u8 *put = in + inputs + i * INPUT_BYTES;
+            u32 pad;
+
+            for (pad = 0; pad < PADS; pad++) {
+                g_watch.inputs[frame * PADS + pad] =
+                    (u16)(put[pad * HALF_BYTES] |
+                          (put[pad * HALF_BYTES + 1] << BITS_PER_BYTE));
+            }
             g_watch.known++;
         }
     }
@@ -650,12 +665,19 @@ void port_WatchStarted(u32 frame) {
     g_watch.asked_at = 0;
 }
 
-s32 port_WatchInput(u32 frame, u16 *first, u16 *second) {
+/* A frame's four pads (port_room.h): 0 each where it has not come. */
+s32 port_WatchInput(u32 frame, u16 *pads) {
+    u32 pad;
+
+    for (pad = 0; pad < PADS; pad++) {
+        pads[pad] = 0;
+    }
     if (!g_watch.started || frame < g_watch.from || frame >= g_watch.known) {
         return FALSE;
     }
-    *first = (u16)g_watch.inputs[frame];
-    *second = (u16)(g_watch.inputs[frame] >> (2 * BITS_PER_BYTE));
+    for (pad = 0; pad < PADS; pad++) {
+        pads[pad] = g_watch.inputs[frame * PADS + pad];
+    }
     return TRUE;
 }
 

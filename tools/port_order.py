@@ -275,7 +275,7 @@ def dump_one(job):
     out = OUT_DIR + '/' + path.replace('/', '_') + '.gimple'
     deps = out + '.d'
     # the dump of the last run, where no input of it has changed since
-    if not port_build.made_since(out, deps, stamp):
+    if not port_build.made_since(out, deps, stamp, path):
         for old in (out, deps):
             if os.path.exists(old):
                 os.remove(old)

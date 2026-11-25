@@ -46,7 +46,7 @@
 /* the signature's domain, before the 176 bytes it covers (ladder.py) */
 #define DOMAIN "ReBushido ranked 1"
 #define DOMAIN_BYTES 19
-#define RELAY_VERSION 3
+#define RELAY_VERSION 4
 /* how often an unanswered ask is said again, a STAY is said, and an
  * upload's next chunks are sent; how long a start waits */
 #define ASK_EVERY_MS 600
@@ -1270,6 +1270,10 @@ s32 port_RankedNext(PortRoomNext *out) {
     out->match.number = (s32)g_ranked.match;
     out->match.a = 0;
     out->match.b = 1;
+    out->match.c = PORT_ROOM_NOBODY;
+    out->match.d = PORT_ROOM_NOBODY;
+    out->place = view->role == PORT_SESSION_HOST ? 0 : 1;
+    out->players = 2;
     for (i = 0; i < PORT_ROOM_CODE_BYTES && g_ranked.code[i] != 0; i++) {
         out->match.code[i] = g_ranked.code[i];
     }

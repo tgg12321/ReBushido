@@ -512,7 +512,7 @@ static const struct {
     {"--online-at", 1},      {"--online-keys", 1},   {"--relay", 1},
     {"--room", 1},           {"--player", 1},        {"--room-password", 1},
     {"--room-key", 1},       {"--punch-to", 1},      {"--net-paths", 1},
-    {"--mapped", 1},
+    {"--mapped", 1},         {"--players", 1},
 };
 
 #if defined(_WIN32)
@@ -654,6 +654,8 @@ static s32 port_StartOnlineHere(
                    : PORT_SESSION_JOIN;
     ask.delay = (u32)start->delay;
     ask.portmap = start->portmap;
+    ask.players = start->players;
+    ask.pcs = start->pcs;
     port_AskWord(ask.player, sizeof(ask.player), start->player);
     port_AskWord(ask.lobby, sizeof(ask.lobby), start->lobby);
     port_AskWord(ask.key, sizeof(ask.key), start->key);
@@ -699,6 +701,9 @@ const char *port_StartOnline(const PortOnlineStart *start) {
     static char opt_key[] = "--room-key";
     static char opt_punch[] = "--punch-to";
     static char opt_portmap[] = "--portmap";
+    static char opt_players[] = "--players";
+    static char word_four[] = "4";
+    static char word_couch[] = "2x2";
     static char word_off[] = "off";
     static char strings[8][PATH_BYTES_MAX];
     s32 role = start->role;
@@ -767,6 +772,11 @@ const char *port_StartOnline(const PortOnlineStart *start) {
         if (!start->portmap) {
             words[count++] = opt_portmap;
             words[count++] = word_off;
+        }
+        if (start->players == PORT_RELAY_FOUR) {
+            words[count++] = opt_players;
+            words[count++] =
+                start->pcs == PORT_RELAY_FOUR ? word_four : word_couch;
         }
     } else {
         words[count++] = opt_join;

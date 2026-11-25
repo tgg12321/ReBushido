@@ -66,6 +66,7 @@ Without the image it says so and passes, as the play tests do."""
 import argparse
 import os
 import random
+import re
 import shutil
 import signal
 import subprocess
@@ -875,6 +876,260 @@ def check_session_replays(label, program, folder, window):
     return problems
 
 
+# ---- four players (docs/NETPLAY.md, section 18) ----
+
+# A session of four players: the host (--players 4) meets three guests, a
+# link each, at its port and the two after it (the second and third guest
+# sent on there by KIND_MOVE), and passes each one's inputs on to the
+# others; or (--players 2x2) two players on each of two PCs, each PC a
+# team. The session presses everyone to versus select; there the first
+# and second players pick (a team is two of its first player's
+# character), the host the stage page's second stage; the fight is two on
+# two, every fighter a player's. Each walks at the enemy across and
+# strikes, round after round, as port_game's two do (the third player
+# turning to the other enemy with R2 first): the fighters fall until a
+# team is out, the fight is decided, the game's menu after it. Every pad
+# presses, so that every pad's guesses are wrong now and then and roll
+# the session back, on every program.
+FOUR_SELECT = ["select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
+               "select+1150 RIGHT", "select+1180 CROSS"]
+FOUR_ROUNDS = 100
+FOUR_ROUNDS_OF = {
+    1: [(0, 'RIGHT hold 20f'), (22, 'CIRCLE'), (52, 'CROSS')],
+    2: [(0, 'LEFT hold 10f'), (15, 'CIRCLE'), (50, 'CIRCLE')],
+    3: [(0, 'RIGHT hold 8f'), (25, 'CROSS'), (40, 'CROSS')],
+    4: [(0, 'LEFT hold 10f'), (20, 'CIRCLE'), (45, 'CROSS')],
+}
+FOUR_CHECKPOINTS = '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 6000
+shot = false
+expect = ["mode == FIGHT_MODE_VS"]
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE && port_duo_on == 1"
+at_frame = true
+within = 6000
+shot = false
+expect = ["mode == FIGHT_MODE_VS", "port_match_teams == 2", "p1_cpu == 0", "p2_cpu == 0"]
+
+[[checkpoint]]
+name = "kill"
+when = "port_duo_decided == 1"
+at_frame = true
+within = 12000
+shot = false
+expect = ["port_duo_down_2 + port_duo_down_4 == 2 || port_duo_down_1 + port_duo_down_3 == 2"]
+
+[[checkpoint]]
+name = "after_fight"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+within = 6000
+shot = false
+'''
+# A player who leaves in the middle of the fight: the fourth's program
+# ends this many of the fight's frames in; the session ends on all.
+FOUR_LEAVE_FRAMES = 400
+FOUR_LEAVE_CHECKPOINTS = FOUR_CHECKPOINTS.split('[[checkpoint]]\nname = "kill"')[0] + \
+    '[[checkpoint]]\nname = "stay"\nafter = 100000\nshot = false\n'
+FOUR_ORDER = ['select', 'fight', 'kill', 'after_fight', 'end', 'stay']
+
+
+def four_presses():
+    """Every pad's presses of the session of four, as P1 to P4."""
+    def rounds(pad, pattern, rounds_=FOUR_ROUNDS, start=60):
+        return ['fight+%df %s%s' % (start + n * 60 + offset, '' if pad == 1 else 'P%d ' % pad, button)
+                for n in range(rounds_) for offset, button in pattern]
+    presses = FOUR_SELECT + ['fight+20f P3 R2']
+    for pad in (1, 2, 3, 4):
+        presses += rounds(pad, FOUR_ROUNDS_OF[pad])
+    return presses
+
+
+def four_pads(presses, pads):
+    """The presses of a PC that plays `pads` (the session's, from 1), on
+    its own pads: its first's as P1, its second's as P2."""
+    out = []
+    for press in presses:
+        words = press.split()
+        pad = int(words[1][1]) if len(words) > 1 and words[1] in ('P2', 'P3', 'P4') else 1
+        if pad not in pads:
+            continue
+        rest = words[:1] + (words[2:] if pad != 1 else words[1:])
+        nth = pads.index(pad)
+        out.append(' '.join(rest[:1] + (['P2'] if nth == 1 else []) + rest[1:]))
+    return out
+
+
+def write_four_plan(program, side, pads, folder, leave=False):
+    """The plan of PC `side` of a session of four, which plays `pads`: its
+    path. `leave`: its player leaves FOUR_LEAVE_FRAMES into the fight
+    (its plan ends there)."""
+    presses = four_pads(four_presses(), pads)
+    toml = os.path.join(folder, 'four_side%d.toml' % side)
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('about = "A session of four players, PC %d (pads %s)."\n' % (side, pads))
+        f.write('discs = ["port"]\nlimit = 60000\nseconds = %d\n' % SECONDS)
+        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
+        if leave:
+            f.write(FOUR_LEAVE_CHECKPOINTS.replace('name = "stay"\nafter = 100000',
+                                                   'name = "end"\nframes = %d' % FOUR_LEAVE_FRAMES))
+        elif leave is None:
+            f.write(FOUR_LEAVE_CHECKPOINTS)
+        elif side == 0:
+            f.write(FOUR_CHECKPOINTS + '\n[[checkpoint]]\nname = "stay"\nafter = 100000\nshot = false\n')
+        else:
+            f.write(FOUR_CHECKPOINTS + '\n[[checkpoint]]\nname = "end"\nframes = 30\nshot = false\n')
+    playtest.PORT_PROGRAM = program
+    playtest.PORT_SYMBOLS = program + '.sym'
+    test = playtest.Test(toml)
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), 1)
+    path = os.path.join(folder, 'four_plan_side%d.txt' % side)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+# the cases: the PCs' pads, and which PC's player leaves the fight
+FOUR_CASES = {
+    'four': ([[1], [2], [3], [4]], None),
+    'couch': ([[1, 3], [2, 4]], None),
+    'four-leave': ([[1], [2], [3], [4]], 3),
+}
+
+
+def check_four(label, program, args, base, case):
+    """A session of four players (FOUR_CASES' `case`) between headless
+    programs set up by --host --players and --join, every one over a
+    network made worse on purpose: each ends well, none finds a desync,
+    every state hash the same on all, every program's checkpoints to the
+    fight's end (or a leave's), and the fights' replays the same on all and
+    played back."""
+    pcs, leaver = FOUR_CASES[case]
+    folder = os.path.join(args.out, 'four', label)
+    os.makedirs(folder, exist_ok=True)
+    plans = [write_four_plan(program, side, pads, folder,
+                             True if side == leaver else None if leaver is not None else False)
+             for side, pads in enumerate(pcs)]
+    trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss)]
+    procs = []
+    start = time.time()
+    for side in range(len(pcs)):
+        cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plans[side], '--trace',
+               '--out', os.path.join(folder, 'side%d' % side), '--player', 'Player%d' % (side + 1)] + trouble
+        replays = os.path.join(folder, 'side%d-replays' % side)
+        if os.path.isdir(replays):
+            shutil.rmtree(replays)
+        cmd += ['--replays', replays]
+        if side == 0:
+            cmd += ['--host', '%s:%d' % (LOCALHOST, base), '--net-delay', str(args.delay),
+                    '--players', '4' if len(pcs) == 4 else '2x2', '--net-seed', '4242',
+                    '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
+        else:
+            cmd += ['--join', '%s:%d' % (LOCALHOST, base), '--net-bind', '%s:%d' % (LOCALHOST, base + 4 + side)]
+        os.makedirs(os.path.join(folder, 'side%d' % side), exist_ok=True)
+        out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
+        err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
+        procs.append((subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL),
+                      out, err))
+        time.sleep(0.5 if side == 0 else 0.3)
+    results = []
+    for proc, out, err in procs:
+        try:
+            code = proc.wait(timeout=max(1, SECONDS - (time.time() - start)))
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            code = None
+        out.close()
+        err.close()
+        results.append((code, time.time() - start))
+    problems = []
+    hashes = []
+    for side, (code, seconds) in enumerate(results):
+        who = 'PC %d (pads %s)' % (side + 1, ' '.join(str(p) for p in pcs[side]))
+        err = read(os.path.join(folder, 'side%d.err' % side))
+        rollbacks = re.search(r'netplay: \d+ frames; (\d+) rollbacks, (\d+) frames run again, the longest (\d+)', err)
+        print('port_net: four: %s: %s: exit %s, %.0f s%s' % (
+            label, who, code, seconds, '; %s rollbacks, %s frames run again, the longest %s' % rollbacks.groups()
+            if rollbacks else ''), flush=True)
+        for line in err.split('\n'):
+            if line.startswith(('session: begun', 'session: 4 players', 'netplay: 4 pads', 'netplay: the other',
+                                'netplay: link ')):
+                print('    ' + line)
+        if 'DESYNC' in err:
+            problems.append('four: %s: %s found a desync' % (label, who))
+        if code != 0:
+            problems.append('four: %s: %s ended with %s (%s/side%d.err)' % (label, who, code, folder, side))
+        out_text = read(os.path.join(folder, 'side%d.out' % side))
+        printed = [name for name in FOUR_ORDER if 'cp %s ' % name in out_text]
+        wanted = 'fight' if leaver is not None else 'kill'
+        if wanted not in printed and not any(FOUR_ORDER.index(n) > FOUR_ORDER.index(wanted) for n in printed):
+            problems.append('four: %s: %s printed no checkpoint from `%s` on (%s)' % (label, who, wanted,
+                                                                                   ' '.join(printed) or 'none'))
+        else:
+            print('    checkpoints printed: %s' % ' '.join(printed))
+        if '%d players on %d PCs' % (4, len(pcs)) not in err:
+            problems.append('four: %s: %s did not say the session was of 4 players on %d PCs' % (label, who,
+                                                                                               len(pcs)))
+        if leaver is not None and side != leaver and '(player %d)' % (pcs[leaver][0]) not in err:
+            problems.append('four: %s: %s was not told that player %d left' % (label, who, pcs[leaver][0]))
+        hashes.append(hashes_of(err))
+    for card in ('card1.mcd', 'card2.mcd'):
+        if os.path.exists(os.path.join(folder, card)):
+            problems.append('four: %s: %s was written, and nothing of a session is' % (label, card))
+    common = sorted(set.intersection(*(set(h) for h in hashes)))
+    for side in range(1, len(pcs)):
+        differ = [f for f in sorted(set(hashes[0]) & set(hashes[side])) if hashes[0][f] != hashes[side][f]]
+        if differ:
+            problems.append('four: %s: PC %d\'s state hashes differ from the host\'s from frame %d' % (
+                label, side + 1, differ[0]))
+    if len(common) < (20 if leaver is not None else 60):
+        problems.append('four: %s: too few state hashes in common on all (%d)' % (label, len(common)))
+    if not problems:
+        print('port_net: four: %s: %d state hashes, the same on all %d programs, the last at frame %d: %s'
+              % (label, len(common), len(pcs), common[-1], hashes[0][common[-1]]), flush=True)
+    if leaver is None:
+        problems += check_four_replays(label, program, folder, len(pcs))
+    return problems
+
+
+def check_four_replays(label, program, folder, count):
+    """The fight of four as every machine kept it: one replay each, the same
+    inputs (all four pads), views and hashes on all, and each played back
+    by the headless program with every hash the one recorded."""
+    import port_replay
+    problems = []
+    files = []
+    for side in range(count):
+        replays = os.path.join(folder, 'side%d-replays' % side)
+        names = sorted(f for f in os.listdir(replays) if f.endswith('.rbr')) if os.path.isdir(replays) else []
+        files.append([os.path.join(replays, name) for name in names])
+    if any(len(f) != 1 for f in files):
+        return ['four: %s: the machines kept %s replays, not one each' % (label, [len(f) for f in files])]
+    first = port_replay.read_replay(files[0][0])
+    for side in range(1, count):
+        other = port_replay.read_replay(files[side][0])
+        for chunk in ('INPT', 'HASH', 'VIEW'):
+            if first[0].get(chunk) != other[0].get(chunk):
+                problems.append('four: %s: PC 1\'s and PC %d\'s replays: their %s differ' % (label, side + 1, chunk))
+        if first[1].get('start_hash') != other[1].get('start_hash'):
+            problems.append('four: %s: PC %d\'s replay starts otherwise' % (label, side + 1))
+    for paths in files:
+        code, said = port_replay.check_replay(program, paths[0], [])
+        if code != 0:
+            problems.append('four: %s: %s: %s' % (label, paths[0], said))
+    if not problems:
+        print('port_net: four: %s: the fight kept as a replay on all %d machines, the same on all, each played '
+              'back with every hash the same (%s)' % (label, count, files[0][0]), flush=True)
+    return problems
+
+
 # A session's Crew match with the rule first (docs/PORT.md, "Match rules",
 # "The rule first"), begun in the running program (--session-at) with
 # ReBushido's top menu (--menu rebushido): the host's pad turns the rule
@@ -1579,6 +1834,10 @@ def run_checks(args, base):
         if args.what == 'inprocess':
             problems += check_inprocess('%d-bit' % bits, program, args, base + 10 * n)
             continue
+        if args.what == 'four':
+            for k, case in enumerate(FOUR_CASES):
+                problems += check_four('%d-bit-%s' % (bits, case), program, args, base + 8 * k, case)
+            continue
         if args.what == 'session':
             problems += check_session('%d-bit' % bits, program, args, (ports[0] + 10, ports[1] + 10), False)
             if not args.stress:
@@ -1692,7 +1951,7 @@ def run_all(args):
 def main():
     global PINNED
     ap = argparse.ArgumentParser(description='Two programs of the port playing each other over UDP on this PC.')
-    ap.add_argument('what', choices=('link', 'rollback', 'session', 'window', 'inprocess', 'all'),
+    ap.add_argument('what', choices=('link', 'rollback', 'session', 'window', 'inprocess', 'four', 'all'),
                     help="what they play: session is a session's headless programs, window the window's, "
                     "inprocess sessions begun in the running program; all of them at once (make port-net), "
                     "each with ports of its own")
@@ -1721,7 +1980,8 @@ def main():
     Pauser.pause_ms = args.pause
     rollback = args.what != 'link'
     if args.latency is None:
-        args.latency = {'link': 0, 'rollback': 100, 'session': 100, 'window': 60, 'inprocess': 60}[args.what]
+        args.latency = {'link': 0, 'rollback': 100, 'session': 100, 'window': 60, 'inprocess': 60,
+                        'four': 100}[args.what]
     if args.loss is None:
         args.loss = 5 if rollback else 0
     if args.cpus:

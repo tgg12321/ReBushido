@@ -242,6 +242,8 @@ typedef struct {
     const char *punch_to; /* host: the other player's address, or NULL */
     s32 delay;
     s32 portmap; /* the host asks its router for its port */
+    s32 players; /* host: 2, or 4 (docs/NETPLAY.md, section 18) */
+    s32 pcs;     /* ... on 4 PCs, or two on each of 2 */
 } PortOnlineStart;
 
 /* NULL, or what is wrong, in a player's words. */

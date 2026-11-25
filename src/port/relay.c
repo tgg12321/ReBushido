@@ -27,10 +27,13 @@
 #include "port_room.h"
 #include "bb2.h"
 
-/* 2: rooms of several (docs/NETPLAY.md, section 16); a server of 1 says
- * VERSION to this program, and this one's to one of 1 */
-#define RELAY_VERSION 3
+/* 2: rooms of several (docs/NETPLAY.md, section 16); 3: the ranked ladder
+ * (section 17); 4: rooms of four, a seat a guest (section 18), and a
+ * feed of four pads. A server of another version says VERSION to this
+ * program, and this one's to one of another */
+#define RELAY_VERSION 4
 #define SALT_BYTES 16
+#define SEAT_KEY_BYTES 16
 #define KEY_BYTES 32
 #define CHALLENGE_BYTES 16
 #define NAME_BYTES 24
@@ -39,7 +42,7 @@
 #define CODE_FIELD 8
 #define ADDRESS_FIELD 20
 #define CANDIDATES_MAX 4
-#define HELLO_BYTES 208
+#define HELLO_BYTES 232
 #define STATE_BYTES 208
 #define PUNCH_BYTES 16
 #define ROOM_BYTES 92
@@ -64,6 +67,7 @@
 #define SALT_BYTE_SHIFT 24
 #define SALT_SEED 0x9E3779B9U
 #define SALT_CLOCK_SHIFT 16
+#define SEAT_SEED 0x2C1B3C6DU
 
 /* How often things are said, and how long the server is waited for. */
 #define HELLO_EVERY_MS 250
@@ -131,6 +135,10 @@ enum {
     HELLO_SECRET = HELLO_SALT + SALT_BYTES,
     HELLO_COUNT = HELLO_SECRET + KEY_BYTES,
     HELLO_CANDIDATES = HELLO_COUNT + WORD_BYTES,
+    /* version 4: a room of four's seat key, its players, the seat */
+    HELLO_SEAT_KEY = HELLO_CANDIDATES + CANDIDATES_MAX * ADDRESS_FIELD,
+    HELLO_PLAYERS = HELLO_SEAT_KEY + SEAT_KEY_BYTES,
+    HELLO_SEAT = HELLO_PLAYERS + 1,
 };
 
 /* STATE's fields. */
@@ -149,6 +157,7 @@ enum {
 /* ROOMS' locked byte: locked, and a room of several (section 16). */
 #define ROOM_LOCKED_BIT 0x01
 #define ROOM_GROUP_BIT 0x02
+#define ROOM_FOUR_BIT 0x04
 
 /* A room of ROOMS. */
 enum {
@@ -182,6 +191,11 @@ static struct {
     PortNetAddress mapped;
     u8 ticket[PORT_RELAY_TICKET_BYTES]; /* a room's match's */
     s32 has_ticket;
+    /* a room of four (section 18): the host's key for its seats, made as
+     * it opens the room; a guest's seat asked for (0: any) */
+    u8 seat_key[SEAT_KEY_BYTES];
+    s32 has_seat_key;
+    s32 seat;
     u32 rtt; /* the round trip to the server, as the meeting found it */
 } g_relay;
 
@@ -498,6 +512,8 @@ void port_SetRelayTicket(const u8 *ticket) {
     g_relay.has_ticket = 1;
 }
 
+void port_SetRelaySeat(s32 seat) { g_relay.seat = seat; }
+
 void port_SetRelayMapped(const PortNetAddress *mapped) {
     g_relay.mapped = *mapped;
     g_relay.has_mapped = 1;
@@ -630,7 +646,11 @@ static struct {
     u32 rtt6;
     char peer_name[PLAYER_BYTES + 1];
     char peer_setup[SETUP_BYTES + 1];
-} g_meet;
+} g_meets[PORT_NET_LINKS];
+
+/* Each link's meeting is its own (a host of four meets a guest a seat):
+ * the one of the link chosen. */
+#define g_meet (g_meets[port_NetLink()])
 
 /* This program's own candidates: its address on its network and its
  * IPv6 address where its socket is of every address, and the port the
@@ -694,6 +714,16 @@ static void port_SendHello(s32 role, s32 reset) {
     }
     for (i = 0; i < HELLO_BYTES; i++) {
         out[i] = 0;
+    }
+    if (role == PORT_SESSION_HOST && port_SessionPcs() == 4) {
+        /* a room of four: its seat key, and the seat this link hosts */
+        out[HELLO_PLAYERS] = PORT_RELAY_FOUR;
+        out[HELLO_SEAT] = (u8)(port_NetLink() + 1);
+        for (i = 0; i < SEAT_KEY_BYTES; i++) {
+            out[HELLO_SEAT_KEY + i] = g_relay.seat_key[i];
+        }
+    } else if (role != PORT_SESSION_HOST) {
+        out[HELLO_SEAT] = (u8)g_relay.seat;
     }
     port_NetHeader(out, KIND_HELLO, detail, RELAY_VERSION);
     port_PutText(out + HELLO_CODE, CODE_FIELD, g_relay.code);
@@ -794,7 +824,7 @@ static void port_RelayError(char *out, u32 room, s32 state) {
         break;
     case STATE_ROOM_FULL:
         port_RelayText(
-            out, room, "Room %s already has two players.", g_relay.code);
+            out, room, "Room %s already has all its players.", g_relay.code);
         break;
     case STATE_SERVER_FULL:
         port_RelayText(out, room,
@@ -877,9 +907,23 @@ s32 port_RelayMeet(s32 role, s32 again) {
     port_FormatNetAddress(&g_relay.server, server, sizeof(server));
     port_RelayText(
         status, sizeof(status), "Reaching the lobby server at %s", server);
-    if (role == PORT_SESSION_HOST && !again && !g_relay.has_ticket) {
-        /* (a room's match is met under the code its room gave it) */
+    if (role == PORT_SESSION_HOST && !again && !g_relay.has_ticket &&
+        port_NetLink() == 0) {
+        /* (a room's match is met under the code its room gave it, and a
+         * room of four's other seats under the first's) */
         g_relay.code[0] = 0;
+    }
+    if (role == PORT_SESSION_HOST && !g_relay.has_seat_key) {
+        /* a room of four's seats are the host's by this key: it only has
+         * to be hard to guess for the room's life */
+        u32 seed = port_HostTicks() ^ (port_NetClock() << SALT_CLOCK_SHIFT) ^
+                   SEAT_SEED;
+
+        for (i = 0; i < SEAT_KEY_BYTES; i++) {
+            seed = seed * SALT_MULTIPLY + SALT_ADD;
+            g_relay.seat_key[i] = (u8)(seed >> SALT_BYTE_SHIFT);
+        }
+        g_relay.has_seat_key = 1;
     }
     if (role == PORT_SESSION_HOST && !g_relay.has_key &&
         g_relay.password[0] != 0) {
@@ -900,6 +944,8 @@ s32 port_RelayMeet(s32 role, s32 again) {
         s32 got;
 
         port_RoomTick();
+        /* a host of four keeps its guests in while it meets the next */
+        port_SessionKeepOthers();
         if (port_SessionIsCanceled()) {
             port_Log("relay: the meeting was given up\n");
             return 0;
@@ -1169,6 +1215,9 @@ s32 port_RelayListRooms(
                 room->players = at[ROOM_PLAYERS];
                 room->locked = at[ROOM_LOCKED] & ROOM_LOCKED_BIT;
                 room->group = (at[ROOM_LOCKED] & ROOM_GROUP_BIT) != 0;
+                room->seats = (at[ROOM_LOCKED] & ROOM_FOUR_BIT) != 0
+                                  ? PORT_RELAY_FOUR
+                                  : 2;
                 /* the way through the server: this PC's round trip to
                  * it and the host's, about what a direct way costs at
                  * most */

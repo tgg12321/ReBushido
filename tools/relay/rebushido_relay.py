@@ -1742,6 +1742,22 @@ class Server:
 
     # --- time ---
 
+    def seat_alive(self, room, now):
+        """Whether a room of four's base has a seat (2 or 3) whose host still
+        says hello, or whose relay is still in use: the host meets its
+        guests one after another, and the room stays until it has met
+        them all."""
+        if room.base is not None or not room.seats:
+            return False
+        for seat in room.seats.values():
+            if seat.mode in (S_WAITING, S_PUNCH) and now - seat.host_hello <= self.o.waiting_timeout:
+                return True
+            if seat.mode == S_RELAYED and now - seat.last_datagram <= self.o.relayed_timeout:
+                return True
+            if seat.mode in (S_DIRECT4, S_DIRECT6) and now - seat.last_hello <= self.o.direct_timeout:
+                return True
+        return False
+
     def tick(self, now):
         self.group_tick(now)
         self.ranked_safely(self.ladder.tick, now)
@@ -1749,6 +1765,11 @@ class Server:
             if self.rooms.get(room.key) is not room:
                 continue  # a seat removed with its room
             self.decide(room, now)
+            if self.seat_alive(room, now):
+                # a room of four's first seat is kept while its host still
+                # meets its other seats' guests: the room is listed, and
+                # its seats are its
+                continue
             if room.mode in (S_WAITING, S_PUNCH):
                 if now - room.host_hello > self.o.waiting_timeout:
                     self.remove(room, "host gone")

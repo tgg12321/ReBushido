@@ -276,6 +276,11 @@ u32 port_MatchBits(void) {
            (u32)g_port_match_asked.teams << MATCH_TEAMS_SHIFT;
 }
 
+u32 port_MatchBitsTeams(u32 bits, s32 teams) {
+    return (bits & ~((u32)MATCH_BYTE << MATCH_TEAMS_SHIFT)) |
+           (u32)teams << MATCH_TEAMS_SHIFT;
+}
+
 /* The rule as it was before a ranked match held the ladder's
  * (online.c), put back after. */
 static PortMatchAsked g_port_match_kept;

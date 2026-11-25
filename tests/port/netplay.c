@@ -1,5 +1,5 @@
 /* Netplay's state hashes: the other's compared with this program's only once
- * both are final. */
+ * both are final; and a host of four passing each guest's inputs on. */
 /* Rollback netplay (src/port/netplay.c; docs/NETPLAY.md, section 12)
  * prints and sends a state hash every 30 frames once both pads' inputs
  * before it are known, and stops on a hash of the other's that is not its
@@ -38,7 +38,8 @@ static u32 g_test_desyncs;
 static u32 g_test_sessions;
 
 static u64 test_Mix(u64 state, const PortInput *input) {
-    state ^= (u64)input->buttons[0] | ((u64)input->buttons[1] << 16);
+    state ^= (u64)input->buttons[0] | ((u64)input->buttons[1] << 16) |
+             ((u64)input->buttons[2] << 32) | ((u64)input->buttons[3] << 48);
     state *= 0x100000001B3ULL;
     return state ^ (state >> 29);
 }
@@ -93,10 +94,9 @@ void port_RoomWait(u32 wait_ms) { (void)wait_ms; }
 
 s32 port_FeedIsOn(void) { return 0; }
 
-void port_FeedFrame(u32 frame, u16 first, u16 second) {
+void port_FeedFrame(u32 frame, const u16 *pads) {
     (void)frame;
-    (void)first;
-    (void)second;
+    (void)pads;
 }
 
 void port_FeedHash(u32 frame, u64 hash) {
@@ -136,10 +136,9 @@ u32 port_WatchKnown(void) { return 0; }
 
 u32 port_WatchQuietMs(void) { return 0; }
 
-s32 port_WatchInput(u32 frame, u16 *first, u16 *second) {
+s32 port_WatchInput(u32 frame, u16 *pads) {
     (void)frame;
-    *first = 0;
-    *second = 0;
+    pads[0] = pads[1] = pads[2] = pads[3] = 0;
     return 0;
 }
 
@@ -156,11 +155,22 @@ u32 port_HostTicks(void) { return 0; }
 
 void *port_HostAllocate(u32 size) { return test_Alloc(size); }
 
+/* The last datagram sent on each of the links' sockets (TEST_SOCKET on). */
+#define TEST_SOCKET 10
+static u8 g_test_sent[PORT_NET_LINKS][PORT_NET_DATAGRAM_MAX];
+static u32 g_test_sent_bytes[PORT_NET_LINKS];
+
 s32 port_HostUdpSend(
     s32 socket, const PortNetAddress *to, const void *bytes, u32 count) {
-    (void)socket;
+    u32 i;
+
     (void)to;
-    (void)bytes;
+    if (socket >= TEST_SOCKET && socket < TEST_SOCKET + PORT_NET_LINKS) {
+        for (i = 0; i < count; i++) {
+            g_test_sent[socket - TEST_SOCKET][i] = ((const u8 *)bytes)[i];
+        }
+        g_test_sent_bytes[socket - TEST_SOCKET] = count;
+    }
     return (s32)count;
 }
 
@@ -218,6 +228,8 @@ static u64 test_TrueHash(u32 frame) {
     u32 i;
 
     input.buttons[0] = 0;
+    input.buttons[2] = 0;
+    input.buttons[3] = 0;
     for (i = 0; i < frame; i++) {
         input.buttons[1] = test_TheirInput(i);
         state = test_Mix(state, &input);
@@ -225,15 +237,20 @@ static u64 test_TrueHash(u32 frame) {
     return state;
 }
 
-/* A datagram of the other's: its inputs from `first` to before `end`, and
- * its last final hash, of `hashed` (0 for none). */
-static void test_TheyMayTell(u32 first, u32 end, u32 hashed) {
+/* A datagram of link `link`'s: pad `pad`'s inputs from `first` to before
+ * `end` (`input` of each frame), its last final hash, `hash` of `hashed`
+ * (0 for none), and that it has `others` of every other pad's. */
+static void test_LinkTells(s32 link, s32 pad, u32 first, u32 end, u32 hashed,
+                           u64 hash, u16 (*input)(u32 frame), u32 others) {
     u8 in[PORT_NET_DATAGRAM_MAX];
-    u64 hash = hashed != 0 ? test_TrueHash(hashed) : 0;
+    u32 at = INPUT_FIRST_BLOCK;
     u32 i;
 
-    port_NetHeader(in, KIND_INPUT, 0, first);
-    port_NetPutWord(in + INPUT_ACK, TEST_RUN_TO + NETPLAY_DELAY_DEFAULT);
+    port_NetHeader(in, KIND_INPUT, 0, 0);
+    for (i = 0; i < NETPLAY_PADS; i++) {
+        port_NetPutWord(
+            in + INPUT_HAS + i * WORD_BYTES, (s32)i == pad ? end : others);
+    }
     port_NetPutWord(in + INPUT_HASH_FRAME, hashed);
     port_NetPutWord(in + INPUT_HASH, (u32)hash);
     port_NetPutWord(in + INPUT_HASH + WORD_BYTES, (u32)(hash >> WORD_BITS));
@@ -242,14 +259,26 @@ static void test_TheyMayTell(u32 first, u32 end, u32 hashed) {
     port_NetPutWord(in + INPUT_STAMP, 0);
     port_NetPutWord(in + INPUT_ECHO, 0);
     port_NetPutWord(in + INPUT_HELD, 0);
-    in[INPUT_COUNT] = (u8)(end - first);
-    in[INPUT_COUNT + 1] = 0;
+    port_NetPutWord(in + INPUT_BLOCKS, 1);
+    in[at + BLOCK_PAD] = (u8)pad;
+    in[at + BLOCK_PAD + 1] = 0;
+    in[at + BLOCK_COUNT] = (u8)(end - first);
+    in[at + BLOCK_COUNT + 1] = 0;
+    port_NetPutWord(in + at + BLOCK_FIRST, first);
     for (i = first; i < end; i++) {
-        in[INPUT_FIRST + HALF_BYTES * (i - first)] = (u8)test_TheirInput(i);
-        in[INPUT_FIRST + HALF_BYTES * (i - first) + 1] =
-            (u8)(test_TheirInput(i) >> BITS_PER_BYTE);
+        in[at + BLOCK_INPUTS + HALF_BYTES * (i - first)] = (u8)input(i);
+        in[at + BLOCK_INPUTS + HALF_BYTES * (i - first) + 1] =
+            (u8)(input(i) >> BITS_PER_BYTE);
     }
-    port_NetplayTake(in, INPUT_FIRST + HALF_BYTES * (end - first));
+    port_NetplayTake(
+        link, in, (s32)(at + BLOCK_INPUTS + HALF_BYTES * (end - first)));
+}
+
+/* ... the other program's of a session of two: the second pad's. */
+static void test_TheyMayTell(u32 first, u32 end, u32 hashed) {
+    test_LinkTells(
+        0, 1, first, end, hashed, hashed != 0 ? test_TrueHash(hashed) : 0,
+        test_TheirInput, TEST_RUN_TO + NETPLAY_DELAY_DEFAULT);
 }
 
 /* ---- the session, step by step as port_RunNetplay takes it ---- */
@@ -261,20 +290,8 @@ static void test_Begin(void) {
     g_test_game = 0;
     g_test_blank = 0;
     g_test_desyncs = 0;
+    port_ResetNetplay();
     port_SetNetplay(0, NETPLAY_DELAY_DEFAULT);
-    g_np_frame = 0;
-    g_np_local_count = 0;
-    g_np_remote_count = 0;
-    g_np_peer_has = 0;
-    g_np_is_wrong = 0;
-    g_np_last_final.frame = 0;
-    g_np_last_final.hash = 0;
-    g_np_hashes_compared = 0;
-    for (i = 0; i < NETPLAY_HASHES; i++) {
-        g_np_hashes[i].frame = 0;
-        g_np_peer_hashes[i].frame = 0;
-        g_np_compared[i] = 0;
-    }
     for (i = 0; i < NETPLAY_SAVES; i++) {
         if (g_np_saves[i] == NULL) {
             g_np_saves[i] = port_HostAllocate(port_StateSize());
@@ -305,7 +322,7 @@ static void test_RunAhead(void) {
     while (g_np_frame < TEST_RUN_TO) {
         test_Turn();
     }
-    CHECK_EQ(g_np_remote_count, TEST_KNOWN);
+    CHECK_EQ(g_np_count[1], TEST_KNOWN);
     CHECK(g_np_hashes[TEST_HASHED / NETPLAY_HASH_EVERY].frame == TEST_HASHED);
     CHECK(g_np_hashes[TEST_HASHED / NETPLAY_HASH_EVERY].hash !=
           test_TrueHash(TEST_HASHED));
@@ -321,7 +338,125 @@ static void test_CatchUp(void) {
     CHECK(g_np_last_final.hash == test_TrueHash(TEST_HASHED));
     CHECK_EQ(g_np_hashes_compared, 1);
     CHECK_EQ(g_test_desyncs, 0);
-    CHECK_EQ(g_np_rollbacks, ++g_test_sessions);
+    CHECK_EQ(g_np_rollbacks, 1);
+    g_test_sessions++;
+}
+
+/* ---- a host of four (docs/NETPLAY.md, section 18) ---- */
+
+/* The third player's buttons (the second guest's, on link 1), and the
+ * fourth's (link 2), which change at TEST_CHANGE. */
+static u16 test_ThirdInput(u32 frame) { return (u16)(frame & 0x0F); }
+
+static u16 test_FourthInput(u32 frame) {
+    return frame >= TEST_CHANGE ? TEST_PRESS : 0;
+}
+
+static u16 test_NoInput(u32 frame) {
+    (void)frame;
+    return 0;
+}
+
+/* A pad's block in a datagram sent: its count and its first frame, or
+ * FALSE where it has none. */
+static s32 test_SentBlock(const u8 *out, u32 bytes, s32 pad, u32 *count,
+                          u32 *first, const u8 **inputs) {
+    u32 at = INPUT_FIRST_BLOCK;
+    u32 blocks = port_NetGetWord(out + INPUT_BLOCKS);
+    u32 i;
+
+    for (i = 0; i < blocks && at + BLOCK_INPUTS <= bytes; i++) {
+        u32 n = (u32)out[at + BLOCK_COUNT] |
+                ((u32)out[at + BLOCK_COUNT + 1] << BITS_PER_BYTE);
+
+        if (out[at + BLOCK_PAD] == pad) {
+            *count = n;
+            *first = port_NetGetWord(out + at + BLOCK_FIRST);
+            *inputs = out + at + BLOCK_INPUTS;
+            return TRUE;
+        }
+        at += BLOCK_INPUTS + HALF_BYTES * n;
+    }
+    return FALSE;
+}
+
+/* The host of four: its pad the first, a link for each guest. Each pad's
+ * inputs from its own link only; each link sent every pad its program
+ * does not play (the host's own and the other guests', passed on); a
+ * wrong guess of one guest's pad rolls the session back; and a hash final
+ * only once every pad's inputs before it are known. */
+static void test_HostOfFour(void) {
+    static const s32 sources[NETPLAY_PADS] = {-1, 0, 1, 2};
+    const u8 *inputs;
+    u32 count;
+    u32 first;
+    s32 link;
+    u32 i;
+
+    test_Begin();
+    port_SetNetplayPads(NETPLAY_PADS, sources);
+    CHECK_EQ(g_np_links, 3);
+    CHECK_EQ(g_np_local_mask, 1);
+    for (link = 0; link < PORT_NET_LINKS; link++) {
+        g_port_net_links[link].socket = TEST_SOCKET + link;
+        g_port_net_links[link].has_peer = 1;
+        g_port_net_links[link].is_fixed = 1;
+    }
+    /* the second's, the third's and the fourth's inputs to TEST_KNOWN */
+    test_LinkTells(0, 1, 0, TEST_KNOWN, 0, 0, test_NoInput, 0);
+    test_LinkTells(1, 2, 0, TEST_KNOWN, 0, 0, test_ThirdInput, 0);
+    test_LinkTells(2, 3, 0, TEST_KNOWN, 0, 0, test_NoInput, 0);
+    CHECK_EQ(g_np_count[2], TEST_KNOWN);
+    CHECK_EQ(port_NetplayKnown(), 0);
+    while (g_np_frame < TEST_RUN_TO) {
+        test_Turn();
+    }
+    CHECK_EQ(port_NetplayKnown(), TEST_KNOWN);
+    /* nothing final past what all four have */
+    CHECK_EQ(g_np_last_final.frame, 0);
+    /* link 0 is sent the host's pad, the third's and the fourth's, from
+     * what it has (none: its acknowledgement said so), and never its own */
+    port_NetplaySendTo(0);
+    CHECK(!test_SentBlock(
+        g_test_sent[0], g_test_sent_bytes[0], 1, &count, &first, &inputs));
+    CHECK(test_SentBlock(
+        g_test_sent[0], g_test_sent_bytes[0], 2, &count, &first, &inputs));
+    CHECK_EQ(first, 0);
+    CHECK_EQ(count, TEST_KNOWN);
+    for (i = 0; i < count; i++) {
+        CHECK_EQ(inputs[HALF_BYTES * i], test_ThirdInput(i));
+    }
+    CHECK(test_SentBlock(
+        g_test_sent[0], g_test_sent_bytes[0], 0, &count, &first, &inputs));
+    CHECK_EQ(count, g_np_local_count);
+    /* the third's inputs sent on link 0, which is not its: not taken */
+    test_LinkTells(0, 2, 0, TEST_RUN_TO + 1, 0, 0, test_NoInput, 0);
+    CHECK_EQ(g_np_count[2], TEST_KNOWN);
+    /* the fourth's inputs past TEST_KNOWN, unlike the guess: a rollback,
+     * and the frame of TEST_HASHED final once every pad has come */
+    test_LinkTells(
+        2, 3, TEST_KNOWN, TEST_RUN_TO + 1, 0, 0, test_FourthInput, 0);
+    CHECK(g_np_is_wrong);
+    CHECK_EQ(g_np_wrong_from, TEST_CHANGE);
+    test_LinkTells(0, 1, TEST_KNOWN, TEST_RUN_TO + 1, 0, 0, test_NoInput, 0);
+    test_Turn();
+    CHECK_EQ(g_np_rollbacks, 1);
+    CHECK_EQ(g_np_last_final.frame, 0);
+    test_LinkTells(1, 2, TEST_KNOWN, TEST_RUN_TO + 1, 0, 0, test_ThirdInput, 0);
+    test_Turn();
+    CHECK_EQ(g_np_last_final.frame, TEST_HASHED);
+    /* a guest's goodbye: the pad it said its player had */
+    {
+        u8 bye[PORT_NET_HEADER_BYTES];
+
+        port_NetHeader(bye, KIND_BYE, 3 + 1, 0);
+        port_NetplayTake(2, bye, sizeof(bye));
+        CHECK(g_np_link[2].left);
+        CHECK_EQ(port_NetplayLeftPad(), 3);
+    }
+    for (link = 0; link < PORT_NET_LINKS; link++) {
+        g_port_net_links[link].socket = -1;
+    }
 }
 
 void test_Main(void) {
@@ -347,4 +482,8 @@ void test_Main(void) {
     test_TheyMayTell(TEST_KNOWN, TEST_RUN_TO + 1, 0);
     CHECK_EQ(g_test_desyncs, 0);
     test_CatchUp();
+    CHECK_EQ(g_test_sessions, 3);
+
+    /* four players, the host passing each guest's inputs on */
+    test_HostOfFour();
 }

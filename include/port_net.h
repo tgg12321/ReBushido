@@ -65,6 +65,24 @@ extern void port_StopNet(void);
  * where it chose: 1, or 0. */
 extern s32 port_NetIsV6(void);
 extern s32 port_GetNetBound(PortNetAddress *at);
+/* Links: a socket and the one program it talks to. A guest of a session
+ * has one, to its host; the host of a session of four players on four PCs
+ * one for each guest, each its own socket (docs/NETPLAY.md, section 18).
+ * Every call above and below is of the link chosen, the first unless
+ * another is; port_StopNet closes every link and chooses the first. */
+#define PORT_NET_LINKS 3
+extern void port_NetSelectLink(s32 link);
+extern s32 port_NetLink(void);
+/* The link chosen talks to its one program alone (port_FixNetPeer). */
+extern s32 port_NetIsFixed(void);
+/* A program's pads of a session, a bit each, in words for the log: `1`,
+ * `1 & 3`. */
+extern const char *port_NetPadsText(u32 mask);
+/* A datagram for a link that is fixed to another program: given here
+ * (the host's session answers a second guest at its first port), or
+ * dropped where NULL. */
+extern void (*g_port_net_stranger_hook)(
+    const PortNetAddress *from, const u8 *bytes, s32 count);
 /* The link cable's side (--link-side): 0, the first player, or 1. */
 extern void port_SetLinkSide(s32 side);
 
@@ -105,6 +123,17 @@ extern void port_PrintNetReport(void);
  * presses count `delay` frames on (--net-delay); the other program plays
  * the other pad. */
 extern void port_SetNetplay(s32 pad, u32 delay);
+/* A session's pads (2 or 4) and where each pad's inputs come from: -1
+ * this program (its player or players), or the link they come in on
+ * (net.c). The host of four players on four PCs has a link for each
+ * guest and passes each one's inputs on to the others (docs/NETPLAY.md,
+ * section 18); a guest has one link, to the host. port_SetNetplay is two
+ * pads, one link. */
+extern void port_SetNetplayPads(s32 pads, const s32 *sources);
+extern s32 port_NetplayPads(void);
+/* The pad whose player left the session (another program's goodbye says
+ * it), or -1. */
+extern s32 port_NetplayLeftPad(void);
 extern s32 port_IsNetplayOn(void);
 /* Where the other program has gone, this one plays on alone instead of
  * ending (the window's: a player is not thrown out of the game). */
@@ -157,7 +186,9 @@ enum {
 
 typedef struct {
     s32 is_on;
-    s32 pad;        /* 0 or 1 */
+    s32 pad;        /* 0 to 3: the first this program plays */
+    s32 pads;       /* the session's, 2 or 4 */
+    u32 local_mask; /* this program's pads, a bit each */
     s32 state;      /* PORT_NETPLAY_... */
     u32 delay;      /* frames */
     u32 ping_ms;    /* the round trip, smoothed */
@@ -245,6 +276,16 @@ extern void port_SetSessionSeed(u32 seed);
  * in the state (port_SessionResult). */
 #define PORT_SESSION_RULE_ONE_MATCH 2U
 extern void port_SetSessionRules(u32 rules);
+/* The host's --players: pads 2 or 4, on pcs PCs (4 with 4: a PC each,
+ * the host meeting three guests and passing each one's inputs to the
+ * others; 4 with 2: two players on each of two PCs, each PC a team;
+ * docs/NETPLAY.md, section 18). A guest takes them from the welcome. */
+extern void port_SetSessionPlayers(s32 pads, s32 pcs);
+extern s32 port_SessionPcs(void);
+extern s32 port_SessionPads(void);
+/* While the host meets one guest (relay.c's loop too): the others that
+ * are in kept in, told of the lobby. */
+extern void port_SessionKeepOthers(void);
 /* Where the game went back to its top menu in a session whose rule says
  * that ends it, or its match was decided: the frame and one, or 0 (the
  * state's, top_menu.c). */
@@ -290,7 +331,9 @@ typedef struct {
     s32 role;  /* PORT_SESSION_... */
     s32 phase; /* PORT_SESSION_PHASE_... */
     s32 percent;
-    s32 peer_ready;
+    s32 peer_ready; /* the other's (the host's), or every guest's */
+    s32 players;    /* the session's: 2 or 4 */
+    s32 here;       /* of them, here with the cards (the host's lobby) */
     char name[PORT_SESSION_NAME_BYTES];
     char peer_name[PORT_SESSION_NAME_BYTES];
     char setup[PORT_SETUP_CODE_BYTES];
@@ -403,6 +446,11 @@ extern void port_RelayHmac(
  * code (port_SetRelay's), let in by the ticket the room gave its two
  * players, with no password. */
 extern void port_SetRelayTicket(const u8 *ticket);
+/* A room of four (lobby version 4; docs/NETPLAY.md, section 18): the
+ * host's links each host a seat of it, a guest each; a guest may ask for
+ * a seat (a room's match's: its place in the match, 1 to 3), 0 any. */
+#define PORT_RELAY_FOUR 4
+extern void port_SetRelaySeat(s32 seat);
 /* A socket of its own for the server at `server`, out of a session: on
  * this PC alone where the server is. The host's, or -1. */
 extern s32 port_RelayOpenSocket(const PortNetAddress *server);
@@ -434,6 +482,7 @@ typedef struct {
     s32 players; /* of a room of several, its members */
     s32 locked;
     s32 group; /* a room of several (section 16) */
+    s32 seats; /* its players at most: 2, or a room of four's 4 */
     u32 ping;  /* ms: this PC's round trip to the server and its host's */
     u8 salt[PORT_RELAY_SALT_BYTES];
     u32 age; /* seconds */

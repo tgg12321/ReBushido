@@ -293,6 +293,9 @@ extern s32 port_GetMatchRule(void);
 extern s32 port_GetMatchCount(void);
 /* in the session's word: the rule in the low byte, the number above */
 extern u32 port_MatchBits(void);
+/* its with its teams 	eams (PORT_TEAMS_...): a session of four
+ * players' match is two on two, every fighter a player's (session.c). */
+extern u32 port_MatchBitsTeams(u32 bits, s32 teams);
 extern void port_HoldMatch(u32 bits);
 /* The rule and whether it is held, kept, and put back: a ranked match
  * holds the ladder's rule (online.c), and the player's comes back after. */
