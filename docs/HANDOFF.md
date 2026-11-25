@@ -64,8 +64,8 @@ lessons still holds unless this section says otherwise.
 - `python tools/baseline.py --store` on a quiet machine: main's stored
   baselines are about 70 commits old, so `--against main` compares with
   `d8466884f` and the bench calls its baseline stale.
-- ROADMAP 24's gaps: a CPU taking over a player who leaves; different
-  characters per team.
+- ROADMAP 24's gap: different characters per team (the CPU taking over a
+  player who leaves is done: NETPLAY.md, section 19).
 - 17's leftovers: foliage in the sun's maps, gulls over the ship, more
   pieces as meshes, the shafts drawn over a fighter in front of them.
 - ROADMAP 18's arenas; replay export and dispute tooling; the kanabo's

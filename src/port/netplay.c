@@ -37,7 +37,15 @@
  * it, sends it with its inputs, and stops on a hash of another's that is
  * not its own (a desync). The host holds each guest's to its own, and a
  * guest the host's: every program's to every other's, by way of the
- * host. */
+ * host.
+ *
+ * A guest of four PCs who leaves a fight of four gives his fighter to the
+ * CPU (section 19): the host, told or hearing nothing of him, plays his
+ * pad on from the first frame of it it does not have as INPUT_CPU, which
+ * it passes on with its own as any input; every program that comes to
+ * that frame, the host's own among them, runs it again with the pad the
+ * CPU's (PORT_PAD_CPU), and the game makes the fighter a CPU there
+ * (duo.c). The session goes on for the others. */
 #include "common.h"
 #include "port_disc.h"
 #include "port_host.h"
@@ -143,6 +151,14 @@ enum { BLOCK_PAD = 0, BLOCK_COUNT = 2, BLOCK_FIRST = 4, BLOCK_INPUTS = 8 };
  * pad the session does not have). */
 #define SOURCE_LOCAL (-1)
 #define SOURCE_NONE (-2)
+/* ... or the CPU's: the host plays on the pad of a guest who left a
+ * session of four (docs/NETPLAY.md, section 19). */
+#define SOURCE_CPU (-3)
+
+/* A pad's input as netplay keeps, sends and feeds it from the frame the
+ * CPU plays the pad on. No pad holds every button at once; a local pad
+ * that did is let go of Select. */
+#define INPUT_CPU 0xFFFF
 
 typedef struct {
     u32 frame;
@@ -169,6 +185,7 @@ typedef struct {
     s32 left;     /* said goodbye */
     s32 left_pad; /* the pad whose player it said had gone, or -1 */
     s32 desync;   /* ... on a desync */
+    s32 taken;    /* its pads given to the CPU: the session goes on */
 } PortNetplayLink;
 
 static s32 g_np_on;
@@ -201,6 +218,11 @@ static u32 g_np_wrong_from;
 static s32 g_np_is_wrong;
 /* Another has ended (its link said goodbye). */
 static s32 g_np_peer_left;
+/* The pads the CPU plays (a bit each), the last it took and when this
+ * program learned of it, for the window's line. */
+static u32 g_np_cpu_mask;
+static s32 g_np_cpu_pad = -1;
+static u32 g_np_cpu_at;
 /* The state at the boundary of each of the last frames, and the blank
  * the game was at there. */
 static u8 *g_np_saves[NETPLAY_SAVES];
@@ -341,12 +363,15 @@ s32 port_NetplayLeftPad(void) {
     s32 link;
 
     for (link = 0; link < g_np_links; link++) {
-        if (g_np_link[link].left && g_np_link[link].left_pad >= 0) {
+        if (g_np_link[link].left && !g_np_link[link].taken &&
+            g_np_link[link].left_pad >= 0) {
             return g_np_link[link].left_pad;
         }
     }
     return -1;
 }
+
+u32 port_NetplayCpuPads(void) { return g_np_cpu_mask; }
 
 static void port_NetplayClearLink(PortNetplayLink *link) {
     u32 i;
@@ -375,6 +400,9 @@ void port_ResetNetplay(void) {
     g_np_wrong_from = 0;
     g_np_is_wrong = 0;
     g_np_peer_left = 0;
+    g_np_cpu_mask = 0;
+    g_np_cpu_pad = -1;
+    g_np_cpu_at = 0;
     for (pad = 0; pad < NETPLAY_PADS; pad++) {
         g_np_count[pad] = 0;
         for (i = 0; i < NETPLAY_INPUTS; i++) {
@@ -600,6 +628,20 @@ static void port_NetplayTakeTime(PortNetplayLink *from, const u8 *in) {
     from->their_ahead_now = (s32)port_NetGetWord(in + INPUT_AHEAD);
 }
 
+/* Pad `pad`'s player has left, and the CPU plays it from `frame` on: for
+ * the log, and the window's line. */
+static void port_NetplayCpuNoted(s32 pad, u32 frame, const char *how) {
+    if (g_np_cpu_mask & (1U << pad)) {
+        return;
+    }
+    g_np_cpu_mask |= 1U << pad;
+    g_np_cpu_pad = pad;
+    g_np_cpu_at = port_NetClock();
+    port_Log("netplay: player %d %s: the CPU plays his fighter from frame "
+             "%u on (player %d); the session goes on\n",
+             pad + 1, how, frame, pad + 1);
+}
+
 /* One pad's inputs of a datagram: those that are new, and a wrong guess
  * among them noted. */
 static void port_NetplayTakePad(s32 pad, u32 first, u32 count, const u8 *at) {
@@ -616,11 +658,17 @@ static void port_NetplayTakePad(s32 pad, u32 first, u32 count, const u8 *at) {
                       (at[HALF_BYTES * i + 1] << BITS_PER_BYTE));
         g_np_inputs[pad][frame & NETPLAY_INPUT_MASK] = input;
         g_np_count[pad]++;
+        if (input == INPUT_CPU) {
+            port_NetplayCpuNoted(pad, frame, "has left the session");
+        }
         /* a frame already run on a guess that was not this, where the
-         * frame's input depended on what differs */
+         * frame's input depended on what differs, or where the guess
+         * and the input differ in whose the pad is */
         if (frame < g_np_frame &&
-            ((g_np_guessed[pad][frame & NETPLAY_INPUT_MASK] ^ input) &
-             g_np_used[frame & NETPLAY_INPUT_MASK]) != 0 &&
+            (((g_np_guessed[pad][frame & NETPLAY_INPUT_MASK] ^ input) &
+              g_np_used[frame & NETPLAY_INPUT_MASK]) != 0 ||
+             (g_np_guessed[pad][frame & NETPLAY_INPUT_MASK] == INPUT_CPU) !=
+                 (input == INPUT_CPU)) &&
             (!g_np_is_wrong || frame < g_np_wrong_from)) {
             g_np_wrong_from = frame;
             g_np_is_wrong = 1;
@@ -642,6 +690,10 @@ static void port_NetplayTake(s32 link, const u8 *in, s32 bytes) {
     s32 pad;
 
     if (kind == KIND_BYE) {
+        if (from->taken) {
+            /* (the rest of a goodbye already taken: the CPU plays on) */
+            return;
+        }
         from->left = 1;
         from->left_pad =
             (detail & BYE_PAD_MASK) != 0 ? (detail & BYE_PAD_MASK) - 1 : -1;
@@ -836,21 +888,34 @@ static void port_NetplaySave(u32 frame) {
     }
 }
 
+/* A pad's input of a frame as the game takes it: the CPU's pad
+ * answers, holding nothing (PORT_PAD_CPU). */
+static void port_NetplayPutPad(s32 pad, u16 input) {
+    if (input == INPUT_CPU) {
+        g_np_input.buttons[pad] = 0;
+        g_np_input.present[pad] = PORT_PAD_CPU;
+        return;
+    }
+    g_np_input.buttons[pad] = input;
+    g_np_input.present[pad] = 1;
+}
+
 /* The frame's input of every pad of the session into g_np_input. */
 static void port_NetplayFrameInput(u32 frame) {
     s32 pad;
 
     for (pad = 0; pad < NETPLAY_PADS; pad++) {
+        u16 input;
+
         if (pad >= g_np_pads) {
             g_np_input.buttons[pad] = 0;
             g_np_input.present[pad] = 0;
             continue;
         }
-        g_np_input.buttons[pad] = port_NetplayPadInput(pad, frame);
-        g_np_input.present[pad] = 1;
+        input = port_NetplayPadInput(pad, frame);
+        port_NetplayPutPad(pad, input);
         if (g_np_source[pad] >= 0 && frame >= g_np_count[pad]) {
-            g_np_guessed[pad][frame & NETPLAY_INPUT_MASK] =
-                g_np_input.buttons[pad];
+            g_np_guessed[pad][frame & NETPLAY_INPUT_MASK] = input;
         }
     }
 }
@@ -973,6 +1038,15 @@ static void port_NetplayKeepLocal(void) {
         for (pad = 0; pad < NETPLAY_PADS; pad++) {
             u16 buttons;
 
+            if (g_np_source[pad] == SOURCE_CPU) {
+                /* the host plays the CPU's pad on (section 19) */
+                if (g_np_local_count >= g_np_count[pad]) {
+                    g_np_inputs[pad][g_np_local_count & NETPLAY_INPUT_MASK] =
+                        INPUT_CPU;
+                    g_np_count[pad] = g_np_local_count + 1;
+                }
+                continue;
+            }
             if (g_np_source[pad] != SOURCE_LOCAL) {
                 continue;
             }
@@ -985,11 +1059,83 @@ static void port_NetplayKeepLocal(void) {
                 buttons = read.buttons[nth];
             }
             nth++;
+            if (buttons == INPUT_CPU) {
+                buttons = (u16)(buttons & ~PADselect);
+            }
             g_np_inputs[pad][g_np_local_count & NETPLAY_INPUT_MASK] = buttons;
             g_np_count[pad] = g_np_local_count + 1;
         }
         g_np_local_count++;
     }
+}
+
+/* Whether the host gives the pads of link `link`, whose player has left
+ * or gone silent, to the CPU and plays on (docs/NETPLAY.md, section 19):
+ * a host of four PCs, in the middle of a fight of four, another guest
+ * still in, the leave no desync's. Otherwise the session ends for all, as
+ * it did. */
+static s32 port_NetplayMayTakeOver(s32 link) {
+    s32 others = 0;
+    s32 i;
+
+    if (g_np_links < 2 || g_np_watch || g_np_link[link].desync ||
+        g_np_link[link].taken || !port_DuoIsOn() ||
+        g_sys_screen != SCREEN_FIGHT_UPDATE || port_SessionResult() != 0) {
+        return FALSE;
+    }
+    for (i = 0; i < g_np_links; i++) {
+        others += i != link && !g_np_link[i].left;
+    }
+    return others > 0;
+}
+
+/* The host gives link `link`'s pads to the CPU: each from the first
+ * frame of it this program does not have, played on as INPUT_CPU and
+ * passed to the others with the rest; a frame already run past that on a
+ * guess is run again. */
+static void port_NetplayTakeOver(s32 link, const char *how) {
+    s32 pad;
+
+    g_np_link[link].taken = 1;
+    for (pad = 0; pad < g_np_pads; pad++) {
+        u32 from = g_np_count[pad];
+        u32 frame;
+
+        if (g_np_source[pad] != link) {
+            continue;
+        }
+        g_np_source[pad] = SOURCE_CPU;
+        for (frame = from; frame < g_np_local_count; frame++) {
+            g_np_inputs[pad][frame & NETPLAY_INPUT_MASK] = INPUT_CPU;
+        }
+        if (g_np_local_count > from) {
+            g_np_count[pad] = g_np_local_count;
+        }
+        if (from < g_np_frame && (!g_np_is_wrong || from < g_np_wrong_from)) {
+            g_np_wrong_from = from;
+            g_np_is_wrong = 1;
+        }
+        port_NetplayCpuNoted(pad, from, how);
+    }
+    g_np_peer_left = FALSE;
+    for (pad = 0; pad < g_np_links; pad++) {
+        g_np_peer_left |= g_np_link[pad].left && !g_np_link[pad].taken;
+    }
+}
+
+/* The host: each guest that has said goodbye given to the CPU, where it
+ * may be; TRUE if one was. */
+static s32 port_NetplayTakeOverLeavers(void) {
+    s32 taken = FALSE;
+    s32 link;
+
+    for (link = 0; link < g_np_links; link++) {
+        if (g_np_link[link].left && port_NetplayMayTakeOver(link)) {
+            port_NetplayTakeOver(link, "has left the session");
+            taken = TRUE;
+        }
+    }
+    return taken;
 }
 
 /* Who left, in words for the log. */
@@ -1054,7 +1200,28 @@ static void port_NetplayWait(s32 state, s32 (*enough)(void)) {
         s32 link;
 
         g_np_waits++;
-        if (now - from > NETPLAY_GIVE_UP_MS) {
+        for (link = 0; link < g_np_links; link++) {
+            PortNetplayLink *of = &g_np_link[link];
+
+            /* the host: a guest silent so long has gone, and the CPU
+             * plays on for him */
+            if (!of->left && of->has_stamp &&
+                now - of->stamp_at > NETPLAY_GIVE_UP_MS &&
+                port_NetplayMayTakeOver(link)) {
+                of->left = 1;
+                port_NetplayTakeOver(link, "has stopped answering");
+                from = now;
+            }
+        }
+        if (enough()) {
+            break;
+        }
+        /* (a guest of four waits on another guest by way of the host,
+         * who gives that one to the CPU: it gives up on the host's own
+         * silence alone) */
+        if (now - from > NETPLAY_GIVE_UP_MS &&
+            (g_np_pads <= 2 || g_np_links > 1 || !g_np_link[0].has_stamp ||
+             now - g_np_link[0].stamp_at > NETPLAY_GIVE_UP_MS)) {
             port_Log("netplay: nothing from the other program for %u "
                      "seconds\n",
                      NETPLAY_GIVE_UP_MS / MS_PER_SECOND);
@@ -1268,8 +1435,15 @@ s32 port_RunWatch(u32 frame) {
         port_ReplayBoundary();
         port_WatchInput(g_np_frame, pads);
         for (pad = 0; pad < NETPLAY_PADS; pad++) {
-            g_np_input.buttons[pad] = pad < g_np_pads ? pads[pad] : 0;
-            g_np_input.present[pad] = (u8)(pad < g_np_pads);
+            if (pad >= g_np_pads) {
+                g_np_input.buttons[pad] = 0;
+                g_np_input.present[pad] = 0;
+                continue;
+            }
+            if (pads[pad] == INPUT_CPU) {
+                port_NetplayCpuNoted(pad, g_np_frame, "has left the match");
+            }
+            port_NetplayPutPad(pad, pads[pad]);
         }
         port_SessionInput(g_np_frame, &g_np_input, &used);
         port_StepGame();
@@ -1284,7 +1458,7 @@ static s32 port_NetplayPeerGone(void) {
     s32 link;
 
     for (link = 0; link < g_np_links; link++) {
-        if (g_np_link[link].left) {
+        if (g_np_link[link].left && !g_np_link[link].taken) {
             return TRUE;
         }
     }
@@ -1330,6 +1504,11 @@ s32 port_RunNetplay(void) {
             g_np_load_waits++;
             port_NetplayWait(PORT_NETPLAY_LOADING, port_NetplayLoadIsShared);
         }
+        /* a guest gone, the CPU playing on for him: the waits again, with
+         * his pad no longer waited for */
+        if (g_np_peer_left && !g_np_ended && port_NetplayTakeOverLeavers()) {
+            continue;
+        }
         if (g_np_is_wrong && !g_np_ended) {
             port_NetplayRollBack();
         }
@@ -1337,8 +1516,10 @@ s32 port_RunNetplay(void) {
         port_NetplayFeed();
         /* (the session's own end first: another, ending there too, may
          * have said goodbye already) */
-        if (g_np_in_process && !g_np_ended && !g_np_is_wrong) {
-            /* a way back to the top menu, or a room's match decided,
+        if ((g_np_in_process || g_np_cpu_mask != 0) && !g_np_ended &&
+            !g_np_is_wrong) {
+            /* a way back to the top menu, or a room's match decided, or
+             * the match of a session with a CPU for a player who left,
              * taken on frames all have the inputs of, is the session's
              * end on all (session.c) */
             u32 left = port_SessionLeftAt();
@@ -1348,6 +1529,9 @@ s32 port_RunNetplay(void) {
                     port_Log("netplay: the match was decided at frame %u: "
                              "the session ends there\n",
                              left - 1);
+                    if (!g_np_in_process) {
+                        port_Quit(PORT_EXIT_OK);
+                    }
                     g_np_ended = PORT_NETPLAY_END_MATCH;
                 } else {
                     port_Log("netplay: the players went back to the top "
@@ -1373,6 +1557,11 @@ s32 port_RunNetplay(void) {
         if (g_np_ended) {
             return g_np_ended;
         }
+        /* never past the window: a wait cut short by a goodbye goes
+         * round again (the end above, or the CPU taking over) */
+        if (!port_NetplayInWindow()) {
+            continue;
+        }
         port_NetplayKeepTime();
         port_NetplayRunFrame();
     }
@@ -1397,7 +1586,7 @@ void port_GetNetplayStats(PortNetplayStats *stats) {
     for (link = 0; link < g_np_links; link++) {
         const PortNetplayLink *of = &g_np_link[link];
 
-        if (of->ping_ms > ping) {
+        if (of->ping_ms > ping && !of->taken) {
             ping = of->ping_ms;
         }
         if (g_np_ahead_count != 0 && link == 0) {
@@ -1433,6 +1622,12 @@ void port_GetNetplayStats(PortNetplayStats *stats) {
                 now - g_np_leave_asked_at <= NETPLAY_LEAVE_MS
             ? now - g_np_leave_asked_at + 1
             : 0;
+    stats->cpu_pad = g_np_cpu_pad;
+    stats->cpu_ms = g_np_cpu_pad >= 0 ? now - g_np_cpu_at : 0;
+    /* a guest of four PCs: one pad of four, one link (section 19) */
+    stats->cpu_on_leave =
+        g_np_pads > 2 && g_np_links == 1 && !g_np_watch && port_DuoIsOn() &&
+        (g_np_local_mask & (g_np_local_mask - 1)) == 0;
 }
 
 /* For a moment after this program ends, until the others have said
@@ -1483,7 +1678,7 @@ void port_EndNetplay(void) {
     if (gone < 0) {
         /* none said: the link that went, or this program's own player */
         for (link = 0; link < g_np_links && gone < 0; link++) {
-            if (g_np_link[link].left) {
+            if (g_np_link[link].left && !g_np_link[link].taken) {
                 s32 pad;
 
                 for (pad = 0; pad < g_np_pads && gone < 0; pad++) {

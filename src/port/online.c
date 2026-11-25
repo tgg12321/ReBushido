@@ -335,6 +335,19 @@ static void port_OnlineMatchEnds(s32 end) {
     s32 gone = port_NetplayLeftPad();
     s32 winner = PORT_ROOM_DRAW;
 
+    if (end == PORT_NETPLAY_END_QUIT && next->players == PORT_RELAY_FOUR &&
+        next->place != 0 && !g_online.ranked) {
+        /* a guest of four who left: the CPU plays on for him, and the
+         * match's end, as it is played out, is the others' to tell the
+         * room (docs/NETPLAY.md, section 19); the host tells it where
+         * the session ended instead */
+        port_Log("room: match %d left; its end is the other players' to "
+                 "tell\n",
+                 next->match.number);
+        port_RoomDone(next->match.number);
+        g_online.room_match = FALSE;
+        return;
+    }
     if (end == PORT_NETPLAY_END_MATCH) {
         s32 result = port_SessionResult();
 

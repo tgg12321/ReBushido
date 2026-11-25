@@ -1,5 +1,6 @@
 /* Netplay's state hashes: the other's compared with this program's only once
- * both are final; and a host of four passing each guest's inputs on. */
+ * both are final; a host of four passing each guest's inputs on; and a
+ * guest who leaves a fight of four given to the CPU. */
 /* Rollback netplay (src/port/netplay.c; docs/NETPLAY.md, section 12)
  * prints and sends a state hash every 30 frames once both pads' inputs
  * before it are known, and stops on a hash of the other's that is not its
@@ -78,11 +79,21 @@ void port_SessionSeed(void) {}
 /* no replay is recorded here (src/port/replay.c) */
 void port_ReplayBoundary(void) {}
 
+/* the buttons a frame's input depends on (the session's own presses:
+ * none), and whether a fight of four is on (port_duo.h) */
+static u16 g_test_used = 0xFFFF;
+static s32 g_test_duo_on;
+
 void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
     (void)frame;
     (void)input;
-    *used = 0xFFFF;
+    *used = g_test_used;
 }
+
+s32 port_DuoIsOn(void) { return g_test_duo_on; }
+
+/* the game's screen: a fight's (the CPU takes a pad over only there) */
+s16 g_sys_screen = SCREEN_FIGHT_UPDATE;
 
 s32 port_GetSessionRole(void) { return PORT_SESSION_NONE; }
 
@@ -454,9 +465,78 @@ static void test_HostOfFour(void) {
         CHECK(g_np_link[2].left);
         CHECK_EQ(port_NetplayLeftPad(), 3);
     }
+    /* ... with no fight of four on, the session ends as it did */
+    g_test_duo_on = FALSE;
+    CHECK(!port_NetplayTakeOverLeavers());
+    CHECK(port_NetplayPeerGone());
+    /* in one, the CPU plays the pad on (section 19): from the first frame
+     * of it the host lacks, as INPUT_CPU, the frames run past it on a
+     * guess run again with the pad the CPU's, and passed on to the
+     * others; the session goes on */
+    g_test_duo_on = TRUE;
+    first = g_np_count[3];
+    CHECK(first < g_np_frame);
+    CHECK(port_NetplayTakeOverLeavers());
+    CHECK_EQ(g_np_source[3], SOURCE_CPU);
+    CHECK_EQ(port_NetplayCpuPads(), 1U << 3);
+    CHECK_EQ(port_NetplayLeftPad(), -1);
+    CHECK(!port_NetplayPeerGone());
+    CHECK(!g_np_peer_left);
+    /* the rest of his goodbyes change nothing (a wait cut short by each
+     * would run past the window) */
+    {
+        u8 bye[PORT_NET_HEADER_BYTES];
+
+        port_NetHeader(bye, KIND_BYE, 3 + 1, 0);
+        port_NetplayTake(2, bye, sizeof(bye));
+        CHECK(!g_np_peer_left);
+    }
+    CHECK_EQ(g_np_count[3], g_np_local_count);
+    CHECK_EQ(g_np_inputs[3][first & NETPLAY_INPUT_MASK], INPUT_CPU);
+    CHECK(g_np_is_wrong);
+    CHECK_EQ(g_np_wrong_from, first);
+    test_Turn();
+    CHECK(!g_np_is_wrong);
+    CHECK_EQ(g_np_input.present[3], PORT_PAD_CPU);
+    CHECK_EQ(g_np_input.buttons[3], 0);
+    CHECK_EQ(g_np_count[3], g_np_local_count);
+    port_NetplaySendTo(0);
+    CHECK(test_SentBlock(
+        g_test_sent[0], g_test_sent_bytes[0], 3, &count, &first, &inputs));
+    CHECK_EQ(first + count, g_np_local_count);
+    CHECK_EQ(inputs[HALF_BYTES * (count - 1)], 0xFF);
+    CHECK_EQ(inputs[HALF_BYTES * (count - 1) + 1], 0xFF);
+    g_test_duo_on = FALSE;
     for (link = 0; link < PORT_NET_LINKS; link++) {
         g_port_net_links[link].socket = -1;
     }
+}
+
+/* A guest, its other player's pad passed on by the host as the CPU's
+ * from a frame it ran on a guess: run again from there, even where the
+ * frame's input depended on no button (the session's own presses). */
+static u16 test_CpuInput(u32 frame) {
+    (void)frame;
+    return INPUT_CPU;
+}
+
+static void test_GuestTold(void) {
+    test_Begin();
+    g_test_used = 0;
+    test_TheyMayTell(0, TEST_KNOWN, 0);
+    while (g_np_frame < TEST_RUN_TO) {
+        test_Turn();
+    }
+    CHECK(!g_np_is_wrong);
+    test_LinkTells(0, 1, TEST_KNOWN, TEST_RUN_TO, 0, 0, test_CpuInput,
+                   TEST_RUN_TO + NETPLAY_DELAY_DEFAULT);
+    CHECK(g_np_is_wrong);
+    CHECK_EQ(g_np_wrong_from, TEST_KNOWN);
+    CHECK_EQ(port_NetplayCpuPads(), 1U << 1);
+    test_Turn();
+    CHECK_EQ(g_np_input.present[1], PORT_PAD_CPU);
+    CHECK_EQ(g_np_input.buttons[1], 0);
+    g_test_used = 0xFFFF;
 }
 
 void test_Main(void) {
@@ -486,4 +566,5 @@ void test_Main(void) {
 
     /* four players, the host passing each guest's inputs on */
     test_HostOfFour();
+    test_GuestTold();
 }

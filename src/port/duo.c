@@ -856,6 +856,22 @@ static void port_DuoReadOwnPad(s32 who, PadState *pad) {
     g_pad_state = kept;
 }
 
+/* The player of fighter `who`, in his slot, has left an online fight of
+ * four, and his pad says the CPU's from this frame (PORT_PAD_CPU;
+ * docs/NETPLAY.md, section 19): the CPU plays him on as it plays a
+ * partner, at the match's level, against the one he faces. In a fight of
+ * the same match after it his pad says so from its first step. */
+static void port_DuoTakeOver(s32 who) {
+    s32 slot = PORT_DUO_SLOT(who);
+    Fighter *fighter = &g_fighters[slot];
+
+    fighter->is_cpu = TRUE;
+    fighter->cpu_base_level = g_fight_config.cpu_levels[slot];
+    cpu_Init(
+        slot, g_motion_fighter_sections[fighter->motion_slot].cpu_scripts,
+        g_motion_fighter_sections[fighter->other->motion_slot].cpu_scripts);
+}
+
 /* A fighter and his target in the slots with their pair's globals, and
  * his pad (port_duo.h): the third and fourth pads' through the game's
  * reader, the CPU's its own; the retarget button and Select left out. */
@@ -867,6 +883,10 @@ void port_DuoPutFighter(s32 who, PadState *pad) {
 
     port_DuoPutTwo(who, duo->target[who]);
     fighter = &g_fighters[PORT_DUO_SLOT(who)];
+    if (!fighter->is_cpu &&
+        g_port_input.present[own->pad_index] == PORT_PAD_CPU) {
+        port_DuoTakeOver(who);
+    }
     if (who >= 2 && !fighter->is_cpu) {
         port_DuoReadOwnPad(who, pad);
     } else {

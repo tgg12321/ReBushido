@@ -204,6 +204,11 @@ typedef struct PortInput {
     u8 present[PORT_INPUT_PADS];  /* 0: the pad's packet says none answered */
 } PortInput;
 
+/* present[] of a pad whose player has left an online fight of four and
+ * whose fighter the CPU plays from that frame on (port_duo.h;
+ * docs/NETPLAY.md, section 19): answered, no buttons held. */
+#define PORT_PAD_CPU 2
+
 /* A button of pad 0 to 3 goes down or comes up for a run's script; the
  * game sees it from the next vertical blank. `button` is one of Sony's
  * PAD... masks (libetc.h). */

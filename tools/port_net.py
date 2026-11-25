@@ -39,14 +39,19 @@ and a guest turned away that goes on with its own game.
 `four`: four players (docs/NETPLAY.md, section 18). Four headless
 programs, the host's --players 4 meeting three guests at its port and the
 two after it, the host passing each guest's inputs on to the others; two
-programs of --players 2x2, two players on each; and the four of the first
-again with the fourth player leaving in the middle of the fight. The
+programs of --players 2x2, two players on each; the four of the first
+again with the fourth player leaving in the middle of the fight, whose
+fighter the CPU plays on (section 19): the other three play the fight to
+its end, every hash the same on the three, the session ending on all three
+at the frame the match is decided; and again with the host's player
+leaving, which ends the session for all. The
 session presses all to versus select, the first two pick, and the fight is
 two on two, every fighter a player's, every pad pressing (four_presses),
 over 100 ms each way and 5% lost. It passes if every program ends well,
 none finds a desync, every state hash is the same on all, each printed the
 fight to its end (or the leave, which all are told of), and the fight's
-replays are the same on every machine and played back.
+replays are the same on every machine that played it to its end and
+played back.
 
 `session` and `window` are a session's, set up by --host and --join
 (section 13). `session` also holds the two players to the same arena
@@ -947,8 +952,10 @@ when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
 within = 6000
 shot = false
 '''
-# A player who leaves in the middle of the fight: the fourth's program
-# ends this many of the fight's frames in; the session ends on all.
+# A player who leaves in the middle of the fight: his program ends this
+# many of the fight's frames in. A guest's fighter the CPU plays on, and
+# the others play to the match's end, where the session ends on all of
+# them; the host's leave ends the session on all.
 FOUR_LEAVE_FRAMES = 400
 FOUR_LEAVE_CHECKPOINTS = FOUR_CHECKPOINTS.split('[[checkpoint]]\nname = "kill"')[0] + \
     '[[checkpoint]]\nname = "stay"\nafter = 100000\nshot = false\n'
@@ -984,7 +991,9 @@ def four_pads(presses, pads):
 def write_four_plan(program, side, pads, folder, leave=False):
     """The plan of PC `side` of a session of four, which plays `pads`: its
     path. `leave`: its player leaves FOUR_LEAVE_FRAMES into the fight
-    (its plan ends there)."""
+    (its plan ends there); None: another's leave ends the session; 'stay':
+    another leaves, and this one plays the fight to its end, where the
+    session ends."""
     # (no pads: every pad's, each program pressing its own: --net-plan-pads)
     presses = four_presses() if pads is None else four_pads(four_presses(), pads)
     toml = os.path.join(folder, 'four_side%d.toml' % side)
@@ -992,7 +1001,9 @@ def write_four_plan(program, side, pads, folder, leave=False):
         f.write('about = "A session of four players, PC %d (pads %s)."\n' % (side, pads))
         f.write('discs = ["port"]\nlimit = 60000\nseconds = %d\n' % SECONDS)
         f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
-        if leave:
+        if leave == 'stay':
+            f.write(FOUR_CHECKPOINTS + '\n[[checkpoint]]\nname = "stay"\nafter = 100000\nshot = false\n')
+        elif leave:
             f.write(FOUR_LEAVE_CHECKPOINTS.replace('name = "stay"\nafter = 100000',
                                                    'name = "end"\nframes = %d' % FOUR_LEAVE_FRAMES))
         elif leave is None:
@@ -1018,7 +1029,15 @@ FOUR_CASES = {
     'four': ([[1], [2], [3], [4]], None),
     'couch': ([[1, 3], [2, 4]], None),
     'four-leave': ([[1], [2], [3], [4]], 3),
+    'four-host-leave': ([[1], [2], [3], [4]], 0),
 }
+
+
+def four_cpu_plays_on(case):
+    """Whether the leaver's fighter of a case is the CPU's for the rest of
+    the fight: a guest's of four PCs (docs/NETPLAY.md, section 19)."""
+    pcs, leaver = FOUR_CASES[case]
+    return leaver is not None and leaver != 0 and len(pcs) == 4
 
 
 def check_four(label, program, args, base, case):
@@ -1029,10 +1048,11 @@ def check_four(label, program, args, base, case):
     fight's end (or a leave's), and the fights' replays the same on all and
     played back."""
     pcs, leaver = FOUR_CASES[case]
+    cpu = four_cpu_plays_on(case)
     folder = os.path.join(args.out, 'four', label)
     os.makedirs(folder, exist_ok=True)
     plans = [write_four_plan(program, side, pads, folder,
-                             True if side == leaver else None if leaver is not None else False)
+                             True if side == leaver else 'stay' if cpu else None if leaver is not None else False)
              for side, pads in enumerate(pcs)]
     trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss)]
     procs = []
@@ -1069,6 +1089,7 @@ def check_four(label, program, args, base, case):
         results.append((code, time.time() - start))
     problems = []
     hashes = []
+    cpu_from = None
     for side, (code, seconds) in enumerate(results):
         who = 'PC %d (pads %s)' % (side + 1, ' '.join(str(p) for p in pcs[side]))
         err = read(os.path.join(folder, 'side%d.err' % side))
@@ -1078,7 +1099,8 @@ def check_four(label, program, args, base, case):
             if rollbacks else ''), flush=True)
         for line in err.split('\n'):
             if line.startswith(('session: begun', 'session: 4 players', 'netplay: 4 pads', 'netplay: the other',
-                                'netplay: link ')):
+                                'netplay: link ', 'netplay: the match was decided')) or \
+                    (line.startswith('netplay: player ') and 'the CPU plays' in line):
                 print('    ' + line)
         if 'DESYNC' in err:
             problems.append('four: %s: %s found a desync' % (label, who))
@@ -1086,7 +1108,7 @@ def check_four(label, program, args, base, case):
             problems.append('four: %s: %s ended with %s (%s/side%d.err)' % (label, who, code, folder, side))
         out_text = read(os.path.join(folder, 'side%d.out' % side))
         printed = [name for name in FOUR_ORDER if 'cp %s ' % name in out_text]
-        wanted = 'fight' if leaver is not None else 'kill'
+        wanted = 'fight' if leaver is not None and (side == leaver or not cpu) else 'kill'
         if wanted not in printed and not any(FOUR_ORDER.index(n) > FOUR_ORDER.index(wanted) for n in printed):
             problems.append('four: %s: %s printed no checkpoint from `%s` on (%s)' % (label, who, wanted,
                                                                                    ' '.join(printed) or 'none'))
@@ -1097,34 +1119,58 @@ def check_four(label, program, args, base, case):
                                                                                                len(pcs)))
         if leaver is not None and side != leaver and '(player %d)' % (pcs[leaver][0]) not in err:
             problems.append('four: %s: %s was not told that player %d left' % (label, who, pcs[leaver][0]))
+        if cpu and side != leaver:
+            taken = re.search(r'netplay: player %d has left the session: the CPU plays his fighter from frame (\d+)'
+                              % pcs[leaver][0], err)
+            if not taken:
+                problems.append('four: %s: %s did not give player %d\'s fighter to the CPU' % (
+                    label, who, pcs[leaver][0]))
+            elif side == 0:
+                cpu_from = int(taken.group(1))
+            if 'netplay: the match was decided at frame' not in err:
+                problems.append('four: %s: %s did not end the session at the match\'s end' % (label, who))
         hashes.append(hashes_of(err))
     for card in ('card1.mcd', 'card2.mcd'):
         if os.path.exists(os.path.join(folder, card)):
             problems.append('four: %s: %s was written, and nothing of a session is' % (label, card))
-    common = sorted(set.intersection(*(set(h) for h in hashes)))
+    stayed = [side for side in range(len(pcs)) if not cpu or side != leaver]
+    if cpu_from is not None:
+        # the leaver's own hashes are his inputs' to the end: those after
+        # the CPU took his pad are not the session's
+        hashes[leaver] = {f: h for f, h in hashes[leaver].items() if f < cpu_from}
+    common = sorted(set.intersection(*(set(hashes[side]) for side in stayed)))
     for side in range(1, len(pcs)):
         differ = [f for f in sorted(set(hashes[0]) & set(hashes[side])) if hashes[0][f] != hashes[side][f]]
         if differ:
             problems.append('four: %s: PC %d\'s state hashes differ from the host\'s from frame %d' % (
                 label, side + 1, differ[0]))
-    if len(common) < (20 if leaver is not None else 60):
+    if len(common) < (20 if leaver is not None and not cpu else 60):
         problems.append('four: %s: too few state hashes in common on all (%d)' % (label, len(common)))
+    if cpu_from is not None and common and common[-1] <= cpu_from:
+        problems.append('four: %s: no state hash in common after the CPU took player %d\'s fighter at frame %d' % (
+            label, pcs[leaver][0], cpu_from))
     if not problems:
-        print('port_net: four: %s: %d state hashes, the same on all %d programs, the last at frame %d: %s'
-              % (label, len(common), len(pcs), common[-1], hashes[0][common[-1]]), flush=True)
-    if leaver is None:
-        problems += check_four_replays(label, program, folder, len(pcs))
+        print('port_net: four: %s: %d state hashes, the same on all %d programs%s, the last at frame %d: %s'
+              % (label, len(common), len(stayed), ' that stayed (%d of them after the CPU took player %d\'s '
+                                                    'fighter at frame %d)' % (
+                                                        len([f for f in common if f > cpu_from]), pcs[leaver][0],
+                                                        cpu_from) if cpu_from is not None else '',
+                 common[-1], hashes[0][common[-1]]), flush=True)
+    if leaver is None or cpu:
+        problems += check_four_replays(label, program, folder, stayed)
     return problems
 
 
-def check_four_replays(label, program, folder, count):
-    """The fight of four as every machine kept it: one replay each, the same
-    inputs (all four pads), views and hashes on all, and each played back
-    by the headless program with every hash the one recorded."""
+def check_four_replays(label, program, folder, sides):
+    """The fight of four as every machine that played it to its end kept
+    it (`sides`): one replay each, the same inputs (all four pads), views
+    and hashes on all, and each played back by the headless program with
+    every hash the one recorded."""
     import port_replay
     problems = []
     files = []
-    for side in range(count):
+    count = len(sides)
+    for side in sides:
         replays = os.path.join(folder, 'side%d-replays' % side)
         names = sorted(f for f in os.listdir(replays) if f.endswith('.rbr')) if os.path.isdir(replays) else []
         files.append([os.path.join(replays, name) for name in names])
@@ -1854,6 +1900,8 @@ def run_checks(args, base):
             continue
         if args.what == 'four':
             for k, case in enumerate(FOUR_CASES):
+                if getattr(args, 'case', None) and case not in args.case:
+                    continue
                 problems += check_four('%d-bit-%s' % (bits, case), program, args, base + 8 * k, case)
             continue
         if args.what == 'session':
@@ -1974,6 +2022,8 @@ def main():
                     "inprocess sessions begun in the running program; all of them at once (make port-net), "
                     "each with ports of its own")
     ap.add_argument('--bits', type=int, choices=(32, 64), help='one size only')
+    ap.add_argument('--case', action='append', choices=tuple(FOUR_CASES), help='four: this case only (again '
+                    'for more)')
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'net'), help='where the runs go')
     ap.add_argument('--latency', type=int, help='milliseconds each datagram waits (--net-latency): 0 for the '
                     'link, 100 for rollback')

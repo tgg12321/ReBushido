@@ -72,8 +72,11 @@
  * guest's own (MEET_SEATS), the host's lobby how many are here and the
  * session's margin, a second guest at the host's first port is sent on to
  * the next (KIND_MOVE), netplay's datagrams carry each pad's inputs, and
- * the spectators' feed four pads a frame (the lobby's version 4). */
-#define SESSION_PROTOCOL 15
+ * the spectators' feed four pads a frame (the lobby's version 4). 16: a
+ * guest of four PCs who leaves a fight of four gives his fighter to the
+ * CPU, the host playing his pad on as the CPU's (netplay's INPUT_CPU,
+ * section 19), and the session goes on to the match's end. */
+#define SESSION_PROTOCOL 16
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -2074,6 +2077,19 @@ static void port_SessionPadsQuiet(PortInput *input, u16 first) {
     }
 }
 
+/* Whether a pad of the frame's input is the CPU's: its player has left
+ * (docs/NETPLAY.md, section 19). */
+static s32 port_SessionHasCpu(const PortInput *input) {
+    s32 pad;
+
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
+        if (input->present[pad] == PORT_PAD_CPU) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 /* A frame's input as the session has it (port_net.h): the session's own
  * presses up to the select screen, and no Start in a fight. */
 void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
@@ -2083,12 +2099,14 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
     if (g_session.role == PORT_SESSION_NONE) {
         return;
     }
-    if ((g_session.rules & PORT_SESSION_RULE_ONE_MATCH) &&
+    if (((g_session.rules & PORT_SESSION_RULE_ONE_MATCH) ||
+         port_SessionHasCpu(input)) &&
         g_port_top_menu.session_left == 0) {
         s32 winner;
 
-        /* a room's match: its end is the session's, on both machines at
-         * the same frame (netplay.c), who won kept in the state */
+        /* a room's match, or one a player has left for the CPU to play
+         * on: its end is the session's, on every machine at the same
+         * frame (netplay.c), who won kept in the state */
         if (port_MatchIsDecided(&winner)) {
             g_port_top_menu.session_left = frame + 1;
             g_port_top_menu.session_result =

@@ -1434,6 +1434,22 @@ static void port_ReplayRecordFrame(
     g_rec.frames[index].view = (u8)number;
 }
 
+/* Which pads answered, a bit each, and above them which the CPU plays
+ * (PORT_PAD_CPU: a player who left an online fight of four). */
+#define PRESENT_CPU_SHIFT PORT_INPUT_PADS
+
+static u8 port_ReplayPresent(const PortInput *input) {
+    u32 bits = 0;
+    s32 pad;
+
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
+        bits |= (u32)(input->present[pad] != 0) << pad;
+        bits |= (u32)(input->present[pad] == PORT_PAD_CPU)
+                << (pad + PRESENT_CPU_SHIFT);
+    }
+    return (u8)bits;
+}
+
 /* The input the game took kept, as the fight's frame `index` on (a
  * frame run again writes it again). */
 void port_ReplayTook(const PortInput *input, u32 index) {
@@ -1448,9 +1464,7 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     g_last.frame.buttons[1] = input->buttons[1];
     g_last.frame.buttons[2] = input->buttons[2];
     g_last.frame.buttons[3] = input->buttons[3];
-    g_last.frame.present =
-        (u8)((input->present[0] != 0) | ((input->present[1] != 0) << 1) |
-             ((input->present[2] != 0) << 2) | ((input->present[3] != 0) << 3));
+    g_last.frame.present = port_ReplayPresent(input);
     if (g_rec.state != REC_FIGHT || index < g_rec.start_count) {
         return;
     }
@@ -1463,9 +1477,7 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     frame->buttons[1] = input->buttons[1];
     frame->buttons[2] = input->buttons[2];
     frame->buttons[3] = input->buttons[3];
-    frame->present =
-        (u8)((input->present[0] != 0) | ((input->present[1] != 0) << 1) |
-             ((input->present[2] != 0) << 2) | ((input->present[3] != 0) << 3));
+    frame->present = port_ReplayPresent(input);
     frame->sound = 0;
     g_rec.length = at + 1;
 }
@@ -2388,19 +2400,18 @@ s32 port_ReplayIsPlaying(void) { return g_play.state != PLAY_OFF; }
 static void port_ReplayTakeHook(PortInput *input) {
     u32 index = g_port_input_count - g_play.start_count;
     const ReplayFrame *frame;
+    s32 pad;
 
     if (g_play.frames == 0) {
         return;
     }
     frame = &g_play.list[index < g_play.frames ? index : g_play.frames - 1];
-    input->buttons[0] = frame->buttons[0];
-    input->buttons[1] = frame->buttons[1];
-    input->present[0] = (u8)(frame->present & 1);
-    input->present[1] = (u8)((frame->present >> 1) & 1);
-    input->buttons[2] = frame->buttons[2];
-    input->buttons[3] = frame->buttons[3];
-    input->present[2] = (u8)((frame->present >> 2) & 1);
-    input->present[3] = (u8)((frame->present >> 3) & 1);
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
+        input->buttons[pad] = frame->buttons[pad];
+        input->present[pad] = (frame->present >> (pad + PRESENT_CPU_SHIFT)) & 1
+                                  ? PORT_PAD_CPU
+                                  : (u8)((frame->present >> pad) & 1);
+    }
 }
 
 /* This run's own, kept out of a load of the replay's start and put back
