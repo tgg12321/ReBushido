@@ -1,0 +1,13 @@
+# An example of a mod's own weapon: a kanabo, the iron-studded war club of
+# old Japan, for the remastered picture (docs/MODS.md).
+#
+# Its model, models/kanabo.glb, is made procedurally by
+# tools/weapon_kanabo.py: the mesh, its normals and its picture are all
+# worked out by that script. Nothing in it is from another game, a model
+# library or a learned model, and nothing is from the disc.
+name = Kanabo
+version = 1.0
+order = 0
+enabled = no
+author = ReBushido
+about = A kanabo, an iron-studded war club, made by tools/weapon_kanabo.py.
