@@ -123,6 +123,7 @@ typedef struct {
     u8 bound[PORT_DUO_FIGHTERS]; /* in a paired move or a lock with, or NOBODY
                                   */
     u8 kind[PORT_DUO_FIGHTERS];  /* each one's move_kind after his step */
+    u8 character[PORT_DUO_FIGHTERS]; /* each one's (enum CharacterId) */
     u8 models_out;               /* a copy is in a slot of the game's models */
     u8 clone_made[2];
     u16 falls; /* fighters fallen, for the order */
@@ -169,6 +170,7 @@ PORT_DUO_AT(last_hit_by, 16);
 PORT_DUO_AT(rest, 20);
 PORT_DUO_AT(bound, 25);
 PORT_DUO_AT(kind, 29);
+PORT_DUO_AT(character, 33);
 
 static PortDuo g_port_duo;
 
@@ -987,6 +989,9 @@ void port_DuoFightSet(void) {
     port_DuoSetPartner(1, &place[3], &place[2]);
     port_DuoPut(0);
     port_DuoPut(1);
+    for (who = 0; who < PORT_DUO_FIGHTERS; who++) {
+        duo->character[who] = (u8)port_DuoNow(who)->character;
+    }
     duo->target[0] = 1;
     duo->target[1] = 0;
     duo->target[2] = 3;

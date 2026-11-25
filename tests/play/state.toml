@@ -167,3 +167,7 @@ port_duo_kind_1 = "g_port_duo+29:u8"          # each one's move kind after his s
 port_duo_kind_2 = "g_port_duo+30:u8"
 port_duo_kind_3 = "g_port_duo+31:u8"
 port_duo_kind_4 = "g_port_duo+32:u8"
+port_duo_character_1 = "g_port_duo+33:u8"     # each one's character (enum CharacterId)
+port_duo_character_2 = "g_port_duo+34:u8"
+port_duo_character_3 = "g_port_duo+35:u8"
+port_duo_character_4 = "g_port_duo+36:u8"

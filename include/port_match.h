@@ -174,6 +174,7 @@ typedef struct {
      * its Crew picks a crew's places), or versus the CPU the CPU's */
     u8 partner_picked[2];
     PortCrewPick partner[2];
+    u32 pads_held; /* the third and fourth pads', at the select screen */
 } PortMatch;
 
 extern PortMatch g_port_match;
@@ -278,6 +279,11 @@ extern s32 port_MatchCrewBackOne(void);
 extern s32 port_MatchPartner(s32 side, s32 *fighter, s32 *weapon);
 /* ... given (the CPU's, versus the CPU; --partners, port_platform.h). */
 extern void port_MatchSetPartner(s32 side, s32 fighter, s32 weapon);
+/* A frame of the select screen (select.c): while two on two with four
+ * players has its partners picked, each side's half of the pads' `held`
+ * and `pressed` is the third pad's (the first side) or the fourth's,
+ * where that pad is plugged in. */
+extern void port_MatchPartnerPads(s32 *held, s32 *pressed);
 /* The crew of `side` already has `fighter` (enum CharacterId) in a place
  * taken: the select refuses it. */
 extern s32 port_MatchCrewHas(s32 side, s32 fighter);

@@ -9625,26 +9625,80 @@ the falling pair, the blades met, the lock's five) is kept for each of
 the four pairs of enemies (`PortDuoPair`, `port_DuoPairKeep`,
 `port_DuoPairTake`).
 
-**A team is one character and weapon, twice.** Video memory holds two
-characters' textures (the model slots' pages at x 640 and 768; x 896
-up is the effects'), and the RAM two motion files, and a model's
-textures are addressed by its meshes' own texture pages: a third or a
-fourth character has nowhere to go. So a team is two of its first
-fighter's character with his weapon, which the select screen picks as
-it does for one on one. The second's model is a copy of the first's
-(`port_DuoCloneModel`): the `Model` copied and its pointers into itself
-moved (`model_Rebase`, as the arena moves a model), its own nodes,
-matrices and cloth (the cloth's block copied and made again, the cloth
-pool 20 in the port, `CLOTH_COUNT`), the meshes, textures and colour
-tables shared. The copy follows its model when the arena moves it
-(`port_DuoModelMoved`), and the slots' own models go back into them
-before anything may move them (`model_Rebase`, a fight's start:
-`port_DuoModelsHome`). Things that are the slot's and not the fighter's
-stay shared: the face's texture (a team mate's hurt face shows on the
-other's), the point light's target, the model's sound bank (the same
-voice, which it is). The four fighters' primitives overflow the
-console's buffers: in a fight of four the port's larger buffers are the
-game's (`port_DuoPrimBuffers`, at a frame's start), where the run has the
+**Each fighter his own character and weapon.** The select screen picks
+each team's second as it picks its first: in a match of two on two the
+grid and the weapons come up a second time, the place a Crew's second
+place is (port_match.h: `port_MatchPlaces` is two for the teams), each
+side's first then his partner (`PortMatch.partner`, `port_MatchPartner`);
+with four players the third and fourth pads pick the partners
+(`port_MatchPartnerPads`, the pad unplugged leaving it to his first's);
+versus the CPU the CPU's partner is drawn from the run's opponents as a
+Crew's places are (`port_MatchOpponentChosen`). A fight with no select
+screen (`--fight`) takes `--partners FIGHTER FIGHTER`, or has each team
+two of its first. What the game holds of two characters is then held of
+four:
+
+- **The model.** A second of a model no slot has is loaded beside the
+  game's (`port_DuoLoadPartners`, in `fight_Init` before the weapons):
+  his file read where the slots' are staged and what it keeps copied out
+  of the arena, into a room of the console's RAM that the game leaves
+  alone (`PORT_DUO_AREA_ADDR`, `0x80010000` up to the common sound bank:
+  the PlayStation's own program is there, and the port's program is
+  elsewhere, Memory above), his meshes two tables of the renderer's of
+  their own (`PORT_DUO_RELOC_BLOCK`, 10 to 13), skeleton, nodes, cloth and
+  shadows made as `model_Load` makes a slot's (`model_PortLoadPartner`,
+  model.c). Of the same model as his first, his model is the first's
+  copy as before (`port_DuoCloneModel`).
+- **The textures: a second bank of video memory.** Video memory holds two
+  characters (the slots' pages at x 640 and 768, x 896 up the effects',
+  the lower half the stage's), and a model's textures are named by its
+  meshes' own pages and colour tables: a third or fourth has nowhere to
+  go in the console's 1024 by 512. The port's GPU has as many lines again
+  after them (`g_port_vram`, `PORT_VRAM_ROWS`; port_gpu.h). A partner's
+  textures and colour tables are loaded there where his slot's are in the
+  first (`port_SetVramBankLoading`: `LoadImage` writes the second bank),
+  and his meshes' colour tables have their top bit set
+  (`tex_PortMarkBank`, through `tex_ShiftBlock`), which the chip never
+  reads: a polygon whose table has it reads its texels and table from the
+  second bank while the fight says so (`port_SetVramBankOn`;
+  `PortPaint.texels`, raster.c). Nothing draws into the second bank: a
+  face's eyes and mouth are copied within it at once
+  (`port_VramBankMove`, model_face.c), not by the GPU; the state keeps it
+  as watched pages of the game's (it is after the lines the GPU marks).
+  With the bank off, or a table's top bit clear, everything is the
+  console's: one on one is the game's, pixel for pixel.
+- **The motions.** Each fighter's motion file, the decoder of its stream
+  and his win pose go with him into his slot (`PortDuoMotion`:
+  `port_DuoMotionKeep` and `port_DuoMotionTake` beside his `Fighter`,
+  `PortDuo.motions_out`), as his model does: the file in the game's two
+  rooms where it is one of theirs, else read into his room of the area
+  (`port_DuoLoadPartnerMotions`, with WIN.DAT's part of his character),
+  and each fighter's `motion_slot` his slot's, so that whoever is stepped
+  reads his own file through the slot's decoder. The game's own go back
+  as the next fight is set up (`port_DuoMotionsHome`). With the seconds
+  their firsts' characters and weapons none of this happens: the fight of
+  four is what it was.
+- **The weapon.** The second's weapon and what he throws are asked for
+  with the firsts' (`port_DuoAskWeapons`), from the one weapons file.
+
+What stays the slot's: the model's sound bank (a partner shouts with his
+first's voice) and the weapons' sounds (the file of the two firsts'
+kinds), the point light's target, the sounds a thrown thing makes. The
+remastered picture draws the second bank too: a polygon of it names its
+page and table 1024 lines further down (`PORT_VRAM_BANK_NAMED_Y`,
+remaster.c), the card's mirror of video memory has the bank's lines after
+the console's (`port_GlUploadBank`, each frame the lines that differ;
+`vram()` of gl.h reads a line of 1024 or more from the bank), a fighter's
+colour tables are read there for his model's tints (gl_fighter.c), and a
+partner's meshes are a fighter's to the renderer
+(`port_RemasterNoteFighter`, render_asm.c), so **each of the four is
+drawn from his own model** (`fighter_models`) where one is given. A mod's
+picture of a whole page is not laid over the second bank's (gl_replace.c,
+gl_scene.c leave it to the textures as loaded).
+
+The four fighters' primitives overflow the console's buffers: in a
+fight of four the port's larger buffers are the game's
+(`port_DuoPrimBuffers`, at a frame's start), where the run has the
 console's (and the state keeps them, by the pages written).
 
 **A frame** (`fight_UpdateDuo`, fight.c): the side view over all four

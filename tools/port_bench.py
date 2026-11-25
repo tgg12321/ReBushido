@@ -133,7 +133,8 @@ CASES = {
     # lag")
     'ra1-paced': (1, 'on', None),
     # two on two (docs/PORT.md, "Two on two"): the same fight of four, the
-    # partners the CPU's, every fighter drawn and stepped for real
+    # partners the CPU's, each a character of his own (TEAM_PICKS), every
+    # fighter drawn and stepped for real
     'ra1-2v2': (1, 'on', None),
     # a stage dressed (ROADMAP 17; docs/PORT.md, "The dressing"): outside
     # the Meikyokan, its lawn of some 27,000 tufts, flowers and fireflies,
@@ -146,6 +147,20 @@ CASES = {
 }
 # A case's settings over the bench's own.
 CASE_SETTINGS = {'ra1-2v2': (('teams', 'cpu'),)}
+# The cases of two on two, and who picks the partners: after port_game's
+# stage the grid comes up again for each team's second (port_match.h),
+# each pad's cursor one place down from his first and Cross, then his
+# weapon: four characters (the first two pads, or the third and fourth).
+TEAM_CASES = {'ra1-2v2': ('', 'P2 '), 'rollback-2v2': ('', 'P2 '), 'rollback-4p': ('P3 ', 'P4 ')}
+TEAM_PICKS = ['"partner+60 %sDOWN"', '"partner+70 %sDOWN"', '"partner+90 %sCROSS"', '"partner+100 %sCROSS"',
+              '"partner+300 %sCROSS"', '"partner+340 %sCROSS"']
+TEAM_CHECKPOINT = '''
+[[checkpoint]]
+name = "partner"
+when = "port_match_crew_picked == 1"
+within = 4000
+shot = false
+'''
 # The dressed cases: the stage the plan's poke sets in place of Tatara
 # Shrine's, and the shipped dressing among the mods (build/bench/mods-dressed/).
 DRESSED_CASES = {'ra1-dressed': 8, 'ra1-dressed-stress': 8, 'ra1-rain': 29}
@@ -427,12 +442,31 @@ def make_dressed_mods(mods):
     return dressed
 
 
-def write_plan(out, stage=None):
+def team_toml(case, folder):
+    """port_game's plan with the partners of a case of two on two picked
+    (TEAM_CASES): the path of its text."""
+    with open(os.path.join(REPO, 'tests', 'play', 'port_game.toml'), encoding='utf-8') as f:
+        text = f.read()
+    first, second = TEAM_CASES[case]
+    picks = ', '.join(press % (first if n % 2 == 0 else second) for n, press in enumerate(TEAM_PICKS))
+    text = text.replace('"select+1180 CROSS",', '"select+1180 CROSS", %s,' % picks, 1)
+    head = '\n[[checkpoint]]\nname = "fight"'
+    text = text.replace(head, TEAM_CHECKPOINT + head, 1)
+    path = os.path.join(folder, 'port_game-%s.toml' % case)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
+    return path
+
+
+def write_plan(out, stage=None, case=None):
     import playtest
 
     playtest.PORT_PROGRAM = PROGRAM
     playtest.PORT_SYMBOLS = PROGRAM + '.sym'
-    test = playtest.Test(os.path.join(REPO, 'tests', 'play', 'port_game.toml'))
+    toml = os.path.join(REPO, 'tests', 'play', 'port_game.toml')
+    if case in TEAM_CASES:
+        toml = team_toml(case, os.path.dirname(out))
+    test = playtest.Test(toml)
     _, lines = test.plan(playtest.Disc('port'), playtest.header_names(), 1)
     where = {}
     for line in lines:
@@ -549,7 +583,7 @@ def measure_rollback(image, mods):
         kept = PROGRAM
         PROGRAM = HEADLESS
         try:
-            write_plan(plan)
+            write_plan(plan, case=case)
         finally:
             PROGRAM = kept
         cmd = [HEADLESS, '--image', image, '--plan', plan, '--no-cards', '--mods', 'off', '--out', folder,
@@ -968,7 +1002,10 @@ def main():
     for case in set(cases) & set(DRESSED_CASES):
         plans[case] = os.path.join(OUT_DIR, 'plan-%s.txt' % case)
         write_plan(plans[case], DRESSED_CASES[case] if args.dressed_stage is None else args.dressed_stage)
-    dressed_mods = make_dressed_mods(mods) if plans else mods
+    for case in set(cases) & set(TEAM_CASES):
+        plans[case] = os.path.join(OUT_DIR, 'plan-%s.txt' % case)
+        write_plan(plans[case], case=case)
+    dressed_mods = make_dressed_mods(mods) if set(cases) & set(DRESSED_CASES) else mods
     print('port-bench: %s, %s, the window %s, unpaced; commit %s' % (card, os.path.relpath(PROGRAM, REPO),
                                                                      WINDOW, commit_name()), flush=True)
     theirs = None
@@ -1014,7 +1051,7 @@ def main():
         else:
             seen = others_running()
             before = system_times()
-            folder, seconds = run(case, image, dressed_mods if case in plans else mods,
+            folder, seconds = run(case, image, dressed_mods if case in DRESSED_CASES else mods,
                                   plans.get(case, plan), [tuple(s.split("=", 1)) for s in args.set])
             load = {'others': seen, 'busy': busy_since(before)}
         results[case] = measure(folder, PACED or case in PACED_CASES)

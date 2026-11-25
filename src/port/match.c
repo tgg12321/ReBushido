@@ -191,6 +191,31 @@ void port_MatchSetPartner(s32 side, s32 fighter, s32 weapon) {
     match->partner_picked[side] = TRUE;
 }
 
+void port_MatchPartnerPads(s32 *held, s32 *pressed) {
+    PortMatch *match = port_Match();
+    u32 was = match->pads_held;
+    s32 side;
+
+    match->pads_held = (u32)g_port_input.buttons[2] |
+                       ((u32)g_port_input.buttons[3] << PAD_BITS);
+    if (match->page_rule == PORT_MATCH_CREW ||
+        match->page_teams != PORT_TEAMS_TWO_PADS ||
+        match->crew_size != PORT_DUO_TEAMS || match->crew_picked != 1) {
+        return;
+    }
+    for (side = 0; side < 2; side++) {
+        u32 mask = (u32)0xFFFF << (side * PAD_BITS);
+        u8 present = g_port_input.present[side + 2];
+
+        if (present == 0 || present == PORT_PAD_CPU) {
+            continue;
+        }
+        *held = (s32)(((u32)*held & ~mask) | (match->pads_held & mask));
+        *pressed = (s32)(((u32)*pressed & ~mask) |
+                         (match->pads_held & ~was & mask));
+    }
+}
+
 /* A mode begun from the menus (port_match.h): its match, of the stage
  * pages' rule, from the start. */
 void port_MatchBegin(s32 mode) {

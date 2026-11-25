@@ -599,18 +599,33 @@ static void port_MatchCrewPick(const PortMatch *match) {
         CREW_HUD_X, CREW_PICK_Y, CREW_HUD_W, CREW_PICK_H, COLOR_PANEL);
     port_MatchFrame(
         CREW_HUD_X, CREW_PICK_Y, CREW_HUD_W, CREW_PICK_H, COLOR_EDGE);
-    snprintf(line, sizeof(line), "Crew %d: pick %d of %d", (int)count,
-             (int)match->crew_picked + 1, (int)count);
+    /* two on two's teams (port_duo.h): each side's first, then his
+     * partner, whom the third and fourth pads pick where they play */
+    s32 teams = match->page_rule != PORT_MATCH_CREW;
+    s32 pads = teams && match->page_teams == PORT_TEAMS_TWO_PADS &&
+               match->crew_picked > 0;
+
+    if (teams) {
+        snprintf(line, sizeof(line), "Two on two: %s",
+                 match->crew_picked == 0 ? "pick the fighter"
+                                         : "pick the partner");
+    } else {
+        snprintf(line, sizeof(line), "Crew %d: pick %d of %d", (int)count,
+                 (int)match->crew_picked + 1, (int)count);
+    }
     port_MatchText(GAME_W / 2, CREW_PICK_Y + 11, SIZE_HUD, PORT_FACE_BOLD, line,
                    COLOR_GOLD, 0);
     port_MatchText(CREW_HUD_X + 6, CREW_PICK_Y + 11, SIZE_HUD - 1,
-                   PORT_FACE_BOLD, "1P", COLOR_SIDE_1, -1);
+                   PORT_FACE_BOLD, pads ? "3P" : "1P", COLOR_SIDE_1, -1);
     port_MatchText(right, CREW_PICK_Y + 11, SIZE_HUD - 1, PORT_FACE_BOLD,
-                   match->crew_sides > 1 ? "2P" : "CPU", COLOR_SIDE_2, 1);
+                   match->crew_sides > 1 ? (pads ? "4P" : "2P") : "CPU",
+                   COLOR_SIDE_2, 1);
     if (match->crew_sides < 2) {
-        port_MatchText(
-            right - 30, CREW_PICK_Y + 11, SIZE_HUD - 1, PORT_FACE_TEXT,
-            "drawn at random, led by the opponent", COLOR_DIM, 1);
+        port_MatchText(right - 30, CREW_PICK_Y + 11, SIZE_HUD - 1,
+                       PORT_FACE_TEXT,
+                       teams ? "its partner drawn at random"
+                             : "drawn at random, led by the opponent",
+                       COLOR_DIM, 1);
     }
     for (side = 0; side < match->crew_sides && side < 2; side++) {
         u32 color = side == 0 ? COLOR_SIDE_1 : COLOR_SIDE_2;
@@ -802,6 +817,7 @@ static s32 port_MatchKey(s32 shown, const PortMatch *match) {
     if (match->rule != PORT_MATCH_CREW && shown != PORT_MATCH_SHOWN_PICK) {
         return key;
     }
+    key ^= match->page_teams << 3;
     /* a Crew's names and the picks so far, folded in */
     for (i = 0; i < (s32)sizeof(match->crew); i++) {
         crew = (crew ^ byte[i]) * 16777619U;
