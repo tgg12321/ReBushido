@@ -1081,7 +1081,7 @@ def case_rooms_four(case):
     else:
         case.said.append('Dai left match 2 at frame %d, in its fight: the CPU played his fighter from frame %s on, '
                          'on the three who stayed and Sora; the match played to its end (%s, the room told by '
-                         'its host), all back to their own games and the room'
+                         'those who stayed), all back to their own games and the room'
                          % (FOUR_LEAVE_FRAME, taken[0].group(1), over.group(1)))
 
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
