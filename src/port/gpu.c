@@ -533,6 +533,54 @@ static s32 port_ImageWords(RECT *rect) {
     return (rect->w * rect->h + 1) / 2;
 }
 
+/* Two on two's fighter of a character of his own is being loaded
+ * (port_gpu.h, port_duo.h): a LoadImage goes to the second bank. */
+static s32 g_port_bank_loading;
+
+void port_SetVramBankLoading(s32 is_on) { g_port_bank_loading = is_on != 0; }
+
+/* A rectangle of pixels into the second bank, where the first would have
+ * it, written at once by this thread: nothing draws there. */
+static void port_BankLoadImage(const RECT *rect, const u32 *pixels) {
+    const u16 *from = (const u16 *)pixels;
+    s32 row;
+    s32 col;
+
+    for (row = 0; row < rect->h; row++) {
+        u16 *line = &g_port_vram[(PORT_VRAM_BANK_Y +
+                                  ((rect->y + row) & (PORT_VRAM_HEIGHT - 1))) *
+                                 PORT_VRAM_WIDTH];
+
+        for (col = 0; col < rect->w; col++) {
+            line[(rect->x + col) & (PORT_VRAM_WIDTH - 1)] = *from++;
+        }
+    }
+}
+
+void port_VramBankMove(
+    s32 from_x, s32 from_y, s32 w, s32 h, s32 to_x, s32 to_y) {
+    u16 *bank = &g_port_vram[PORT_VRAM_BANK_Y * PORT_VRAM_WIDTH];
+    s32 row;
+    s32 col;
+
+    for (row = 0; row < h; row++) {
+        const u16 *from =
+            &bank[((from_y + row) & (PORT_VRAM_HEIGHT - 1)) * PORT_VRAM_WIDTH];
+        u16 *to =
+            &bank[((to_y + row) & (PORT_VRAM_HEIGHT - 1)) * PORT_VRAM_WIDTH];
+
+        for (col = 0; col < w; col++) {
+            to[(to_x + col) & (PORT_VRAM_WIDTH - 1)] =
+                from[(from_x + col) & (PORT_VRAM_WIDTH - 1)];
+        }
+    }
+}
+
+void port_ClearVramBank(void) {
+    memset(&g_port_vram[PORT_VRAM_BANK_Y * PORT_VRAM_WIDTH], 0,
+           PORT_VRAM_BYTES);
+}
+
 /* Pixels from the game's memory into video memory. */
 s32 LoadImage(RECT *rect, u32 *pixels) {
     s32 words = port_ImageWords(rect);
@@ -540,6 +588,10 @@ s32 LoadImage(RECT *rect, u32 *pixels) {
 
     if (words <= 0) {
         return -1;
+    }
+    if (g_port_bank_loading) {
+        port_BankLoadImage(rect, pixels);
+        return 0;
     }
     if (port_MovieIsPlaying()) {
         port_MovieNoteCopied(rect->y, pixels);

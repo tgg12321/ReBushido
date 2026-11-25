@@ -922,6 +922,11 @@ void fight_Init(void) {
                 }
             }
         }
+#if RB_PORT
+        /* two on two's seconds of characters of their own: their models,
+         * and their weapons asked for (port_duo.h) */
+        port_DuoLoadPartners(load_addr);
+#endif
         resource_LoadWeapons(load_addr);
         model_SetOutline(0, 0);
         model_SetOutline(1, 0);
@@ -952,6 +957,10 @@ void fight_Init(void) {
             g_fight_config.weapon[0],
             g_fighter_roster_characters[g_fight_config.roster[1]],
             g_fight_config.weapon[1]);
+#if RB_PORT
+        /* ... and their motion files and win poses (port_duo.h) */
+        port_DuoLoadPartnerMotions();
+#endif
     } else if (g_fight_mode == FIGHT_MODE_TEAM) {
         /* a round that starts again is called at once */
         g_team_begin_countdown = 1;

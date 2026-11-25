@@ -44,6 +44,17 @@ void rb_PortQuickFight(void) {
         g_fight_config.is_cpu[0] = fight->is_cpu[0];
         rb_StartFight(fight->mode, fight->roster, fight->weapon, fight->stage,
                       fight->is_cpu[1], g_rb_settings.bugfixes);
+        /* --partners: two on two's seconds (port_match.h), after the
+         * match has begun */
+        if (fight->has_partners) {
+            s32 side;
+
+            for (side = 0; side < 2; side++) {
+                port_MatchSetPartner(
+                    side, g_fighter_roster_characters[fight->partner_roster[side]],
+                    fight->partner_weapon[side]);
+            }
+        }
     }
 }
 #endif

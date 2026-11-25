@@ -124,6 +124,9 @@ static const char g_port_usage[] =
     "                 into a fight\")\n"
     "                 STAGE may be a mod's arena (docs/MODS.md, \"Custom\n"
     "                 arenas\"), fought on the stage it stands in for\n"
+    "  --partners FIGHTER FIGHTER   ... and with --teams cpu|pads, the\n"
+    "                 second of each team (as --fight names one); without\n"
+    "                 it each team is two of its first\n"
     "  --fight-2p     ... the second fighter is the second pad's\n"
     "  --fight-cpu    ... the first fighter is the CPU's too\n"
     "  --rollback-test N   every so often save the game's state, run N\n"
@@ -540,6 +543,15 @@ s32 port_Main(s32 argc, char **argv) {
                 port_Quit(PORT_EXIT_USAGE);
             }
             i += 3;
+        } else if (port_TextsEqual(word, "--partners")) {
+            if (i + 2 >= argc) {
+                port_UsageError("--partners takes FIGHTER FIGHTER", "");
+            }
+            if (!port_ChooseFightPartners(argv[i + 1], argv[i + 2])) {
+                /* it has said what the names are */
+                port_Quit(PORT_EXIT_USAGE);
+            }
+            i += 2;
         } else if (port_TextsEqual(word, "--rollback-quiet")) {
             rollback_quiet = 1;
         } else if (port_TextsEqual(word, "--whole-state")) {

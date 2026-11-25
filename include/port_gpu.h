@@ -20,7 +20,34 @@
 #define PORT_VRAM_PIXELS (PORT_VRAM_WIDTH * PORT_VRAM_HEIGHT)
 #define PORT_VRAM_BYTES (PORT_VRAM_PIXELS * 2)
 #define PORT_PIXEL_MASK_BIT 0x8000
-extern u16 g_port_vram[PORT_VRAM_PIXELS];
+/* Two on two's second bank of video memory (port_duo.h), stored after
+ * the console's: as many lines again, which the console has not. A
+ * fighter of a character no game slot holds has his textures and colour
+ * tables there, where the slot's would be in the first, and his faces'
+ * colour tables have their top bit (CLUT_TOP_BIT, which the chip does not
+ * read) set: such a polygon reads its texels and its table from the
+ * second bank while port_SetVramBankOn says so. Nothing draws into it;
+ * only what loads a fighter writes it, and the state keeps it as the
+ * game's memory (its pages watched). With the bank off, or a table's top
+ * bit clear, everything is the console's. */
+#define PORT_VRAM_BANK_Y PORT_VRAM_HEIGHT
+#define PORT_VRAM_ROWS (2 * PORT_VRAM_HEIGHT)
+#define PORT_VRAM_STORED (PORT_VRAM_WIDTH * PORT_VRAM_ROWS)
+#define PORT_VRAM_BANK_BIT 0x8000
+extern u16 g_port_vram[PORT_VRAM_STORED];
+/* The second bank read by polygons whose colour table's top bit is set
+ * (src/port/raster.c, a state file; port_duo.h sets it for a fight). */
+extern void port_SetVramBankOn(s32 is_on);
+extern s32 port_VramBankIsOn(void);
+/* While on, LoadImage writes the second bank where it would write the
+ * first (src/port/gpu.c): a fighter's textures loaded into it. */
+extern void port_SetVramBankLoading(s32 is_on);
+/* A copy within the second bank, done at once (a face's eyes and mouth,
+ * model_face.c): what MoveImage does in the first. */
+extern void port_VramBankMove(
+    s32 from_x, s32 from_y, s32 w, s32 h, s32 to_x, s32 to_y);
+/* The second bank emptied. */
+extern void port_ClearVramBank(void);
 /* Video memory as the card's pictures read it (src/port/gl/gl.h): the
  * window's renderer alone, never the state. */
 extern const u16 *g_port_gl_vram;

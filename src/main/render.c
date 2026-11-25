@@ -23,6 +23,15 @@ static void tex_ShiftPolyGT4(POLY_GT4 *prim, s16 du, s16 dv, s16 dcx, s32 dcy);
 static void tex_ShiftPackedA(s16 *prim, s16 du, s16 dv, s16 dcx, s16 dcy);
 static void tex_ShiftPackedB(s16 *prim, s16 du, s16 dv, s16 dcx, s16 dcy);
 
+#if RB_PORT
+/* Two on two's second bank of video memory (port_gpu.h): the top bit
+ * every colour table moved is given while tex_PortMarkBank asks. */
+static s16 g_tex_port_clut_top;
+#define TEX_PORT_CLUT_TOP g_tex_port_clut_top
+#else
+#define TEX_PORT_CLUT_TOP 0
+#endif
+
 void *g_render_queue[RENDER_QUEUE_SIZE];
 s32 *g_reloc_tables[RELOC_BLOCK_COUNT];
 
@@ -407,7 +416,8 @@ static void tex_ShiftPolyFT3(POLY_FT3 *prim, s16 du, s16 dv, s16 dcx, s32 dcy) {
     clut = prim->clut;
     cx = ((dcx >> 4) + (clut & CLUT_X_MASK)) & CLUT_X_MASK;
     cy = (dcy + ((clut >> CLUT_Y_SHIFT) & CLUT_Y_MASK)) & CLUT_Y_MASK;
-    prim->clut = cx | ((clut & CLUT_TOP_BIT) | (cy << CLUT_Y_SHIFT));
+    prim->clut =
+        cx | ((clut & CLUT_TOP_BIT) | TEX_PORT_CLUT_TOP | (cy << CLUT_Y_SHIFT));
 }
 
 /* A flat textured quad. */
@@ -427,7 +437,8 @@ static void tex_ShiftPolyFT4(POLY_FT4 *prim, s16 du, s16 dv, s16 dcx, s32 dcy) {
     clut = prim->clut;
     cx = ((dcx >> 4) + (clut & CLUT_X_MASK)) & CLUT_X_MASK;
     cy = (dcy + ((clut >> CLUT_Y_SHIFT) & CLUT_Y_MASK)) & CLUT_Y_MASK;
-    prim->clut = cx | ((clut & CLUT_TOP_BIT) | (cy << CLUT_Y_SHIFT));
+    prim->clut =
+        cx | ((clut & CLUT_TOP_BIT) | TEX_PORT_CLUT_TOP | (cy << CLUT_Y_SHIFT));
 }
 
 /* A Gouraud textured triangle. */
@@ -446,7 +457,8 @@ static void tex_ShiftPolyGT3(POLY_GT3 *prim, s16 du, s16 dv, s16 dcx, s32 dcy) {
     clut = prim->clut;
     cx = ((dcx >> 4) + (clut & CLUT_X_MASK)) & CLUT_X_MASK;
     cy = (dcy + ((clut >> CLUT_Y_SHIFT) & CLUT_Y_MASK)) & CLUT_Y_MASK;
-    prim->clut = cx | ((clut & CLUT_TOP_BIT) | (cy << CLUT_Y_SHIFT));
+    prim->clut =
+        cx | ((clut & CLUT_TOP_BIT) | TEX_PORT_CLUT_TOP | (cy << CLUT_Y_SHIFT));
 }
 
 /* A Gouraud textured quad. */
@@ -466,7 +478,8 @@ static void tex_ShiftPolyGT4(POLY_GT4 *prim, s16 du, s16 dv, s16 dcx, s32 dcy) {
     clut = prim->clut;
     cx = ((dcx >> 4) + (clut & CLUT_X_MASK)) & CLUT_X_MASK;
     cy = (dcy + ((clut >> CLUT_Y_SHIFT) & CLUT_Y_MASK)) & CLUT_Y_MASK;
-    prim->clut = cx | ((clut & CLUT_TOP_BIT) | (cy << CLUT_Y_SHIFT));
+    prim->clut =
+        cx | ((clut & CLUT_TOP_BIT) | TEX_PORT_CLUT_TOP | (cy << CLUT_Y_SHIFT));
 }
 
 /* A compact record's texture page and colour table: halfwords 0 and 2. */
@@ -497,12 +510,20 @@ static s16 tex_ShiftTPage(s16 tpage, s16 du, s16 dv) {
 
 /* A colour-table word moved by (dcx, dcy) pixels. Its y is taken out by
  * shifting the word up past its top bit and down again. */
+#if RB_PORT
+void tex_PortMarkBank(s16 block) {
+    g_tex_port_clut_top = (s16)CLUT_TOP_BIT;
+    tex_ShiftBlock(block, 0, 0, 0, 0);
+    g_tex_port_clut_top = 0;
+}
+#endif
+
 static s16 tex_ShiftClut(s16 clut, s16 dcx, s32 dcy) {
     s32 x = (dcx >> 4) + (clut & CLUT_X_MASK);
     s32 y;
     x &= CLUT_X_MASK;
     y = (dcy + (((u32)(clut << 17)) >> 23)) & CLUT_Y_MASK;
-    return x | ((clut & CLUT_TOP_BIT) | (y << CLUT_Y_SHIFT));
+    return x | ((clut & CLUT_TOP_BIT) | TEX_PORT_CLUT_TOP | (y << CLUT_Y_SHIFT));
 }
 
 /* ---- mesh pointer tables ---- */
