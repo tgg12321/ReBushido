@@ -177,6 +177,7 @@ enum {
     OWNER_PARTNER_2,
     OWNERS
 };
+
 #define OWNER_IS_BANK(owner) ((owner) >= OWNER_PARTNER_1)
 
 typedef struct {
@@ -203,18 +204,18 @@ static struct {
     GLuint lookup;
     GLuint pages;
     GLuint bases;
-    u16 *lookup_table; /* what the card's lookup table holds */
-    u8 *own[OWNERS];   /* which pixels of video memory are each owner's */
-    u32 owned_pages;   /* a bit for each page that has any */
+    u16 *lookup_table;    /* what the card's lookup table holds */
+    u8 *own[OWNERS];      /* which pixels of video memory are each owner's */
+    u32 owned_pages;      /* a bit for each page that has any */
     u32 owned_bank_pages; /* ... and of the second bank's */
     /* video memory with the second bank where it has pixels, as a bank
      * face reads it (port_GlSceneVramOf), and whether it is this frame's */
     u16 *bank_view;
     s32 is_bank_view_fresh;
-    u32 version;       /* the stage's textures the tables were made for */
-    s32 side;          /* the pictures' size, each way */
-    s32 levels;        /* ... and how many levels each has */
-    s32 capacity;      /* layers the array has room for */
+    u32 version;  /* the stage's textures the tables were made for */
+    s32 side;     /* the pictures' size, each way */
+    s32 levels;   /* ... and how many levels each has */
+    s32 capacity; /* layers the array has room for */
     s32 layer_count;
     u64 layer_keys[LAYERS_MAX];
     s8 layer_state[LAYERS_MAX]; /* LAYER_... */
@@ -227,7 +228,7 @@ static struct {
      * read again (0 until then) */
     s32 is_short;
     s32 layers_least;
-    u16 *base_rows;   /* the bases, LAYERS_MAX rows of COLORS_MAX */
+    u16 *base_rows; /* the bases, LAYERS_MAX rows of COLORS_MAX */
     Looked *looked;
     s32 looked_count;
     s32 has_stale;
@@ -928,8 +929,8 @@ static void port_GlSceneEnter(Looked *one) {
     }
     port_GlSceneSetEntry(
         column,
-        port_GlSceneRow(one->clut_y +
-                        (one->is_bank ? PORT_VRAM_BANK_NAMED_Y : 0)),
+        port_GlSceneRow(
+            one->clut_y + (one->is_bank ? PORT_VRAM_BANK_NAMED_Y : 0)),
         (u16)(ENTRY_SEEN | (one->owner != OWNER_STAGE ? ENTRY_FIGHTER : 0U) |
               (layer >= 0
                    ? (u32)(layer + 1) | ((u32)one->bits << ENTRY_BITS_SHIFT)
@@ -1039,8 +1040,8 @@ static void port_GlSceneOwn(s32 owner) {
     s32 count;
     s32 i;
 
-    u32 *owned = OWNER_IS_BANK(owner) ? &g_scene.owned_bank_pages
-                                      : &g_scene.owned_pages;
+    u32 *owned =
+        OWNER_IS_BANK(owner) ? &g_scene.owned_bank_pages : &g_scene.owned_pages;
 
     textures = port_GlSceneTextures(owner, &count);
     memset(own, 0, (size_t)PORT_VRAM_PIXELS);
@@ -1055,9 +1056,8 @@ static void port_GlSceneOwn(s32 owner) {
                     continue;
                 }
                 own[y * PORT_VRAM_WIDTH + x] = 1;
-                *owned |=
-                    1U << (((x / PAGE_X_STEP) % PAGES_ACROSS) +
-                           ((y / PAGE_Y_STEP) & 1) * PAGES_ACROSS);
+                *owned |= 1U << (((x / PAGE_X_STEP) % PAGES_ACROSS) +
+                                 ((y / PAGE_Y_STEP) & 1) * PAGES_ACROSS);
             }
         }
     }
@@ -1090,10 +1090,9 @@ static void port_GlSceneAddTim(const PortStageTexture *one, s32 owner) {
              page_x += page_w) {
             for (row = 0; row < one->clut_h; row++) {
                 for (i = 0; i < across; i++) {
-                    port_GlSceneAdd(page_x, page_y + named,
-                                    one->clut_x + i * colors,
-                                    one->named_y + row + named, one->bits,
-                                    FALSE);
+                    port_GlSceneAdd(
+                        page_x, page_y + named, one->clut_x + i * colors,
+                        one->named_y + row + named, one->bits, FALSE);
                 }
             }
         }

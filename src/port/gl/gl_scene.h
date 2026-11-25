@@ -85,7 +85,7 @@ extern float port_GlSceneLevels(void);
     "    int column = (((page.x >> 6) & 15) + ((page.y >> 8) & 1) * 16) * 64\n"   \
     "               + ((page.z >> 4) & 63);\n"                                    \
     "    int row = page.w >= 1024 ? 512 + ((page.w - 1024) & 255)\n"              \
-    "                             : (page.w & 511);\n"                           \
+    "                             : (page.w & 511);\n"                            \
     "    uint entry = texelFetch(u_scene_lookup, ivec2(column, row), 0).r;\n"     \
     "    int layer = int(entry & 4095u) - 1;\n"                                   \
     "    if (layer < 0 || ((entry >> 12) & 3u) != bits) { return -1; }\n"         \

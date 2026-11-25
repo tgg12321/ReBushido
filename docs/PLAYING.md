@@ -1242,9 +1242,13 @@ his fighter on (his tag says `CPU`, and the line says *Player 4 has
 left: the CPU plays his fighter* for a few seconds), the fight and the
 match go on for the other three, and the session ends for all at the
 match's end; in a room's match the result is the match's as it was
-played out. If the host's player leaves, or it is not the middle of a fight, or
-he was the last other player, the session ends for everyone as before,
-and in a room's match the leaver's team loses it. Of two on each of two
+played out. The same between the fights of a match of several (Stock,
+First to): the card goes on without him and his fighter is the CPU's
+from the next fight's start. If the host's player leaves, or it is
+before the match's first fight (the select screen, the partners, the
+stage) or on the menus after its last, or he was the last other player,
+the session ends for everyone as before, and in a room's match the
+leaver's team loses it. Of two on each of two
 PCs, either leaving ends it. Everyone needs the same setup code, as for
 two.
 

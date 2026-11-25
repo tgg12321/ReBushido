@@ -569,7 +569,12 @@ the stage").
     PCs who leaves the fight (or goes silent) gives his fighter to the CPU,
     decided by the host at one frame and passed on as his pad's input
     (protocol 16; NETPLAY.md, section 19), and the others play the match
-    out; the host's leave ends the session for all. Proved
+    out; the host's leave ends the session for all. Since 2026-11-25 the
+    same between the fights of a match of several (the card goes on, the
+    fighter the CPU's from the next fight's start), a killed guest's
+    program proved to be taken after its 15 seconds of silence
+    (`four-silent`, `four-between`, Linux and Windows), and a mod's whole
+    pages laid over the partners' textures in the second bank too. Proved
     headless on this PC, by address and through a local lobby (a punched
     hole, the relay), in a room of several with a spectator and a leave,
     on Linux and Windows, every hash the same on all; replays of the fight

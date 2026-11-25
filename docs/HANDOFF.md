@@ -77,9 +77,10 @@ lessons still holds unless this section says otherwise.
 ## Next, what needs no owner
 
 - ROADMAP 24's leftovers: a partner's own voice and weapon sounds (the
-  sound chip holds two characters' banks), mods' texture pages on the
-  second video memory bank, the silent guest's 15 s takeover untested, a
-  leave between fights of a match.
+  sound chip holds two characters' banks). (Mods' texture pages on the
+  second bank, the silent guest's takeover and a leave between a match's
+  fights are done, 2026-11-25: NETPLAY.md, section 19; MODS.md, "A
+  fighter's pages"; the owner's eye on `tmp/2v2-mods/`.)
 - A replay played by a later window build that differs only in window
   code passed the build check and then crashed (exit 70): the replay's
   build check may not cover the window's code.- 17's leftovers: foliage in the sun's maps, gulls over the ship, more
