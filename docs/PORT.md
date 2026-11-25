@@ -9508,7 +9508,7 @@ The four pads are netplay's (`g_np_input`), the third and fourth read as
 a local fight reads them; a replay of the fight keeps all four, as a
 local one does. A rollback at four remote pads is a rollback at four
 fighters: `tools/port_bench.py --rollback`'s `rollback-4p` (`--teams
-pads`, every fighter a pad's) BENCH_4P.
+pads`, every fighter a pad's), on the RTX 3090's PC on 2026-11-25 while three other agents loaded it: a frame of the fight run again 1.70 ms (worst 4.25), a state put back 0.38 ms, a rollback of the whole window of 8 frames 14.0 ms on average and 37.4 at most, against 13.8 and 42.9 for two on two with the CPU's partners and 10.5 and 30.0 for one on one in the same run (the loaded machine doubles them all against the quiet run's 7.9 and 5.8 above): four remote pads cost what four fighters cost, a few hundredths of a millisecond a frame more than the CPU's partners, nothing for the pads themselves.
 
 **What is left.** Teams of two different characters, or different
 weapons, need video memory for a third and fourth character (a model's

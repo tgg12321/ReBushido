@@ -2174,29 +2174,132 @@ stage is the stage page's second (on the rooftop a fighter left lying by
 the plan may lie on a roof below, out of the CPU partners' reach, and
 the fight never ends).
 
-**What four players on four PCs needs.** Today's session is two PCs, a
-pad each, and everything built on it says so:
+**Four players on four PCs** (protocol 14, lobby version 4; the owner,
+2026-11-25: "work whatever items you can without my intervention"). The
+host is player 1 and the middle of a star: each guest has one link, to
+the host, and the host one to each guest; the host passes each guest's
+inputs on to the others with its own. Two on each of two PCs is the same
+session with one link, each PC playing two pads (a team).
 
-- **the input**: a session's frame is two pads, one from each side
-  (`g_np_local_inputs`, `g_np_remote_inputs`, u16 each); four players
-  need the four pads in one frame, each PC's own and three others',
-  each guessed and each able to roll the session back, and the hash of
-  a frame final only once all four are known;
-- **the network**: either every PC to every other (six ways, each found
-  as today's two are: direct, router, punch, relay) or the host's PC in
-  the middle, passing each guest's inputs to the others (more delay to
-  each guest, one way each); the datagrams carry an input for each pad
-  they speak for, and their acknowledgements for each sender;
-- **the meeting**: the welcome and its cards to three guests, all four
-  ready before the start, and a guest who leaves (his fighter the CPU's,
-  or the match over);
-- **the lobby**: a room's match of four (its tickets for four, the
-  server's rotation of teams), the spectators' feed of four pads a frame
-  (its format and the server's version, the VPS's), and the replays'
-  frames of four, which the format already has (version 2).
+*Why the host in the middle, not every PC to every other.* Each guest
+needs one way, to the host, and finds it as a guest of two does: the
+host's link is its own socket, so each pair is exactly a session of
+two's meeting at the lobby (IPv6, the host's mapped port, a punched
+hole, the relay), section 14's ladder unchanged three times over. A mesh
+needs six ways, the three between guests among them: behind a symmetric
+NAT a guest that reaches the host may well not reach another guest, and
+every pair of the six must come through, or relay, for the session to
+begin. The price is delay between two guests, whose inputs go by way of
+the host: guest to host and host to guest, at most about twice a direct
+way's one way for players of one region, all of it within the window a
+rollback hides (a guess is never more than 8 frames ahead). The host is
+also where everything that must be one is decided: who is in, the go,
+the end, the hashes held to each other (the host holds each guest's to
+its own, a guest the host's: every program's to every other's by way of
+the host), the feed to the spectators. Its upload is three guests'
+datagrams of a few hundred bytes, 60 a second each.
 
-A middle way would be **two players on each of two PCs**: each PC's
-input two pads (its first and its third, or its second and its fourth),
-a 32-bit word a side instead of 16 in the datagrams, the replays and the
-spectators' feed. It meets on today's ways, but the feed's format is the
-lobby server's too.
+*The input* (`netplay.c`): a frame is every pad of the session, each
+with its own count of frames known, its own guesses (the last that came)
+and its own wrong guess, any of which rolls the session back to its
+frame; a hash is final once every pad's inputs before it are known. A
+datagram (`KIND_INPUT`) says how many of each pad's inputs its sender
+has (so each sender sends a link only what its program lacks), the
+sender's last final hash and its time, and a block of inputs for each
+pad that the receiving program does not play: to a guest, the host's and
+the other guests', to the host a guest's own. Time sync is kept with
+each link and the hold is the most any link asks for. The local pads
+are the PC's: a PC of one player plays its pad with either of its pads,
+a PC of two its first pad and its second. A rollback at four remote pads costs what one at four fighters does (PORT.md, "Two on two": `port_bench.py --rollback`'s `rollback-4p`, 14.0 ms for the whole window on a loaded machine against 13.8 with the CPU's partners in the same run).
+
+*The meeting* (`session.c`): `--players 4` (or `2x2`) on the host. The
+host meets its guests one after another, each on its own link: by
+address at its port and the two after it (a guest that says hello to a
+port whose link has its guest is sent on to the next that waits,
+`KIND_MOVE`), or at the lobby a seat each of a room of four. Every
+guest's protocol, build, disc and gameplay mods are held to the host's,
+and each is sent the cards. While the host meets one, those already in
+are kept in (`port_SessionKeepOthers`: their datagrams read, a leave or a
+silence of 15 seconds letting that link wait for another, the lobby told
+them every 100 ms). The welcome says the session's pads and PCs and the
+guest's own pads (`MEET_SEATS`); the host's lobby (`KIND_LOBBY`) says
+how many are here of how many and, once all are, the shape every
+program cuts faces off at (the widest of the four pictures, section 13),
+which each guest must have before it says it is ready. The host says go
+to all once every guest is ready and its own player is. A session of
+four players is two on two with every fighter a player's: pad 1 and 3
+the first team, 2 and 4 the second (on two PCs, each PC a team); the
+host's rule, its match and its stage page hold as in a session of two.
+
+*Leaving.* A player who leaves (the window's close, F1 twice, the plan's
+end) ends the session for all: the host, told by that guest's goodbye
+(which says the pad), runs to the last frame it has of every pad and
+ends, telling each other guest who left; each runs to its own last and
+ends. In a room's match the leaver's team loses it. (The CPU taking the
+leaver's fighter over is left: it would have to be decided at one frame
+on all, by way of the inputs.)
+
+*The lobby* (`tools/relay/`, version 4; `README.md` beside it): a
+**room of four** is a listed room with three seats. The host's first link
+opens the room as a room of two is opened, with a seat key; its other two
+links each say hello for their seat with the room's code and the key, and
+each seat is a two-player room of that link and one guest, punched,
+decided and relayed on its own. A guest asking for the room's code is
+given the first seat that is open and has nobody, or a seat it asks for
+(a room's match: its place in the match), or is told to wait while its
+seat is not open yet; the list counts the host and every seat's guest,
+and marks the room as of four. The room is kept while the host of any
+of its seats still says hello (the host meets them in turn). A **room of
+several** may make matches of four (`--room-size 4`, *Room for: several,
+matches of four*): the rotation takes the first four free, in order,
+their teams the first and third against the second and fourth; a fixed
+turn sends the match's first to the end, the winner staying keeps both
+winners first; a ticket goes to all four, and each guest meets the
+match's host at the seat of its place. Matches beside the room stay of
+two. **The spectators' feed** carries four pads a frame (8 bytes, 120
+frames and 4 hashes a datagram), and the settings say the session's
+pads. A client of version 3 is answered `VERSION` (before its size is
+looked at), and says "The lobby server is of another version".
+
+*The window*: the online pages' *Host a room*, *Room for*: two players;
+four players, a PC each; four players, two on each of two PCs; several;
+several, matches of four. *Quick Match* joins a room of the kind the page
+says (two, or four on four PCs) or opens one. *Browse rooms* marks a
+room of four `[four]`, `2/4`. The line says `Online: player 3 of 4`, or
+`player 1 and 3 of 4` on a PC of two players, with the worst link's
+ping. The settings menu's Play online page hosts two only.
+
+**Proved** on this PC, every program headless unless said:
+
+| Case | Programs | What runs | Result |
+| --- | --- | --- | --- |
+| `port_net.py four`: `four` | four headless, each size | `--host 127.0.0.1:P --players 4`, three `--join` at P (the second and third sent on to P+1 and P+2); 100 ms each way and 5% lost; versus select, the fight of four to a team out, the menu after it | 64-bit: 5,502 frames, 183 hashes the same on all four, the last `13BE7CD212C83E90` at frame 5,490; 1,035 rollbacks on the host (three links' pads to be wrong), 733, 705 and 745 on the guests, the longest 8; the fight's replay the same on all four machines (all four pads) and played back by each with every hash the same. 32-bit: 183 the same on all four, the last `FA0367574C81715F`; 1,001, 720, 668 and 736 rollbacks |
+| `couch` | two headless, each size | `--players 2x2`: each PC two pads, a team | the same 183 hashes as `four`, to the last (the same presses at the same frames: the state does not depend on which PC plays which pad); 650 and 664 rollbacks (32-bit 576 and 635) |
+| `four-leave` | four headless | as `four`, the fourth player's program ending 400 frames into the fight | each of the others told `the other program ended after frame 1,799 (player 4)`, all four ending well; 59 hashes the same on all |
+| `port_net_lobby.py`: `four-punch` | four headless | a locked room of four at a local lobby, three guests by its code and its password, each at its own seat; 60 ms each way and 5% lost | every guest's way a punched hole to the host (the host's three); 183 hashes the same on all four, the last `13BE7CD212C83E90` (that of the session by address: the network decides when an input is known, never what it is); 1,030, 719, 681 and 741 rollbacks; 100 s |
+| `four-relay` | four headless | the same, `--net-paths relay`: each seat's pair passed on by the lobby | each the relay; the same 183 hashes, the same last; 109 s |
+| `rooms-four` | five headless | a room of several, matches of four (`--room-size 4`, a fixed turn): Ayame, Bunta, Chie and Dai play, Sora watches; Dai leaves the second match at its frame 1,900, in the fight | match 1, Ayame and Chie against Bunta and Dai, each at the place the rotation gave: 182 hashes the same on all four, Sora holding 134 of them as she watched (from the fight's start), the second team's win told to the room. Match 2, the order turned (Bunta first, Bunta and Dai against Chie and Ayame): Dai's leave ended it on all, the others told `player 3` left, his team's loss the room's result, 63 hashes the same on all four, Sora 17; all back to their own games and the room; 169 s |
+| `pages-four` | four windows (hidden) | the host window's online pages: Host a room, *Room for: four players, a PC each*, Open; three windows of the command line join by its code; the host's Ready; at versus select the guests' Triangle (player 2's takes all back to the top menu) | the host met all three in turn and said go once all were ready; the session from power on to the select screen, where it ended on all (the host back at its own game, never started again); 17 hashes the same on all four; the Linux window, 19 s |
+| `four-punch-win` | four, Windows' headless program | `four-punch` on Windows | 183 hashes the same on all four, the last `6D260E838DC11965` (the Windows build's own, section 7); 1,049, 767, 710 and 735 rollbacks; 91 s |
+| `four-relay-win` | four, Windows' headless | `four-relay` on Windows | each the relay; 183 hashes the same on all four, the last `6D260E838DC11965` (as `four-punch-win`); 1,049, 726, 747 and 687 rollbacks |
+| `rooms-four-win` | five, Windows' headless | `rooms-four` on Windows | match 1: 182 hashes the same on all four, Sora holding 136; match 2: Dai's leave, his team's loss, 63 hashes the same on all four, Sora 17; 127 s |
+| `win-pages-four` | four Windows windows (hidden) | `pages-four` on Windows | the same: all met, go, the session's end at the select screen on all; 17 hashes the same on all four; 18 s |
+| `tools/relay/test_relay.py` | the server | rooms of four, their seats, a room of several's matches of four, the feed of four pads, version 3 refused | every case passes (OK, about 70 s), with the rest of the server's |
+| `tests/port/netplay.c` | netplay alone | the host of four: each pad's inputs taken from its own link only, each link sent every pad but its own (the other guests' passed on) from what it has, a wrong guess of one guest's pad rolled back, a hash final only once all four pads have come, a guest's goodbye with its pad | 85 checks, both sizes |
+
+The Windows program without a C library read at most 32 words of its
+command line (`host_windows.c`), which a host of four's line with a
+lobby's and a test's words passed; it reads 128 now. `port_order` and
+`port_casts` (`make port`) had kept a dump of a source edited since it was
+made, as nothing they read named the source itself; they look at it now
+(`port_build.made_since`).
+
+**What is left.** Four real PCs on four networks, and players: the
+delay between two guests through the host, and the host's upload. A
+player who leaves ends the session for all (the CPU taking over his
+fighter is not built). Teams of different characters (video memory for
+four). The settings menu's Play online page hosts two only; the online
+pages have the rest. The window asks its router to map the host's first
+port alone: by address, the second and third guests' ports must be open
+(at the lobby every seat finds its own way). The owner's eye on the pages'
+new rows.
