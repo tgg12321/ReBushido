@@ -6,11 +6,13 @@ lessons still holds unless this section says otherwise.
 
 ## The state
 
-- `main` holds every agent branch of the session; the gate passed on the
-  last merge (ROADMAP 17's second pass) before it was pushed. No agent
-  worktree is left.
+- `main` holds every agent branch of the session, pushed at `e7da37638`;
+  the gate passed on it and baselines are stored for it. No agent
+  worktree is left (three empty folders in `.claude/worktrees/` were
+  held open by the session; remove them when nothing holds them).
 - **The lobby on the VPS is version 4** (four PCs, 2026-11-25), session
-  protocol 15. Versions 1 to 3 are kept on the VPS as
+  protocol now 18 (16 the CPU for a leaver, 17 the arenas' sum, 18 the
+  partners' picks; none needed a lobby change). Versions 1 to 3 are kept on the VPS as
   `/root/rebushido-relay-src.v{1,2,3}-backup`; the ladder's store is
   `/var/lib/private/rebushido-relay` (daily backups). The internet test
   passed on version 4 (82 hashes alike, punch and relay). No release is
@@ -31,7 +33,12 @@ lessons still holds unless this section says otherwise.
   Ed25519 identities, ranked play, Glicko-2, disputes by replay); two on
   two (24: four fighters, retargeting, four pads, CPU partners, four
   PCs as a star through the host, and each fighter a character and
-  weapon of his own, the partners picked at a second grid; protocol 18).
+  weapon of his own, the partners picked at a second grid; the CPU
+  playing on for a guest of four who leaves, NETPLAY.md section 19).
+- **Arenas and replays**: the stage select's arenas page in the game's
+  look (ROADMAP 18); a replay exported as a film (Square on the Replays
+  page, `--replay FILE --export OUT.mp4`: H.264/AAC by Windows' own
+  Media Foundation, MJPEG AVI elsewhere; ROADMAP 23).
 - **Looks**: the movies on the card and made larger (`movies-hd`,
   realesr-animevideov3) and the static art (`art`, Real-ESRGAN, the
   upscaler in `prepare/upscaler/`: MIT program, BSD-3 ncnn and weights);
@@ -59,18 +66,26 @@ lessons still holds unless this section says otherwise.
 4. **The release zip** with the upscaler (62 MB) or without (29 MB, the
    art then left unenlarged).
 5. The modern control layout, and `-O2` for the port.
+6. **Smaller calls**: a room's result when a guest of four leaves (the
+   match as played; the lobby credits the whole team, leaver too); the
+   CPU takeover's wording; the arenas page (`tmp/arenapage/`: names'
+   size, the preview cropped to the map's frame); films at 59.826 a
+   second, from the fight's first frame, ~21 MB a 16 s fight at 1080p
+   (over Discord's free 10 MB; 720p is 9.6 MB; `tmp/replay-export/`);
+   four characters in 2v2 (`tmp/2v2-chars/`).
 
 ## Next, what needs no owner
 
-- `python tools/baseline.py --store` on a quiet machine: main's stored
-  baselines are about 70 commits old, so `--against main` compares with
-  `d8466884f` and the bench calls its baseline stale.
-- ROADMAP 24's gap: different characters per team (the CPU taking over a
-  player who leaves is done: NETPLAY.md, section 19).
-- 17's leftovers: foliage in the sun's maps, gulls over the ship, more
+- ROADMAP 24's leftovers: a partner's own voice and weapon sounds (the
+  sound chip holds two characters' banks), mods' texture pages on the
+  second video memory bank, the silent guest's 15 s takeover untested, a
+  leave between fights of a match.
+- A replay played by a later window build that differs only in window
+  code passed the build check and then crashed (exit 70): the replay's
+  build check may not cover the window's code.- 17's leftovers: foliage in the sun's maps, gulls over the ship, more
   pieces as meshes, the shafts drawn over a fighter in front of them.
-- ROADMAP 18's arenas; replay export and dispute tooling; the kanabo's
-  window model.
+- 18's leftovers: more than 32 arenas, arenas larger than their host's
+  room, pieces; dispute tooling; the kanabo's window model.
 - The ra2 fight's first-frame stall (21 to 25 ms, older than the
   session; no budget holds it).
 
@@ -87,6 +102,14 @@ lessons still holds unless this section says otherwise.
 - **The bench's processor figures** catch a per-frame cost a prover
   never will (the fighters' pages): read the ra0 CPU line after any
   change to `gl_draw.c`'s upload path.
+- **Agents' worktrees need links** to `cc1`, `.venv`, the disc image
+  and the emulator before their gate, or its steps fail for the
+  machine's sake; say so in the brief.
+- **Windows reserves port ranges** at boot (`netsh int ipv4 show
+  excludedportrange`): the gate's port base now passes over them
+  (`befebbeb7`). Online window cases can still miss a timed press on a
+  loaded machine (`room`'s leave): rerun the one case before doubting
+  the change.
 - The dressing's shots tool read the window's bytes as BGR until
   `6842ba9c3`: pictures of the first pass in `tmp/stages17/` have red
   and blue swapped.
