@@ -152,6 +152,8 @@ CASE_SETTINGS = {'ra1-2v2': (('teams', 'cpu'),)}
 # each pad's cursor one place down from his first and Cross, then his
 # weapon: four characters (the first two pads, or the third and fourth).
 TEAM_CASES = {'ra1-2v2': ('', 'P2 '), 'rollback-2v2': ('', 'P2 '), 'rollback-4p': ('P3 ', 'P4 ')}
+# ... whose fight starts this many blanks later, after the second grid
+TEAM_FRAMES = 1200
 TEAM_PICKS = ['"partner+60 %sDOWN"', '"partner+70 %sDOWN"', '"partner+90 %sCROSS"', '"partner+100 %sCROSS"',
               '"partner+300 %sCROSS"', '"partner+340 %sCROSS"']
 TEAM_CHECKPOINT = '''
@@ -442,6 +444,11 @@ def make_dressed_mods(mods):
     return dressed
 
 
+def frames_of(case):
+    """The blanks a case's run ends at: FRAMES, later for two on two's."""
+    return FRAMES + (TEAM_FRAMES if case in TEAM_CASES else 0)
+
+
 def team_toml(case, folder):
     """port_game's plan with the partners of a case of two on two picked
     (TEAM_CASES): the path of its text."""
@@ -479,7 +486,7 @@ def write_plan(out, stage=None, case=None):
         if stage is not None and name in ('config_stage', 'stage'):
             value = stage
         address, size = where[name]
-        lines.append('poke %d 0 %d %d %d %d' % (select, FRAMES, address, size, value))
+        lines.append('poke %d 0 %d %d %d %d' % (select, frames_of(case), address, size, value))
     with open(out, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
 
@@ -514,7 +521,7 @@ def run(case, image, mods, plan, overrides=()):
         pace = []
     cmd = [PROGRAM, '--hidden', '--image', image, '--config', config, '--mods', mods, '--plan', plan,
            '--out', folder, '--no-cards'] + pace + ['--run-ahead', str(run_ahead), '--window', WINDOW,
-           '--frames', str(FRAMES), '--profile', profile, '--log', log]
+           '--frames', str(frames_of(case)), '--profile', profile, '--log', log]
     if stress:
         cmd += ['--bench-stress', stress]
     env = dict(os.environ, SDL_AUDIODRIVER='dummy')
@@ -587,7 +594,7 @@ def measure_rollback(image, mods):
         finally:
             PROGRAM = kept
         cmd = [HEADLESS, '--image', image, '--plan', plan, '--no-cards', '--mods', 'off', '--out', folder,
-               '--rollback-test', str(ROLLBACK_WINDOW), '--rollback-quiet', '--frames', str(FRAMES)] + extra
+               '--rollback-test', str(ROLLBACK_WINDOW), '--rollback-quiet', '--frames', str(frames_of(case))] + extra
         done = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
                               timeout=RUN_SECONDS * 4)
         text = done.stderr.decode('utf-8', 'replace')
