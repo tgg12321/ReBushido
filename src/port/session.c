@@ -945,6 +945,11 @@ static s32 port_HostKeep(
         if (kind == KIND_READY) {
             guest->ready = 1;
         }
+        if (kind == KIND_HELLO) {
+            /* the guest's WELCOME was lost (with no cards to send, the
+             * host met it with one and went on to the next link) */
+            port_SendMeet(KIND_WELCOME);
+        }
     }
     if (port_NetClock() - guest->heard_at > SILENT_GIVE_UP_MS) {
         port_Log("session: %s (link %d) stopped answering; waiting for "

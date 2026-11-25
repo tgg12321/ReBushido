@@ -1372,7 +1372,7 @@ def case_pages(case):
                  'wait:5 shot accept up accept until:lobby accept' % PASSWORD)
     guest_keys = 'down down accept wait:10 shot accept type:%s shot done until:lobby wait:10 shot accept' % PASSWORD
     host = pages_window(case, 'host', 'net_lobby = %s\nnet_player = Hostess\nnet_room = Pages room\nnet_delay = 2\n'
-                        % lobby, host_keys, 0)
+                        'net_port = %d\n' % (lobby, case.port(1)), host_keys, 0)
     if case.wait_for('host', r"room's code is (\w+)", 90) is None:
         case.fail('the host\'s room was not opened from the pages')
         return
@@ -1432,7 +1432,7 @@ def case_pages_four(case):
     host_keys = ('shot down accept down down down accept shot up accept '
                  'until:waiting wait:20 shot until:lobby wait:20 shot accept')
     host = pages_window(case, 'host', 'net_lobby = %s\nnet_player = Hostess\nnet_room = Fours\nnet_delay = 2\n'
-                        % lobby, host_keys, 0)
+                        'net_port = %d\n' % (lobby, case.port(1)), host_keys, 0)
     code = case.wait_for('host', r"room's code is (\w+)", 90)
     if code is None:
         case.fail('the host\'s room of four was not opened from the pages')
@@ -1543,7 +1543,7 @@ def case_win_room(case):
 
     keys = ('down accept down down down accept shot up accept until:room wait:10 shot '
             'until:message wait:10 shot accept until:message wait:10 shot accept')
-    host = window('hostess', 'net_room = Group room\nnet_delay = 2\n',
+    host = window('hostess', 'net_room = Group room\nnet_delay = 2\nnet_port = %d\n' % case.port(1),
                   ['--online-at', '120', '--online-keys', keys, '--escape-at', ROOM_ESCAPES,
                    '--menu-shots', os.path.join(case.folder, 'shots', 'hostess')])
     code = case.wait_for('hostess', r"room's code is (\w+) \(a room of several", 90)
