@@ -32,6 +32,11 @@ first team (the first pad's character twice), 2 and 4 the second.
   Right): the partners picked by the third and fourth pads, one place
   down and two, their weapons one along; the first fight of four
   characters, each partner's weapon his pick.
+- vscpu: versus the CPU from ReBushido's main menu: the rule page's
+  fighters' row to two on two with the CPU's partners, the first player's
+  fighter and weapon, his partner one place down; the CPU's opponent and
+  his partner drawn from the run's opponents, a character other than his:
+  four characters, a fight to one team out.
 - four: `--fight` Kannuki against Mikado with `--partners` Tatsumi with
   a nodachi and Utsusemi with a yari, all four the CPU's: four
   characters, four weapons, a fight to one team out, the game's own
@@ -72,7 +77,8 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, 'tools'))
 from port_stage_select import Report, fight_presses, run_plan  # noqa: E402
-from port_match import RB_ARGS, RB_FIRST_PICKS, RB_OPENING, RB_START, RB_VS_MENU  # noqa: E402
+from port_match import RB_ARGS, RB_FIRST_PICK_CPU, RB_FIRST_PICKS, RB_OPENING, RB_START, RB_VS_MENU  # noqa: E402
+from port_match import RB_VSCPU_MENU  # noqa: E402
 
 # the opening's checkpoints and ReBushido's main menu (tools/port_match.py)
 MENU_START = RB_START
@@ -231,6 +237,51 @@ PARTNER_PICKS_PADS = ('"partner+60 P3 DOWN", "partner+70 P4 DOWN", "partner+90 P
                       '"partner+130 P4 CROSS", "partner+260 P3 RIGHT", "partner+270 P4 RIGHT", '
                       '"partner+320 P3 CROSS", "partner+360 P4 CROSS"')
 
+# Versus the CPU: the first player's team picked, the CPU's drawn.
+TOML_VSCPU = 'about = "Two on two versus the CPU, the partners picked and drawn (tools/port_duo.py)"\n' + HEAD + \
+    '''input = [%(rb_opening)s,
+    %(rb_vscpu_menu)s,
+    "rule+30 DOWN", "rule+50 RIGHT", "rule+90 CROSS",
+    %(first_pick_cpu)s,
+    "partner+60 DOWN", "partner+100 CROSS", "partner+300 CROSS",
+    %(presses)s,
+]
+''' + COMPARE + MENU_START + '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "rule"
+when = "port_match_rule_page == 1"
+within = 3000
+expect = ["port_match_page_teams == 0"]
+
+[[checkpoint]]
+name = "grid"
+when = "port_match_rule_page == 0"
+within = 1000
+expect = ["port_match_page_teams == 1"]
+
+[[checkpoint]]
+name = "partner"
+when = "port_match_crew_picked == 1"
+within = 1500
+expect = ["menu_page == MENU_PAGE_SELECT", "port_match_crew_size == 2", "port_match_crew_sides == 1"]
+''' + FIGHT.replace('expect = [', 'expect = ["mode == FIGHT_MODE_VSCPU", "port_match_teams == 1", '
+                    '"port_duo_character_3 != port_duo_character_1", '
+                    '"port_duo_character_4 != port_duo_character_2", ').replace(
+    'within = 3000', 'within = 4000') + '''
+[[checkpoint]]
+name = "decided"
+when = "port_duo_decided == 1"
+at_frame = true
+within = 20000
+expect = ["(port_duo_down_1 == 1 && port_duo_down_3 == 1) || (port_duo_down_2 == 1 && port_duo_down_4 == 1)"]
+'''
+
 # Four characters by --fight and --partners, all the CPU's, to a team out.
 TOML_FOUR = 'about = "Two on two of four characters and weapons, all the CPU\'s (tools/port_duo.py)"\n' + HEAD + \
     'input = []\n' + COMPARE + \
@@ -365,7 +416,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'duo'))
     parser.add_argument('--shots', default=None)
-    parser.add_argument('--only', nargs='*', help='the plans to run (retarget, pads, menu, menu_pads, cpu, '
+    parser.add_argument('--only', nargs='*', help='the plans to run (retarget, pads, menu, menu_pads, vscpu, cpu, '
                         'second_wins, draw, stock, four)')
     parser.add_argument('--rollback', action='store_true',
                         help='retarget, pads and stock through tools/port_rollback.py instead')
@@ -382,6 +433,7 @@ def main(argv):
               'presses_p2': presses_p2, 'presses2_p2': presses_p2.replace('"fight+', '"fight2+'),
               'rb_opening': ', '.join(RB_OPENING), 'rb_vs_menu': RB_VS_MENU, 'first_picks': RB_FIRST_PICKS,
               'partner_picks': PARTNER_PICKS, 'teams_presses': '"rule+110 RIGHT",', 'teams': 1,
+              'rb_vscpu_menu': RB_VSCPU_MENU, 'first_pick_cpu': RB_FIRST_PICK_CPU,
               'presses_p3': fight_presses(60, 60, P3_ROUND).replace('f ', 'f P3 ')}
     plans = [
         ('retarget', TOML_RETARGET, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'], (), 20000),
@@ -393,6 +445,7 @@ def main(argv):
          RB_ARGS + ['--match', 'single'], ('values', {'partner_picks': PARTNER_PICKS_PADS, 'teams': 2,
                                                       'teams_presses': '"rule+110 RIGHT", "rule+130 RIGHT",'}),
          12000),
+        ('vscpu', TOML_VSCPU, RB_ARGS + ['--match', 'single'], (), 30000),
         ('cpu', TOML_CPU, FIGHT_ARGS + ['--fight-cpu', '--teams', 'cpu'], (), 30000),
         ('second_wins', TOML_SECOND_WINS, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'],
          ('poke', [('later', 2, 'p1_defeated', 1), ('later', 2, 'p2_defeated', 1),
