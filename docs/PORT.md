@@ -8870,7 +8870,12 @@ same hashes.
 any (the meshes cast into the sun's maps and the lights' cubes,
 `port_GlDressingDrawSunCasters`). The water's reflections are the
 post's, so they are only as good as the picture's own (`reflections`
-on; where the post's ray meets nothing, the sky the picture shows). A
+on; where the post's ray meets nothing, the sky the picture shows); and
+they are not yet seen: the pictures of a window never shown
+(`--hidden --tap-window`, `port_dressing.py shots`) hold none of the
+post's passes -- `reflections` on and off gave the same bytes on the
+main Tatara shrine's polished floor -- so the water's code for them is
+written and nothing has looked at what it gives. A
 shaft is drawn over a fighter standing in front of it (a fighter writes
 no depth of his own). The `mist` kind is there, but no shipped stage's
 open water lies where the fight camera looks. Gulls over the ship. Only
