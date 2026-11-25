@@ -65,10 +65,10 @@ void port_ReplaysDetail(s32 item, char *out, u32 room) {
         return;
     }
     info = &g_rows[item];
-    snprintf(out, room, "%s and %s     %.16s     %s%s, %s",
+    snprintf(out, room, "%s and %s     %.16s     %s (%s%s)",
              port_NameWeapon(info->weapon[0]), port_NameWeapon(info->weapon[1]),
-             info->date, info->online != 0 ? "online " : "",
-             port_NameMode(info->mode), port_NameStage(info->stage));
+             info->date, port_NameStage(info->stage),
+             info->online != 0 ? "online " : "", port_NameMode(info->mode));
 }
 
 const char *port_ReplaysHelp(s32 item) {
