@@ -174,6 +174,11 @@ static const char g_port_usage[] =
     "                 code; the two are told each other's addresses, try\n"
     "                 them all at once, and play through the server where\n"
     "                 no way is found\n"
+    "  --players 2|4|2x2   with --host: the session's players: two, four\n"
+    "                 on four PCs (the host meets three guests; --host's\n"
+    "                 port and the two after it, or a room of four at the\n"
+    "                 lobby), or two on each of two PCs (docs/NETPLAY.md,\n"
+    "                 section 18); four play two on two\n"
     "  --player NAME  ... the name the lobby shows\n"
     "  --room-password WORD   ... the room's password (the host's), or\n"
     "                 the one typed to join it\n"
@@ -197,6 +202,8 @@ static const char g_port_usage[] =
     "                 (docs/NETPLAY.md, section 16) and play and watch its\n"
     "                 matches as they come; --room-enter CODE enters one\n"
     "  --room-rule fixed|winner|off   ... the rotation (the opener's)\n"
+    "  --room-size 2|4   ... its matches' players (the opener's): 4, two\n"
+    "                 on two, four PCs\n"
     "  --room-watcher ... a spectator, not in the rotation; --room-no-watch\n"
     "                 watches none of the matches it is not in\n"
     "  --room-matches N   ... leave the room and end once it has had N\n"
@@ -470,12 +477,17 @@ s32 port_Main(s32 argc, char **argv) {
     const char *key_text = "";
     const char *punch_text = "";
     const char *lobby_text = "";
+    /* --players: the session's players and their PCs (docs/NETPLAY.md,
+     * section 18) */
+    s32 session_pads = 2;
+    s32 session_pcs = 2;
     /* a room of several (--room-open, --room-enter) */
     static PortOnlineRoom room_auto;
     s32 i;
 
     port_CatchCrashes();
     room_auto.rule = PORT_ROOM_RULE_FIXED;
+    room_auto.size = 2;
     room_auto.plays = TRUE;
     room_auto.watch = TRUE;
     /* everything the game can point at is below 4 GB (docs/PORT.md, "64
@@ -743,6 +755,24 @@ s32 port_Main(s32 argc, char **argv) {
                 port_UsageError(
                     "--room-rule takes fixed, winner or off, not ", argv[i]);
             }
+        } else if (port_TextsEqual(word, "--room-size")) {
+            i++;
+            room_auto.size = port_TextsEqual(argv[i], "4")   ? 4
+                             : port_TextsEqual(argv[i], "2") ? 2
+                                                             : 0;
+            if (room_auto.size == 0) {
+                port_UsageError("--room-size takes 2 or 4, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--players")) {
+            /* 2; 4, on four PCs; 2x2, two on each of two PCs */
+            i++;
+            session_pads = port_TextsEqual(argv[i], "2") ? 2 : 4;
+            session_pcs = port_TextsEqual(argv[i], "4") ? 4 : 2;
+            if (!port_TextsEqual(argv[i], "2") &&
+                !port_TextsEqual(argv[i], "4") &&
+                !port_TextsEqual(argv[i], "2x2")) {
+                port_UsageError("--players takes 2, 4 or 2x2, not ", argv[i]);
+            }
         } else if (port_TextsEqual(word, "--room-watcher")) {
             room_auto.plays = FALSE;
         } else if (port_TextsEqual(word, "--room-no-watch")) {
@@ -981,6 +1011,8 @@ s32 port_Main(s32 argc, char **argv) {
         ask.role = session_role;
         ask.delay = (u32)net_delay;
         ask.paths = paths;
+        ask.players = session_pads;
+        ask.pcs = session_pcs;
         port_KeepWord(ask.at, sizeof(ask.at), session_text);
         port_KeepWord(ask.bind, sizeof(ask.bind), bind_text);
         port_KeepWord(ask.lobby, sizeof(ask.lobby), lobby_text);
@@ -1079,6 +1111,7 @@ s32 port_Main(s32 argc, char **argv) {
          * in hand: netplay is on from here (port_net.h) */
         port_SetSession(session_role, &session_at);
         port_SetSessionPlayer(player);
+        port_SetSessionPlayers(session_pads, session_pcs);
         if (!port_StartSession(&g_port_disc, (u32)net_delay)) {
             port_Log("rebushido: no session\n");
             return PORT_EXIT_FAILED;

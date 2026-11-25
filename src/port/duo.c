@@ -529,11 +529,13 @@ static void port_DuoStand(
 }
 
 /* Is the second fighter of a team the CPU's: the CPU's partners, a team
- * whose first is the CPU's, or a session's, whose input is two pads, one
- * a machine (docs/NETPLAY.md, section 18). */
+ * whose first is the CPU's, or a session's whose input is two pads, one
+ * a machine (docs/NETPLAY.md, section 18); a session of four players has
+ * a player for every fighter. */
 static s32 port_DuoPartnerIsCpu(s32 slot) {
     return g_port_duo.teams != PORT_TEAMS_TWO_PADS ||
-           g_fight_config.is_cpu[slot] || port_IsNetplayOn();
+           g_fight_config.is_cpu[slot] ||
+           (port_IsNetplayOn() && port_NetplayPads() < PORT_DUO_FIGHTERS);
 }
 
 /* The second fighter of the team of `slot` set up in the slot as the

@@ -927,12 +927,14 @@ class Ladder:
             if source is not None:
                 self.server.rate_limited_ranked(endpoint, source, now)
             return
+        # the version first (the header's number): another version's RANK
+        # may be of another size or layout
+        if len(data) >= 8 and struct.unpack_from("<I", data, 4)[0] != self.server.version:
+            self.refuse(endpoint, E_VERSION, data[3])
+            return
         r = parse_rank(data)
         if r is None:
             self.refuse(endpoint, E_BAD_REQUEST, data[3] if len(data) > 3 else 0)
-            return
-        if r.version != self.server.version:
-            self.refuse(endpoint, E_VERSION, r.action)
             return
         if self.store is None:
             self.refuse(endpoint, E_DISABLED, r.action)

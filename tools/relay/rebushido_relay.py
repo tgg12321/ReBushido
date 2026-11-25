@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The ReBushido lobby, rendezvous and relay server (protocol version 3).
+"""The ReBushido lobby, rendezvous and relay server (protocol version 4).
 
 One process, UDP, the Python 3 standard library alone (3.8 or newer). It
 keeps a list of open rooms, introduces a room's host and guest to each other
@@ -23,7 +23,17 @@ trip, ranked matches met as a room's are, signed results, Glicko-2 ratings
 and the ladder's pages. It is the one thing the server writes to disk, in
 the folder --state names (with none, ranked play is off): an SQLite file of
 keys, names, ratings and results, its daily backups, and the replays of a
-disputed match. A client of version 1 or 2 is refused with VERSION.
+disputed match.
+
+Version 4 adds four players on four PCs (ROADMAP 24), the host's PC in the
+middle: a room of four is a listed room with three seats, each seat a
+two-player room between one of the host's sockets and one guest, met as any
+two-player room is (punched, direct or relayed, each pair alone). HELLO
+grows to 232 bytes (a seat key, the room's players, the seat); a room of
+several's rotation may make matches of four (two teams of two), its ROSTER
+says a match's four players, and a feed's frame is four pads (8 bytes). A
+client of version 1, 2 or 3 is refused with VERSION, which is looked at
+before a datagram's size.
 
 The wire format is docs/NETPLAY.md, sections 14, 16 and 17; tools/relay/README.md
 says how to run and deploy it.
@@ -51,7 +61,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ladder  # noqa: E402
 
-RELAY_VERSION = 3
+RELAY_VERSION = 4
 DEFAULT_PORT = 7845
 MAGIC = b"RB"
 
@@ -115,7 +125,7 @@ C_MAPPED4 = 2
 C_GLOBAL6 = 3
 
 HEADER = struct.Struct("<2sBBI")
-HELLO_SIZE = 208
+HELLO_SIZE = 232
 STATE_SIZE = 208
 LIST_SIZE = 16
 WHOAMI_SIZE = 16
@@ -146,6 +156,7 @@ A_SIDE_JOIN = 8  # ... joined (its place among the sides)
 A_SIDE_DONE = 9
 # ROOM's flags.
 R_PLAYS = 0x01  # in the rotation (else a spectator)
+R_FOUR = 0x02  # OPEN: the rotation's matches are of four (two teams of two)
 # The rotation.
 RULE_OFF = 0
 RULE_FIXED = 1  # A+B, B+C, C+A, ...
@@ -167,6 +178,10 @@ TICKET_SIZE = 16
 NOBODY = 0xFF
 # ROOMS' locked byte: the room is a room of several.
 LIST_GROUP = 0x02
+LIST_FOUR = 0x04  # ... a room of four (four players on four PCs)
+# A room of four's seats: the first is the room itself, then two more, each
+# a two-player room between one of the host's sockets and one guest.
+SEATS = 3
 # FEED's and SCENE's parts (their detail).
 P_SETTINGS = 1
 P_START = 2
@@ -177,9 +192,11 @@ SETTINGS_SIZE = 64
 CHUNK = 1024
 CHUNKS_MAX = 1024  # a start of at most 1 MB
 CHUNK_MAP = CHUNKS_MAX // 8
-INPUT_SIZE = 4  # a frame: both pads' buttons
-INPUTS_A_DATAGRAM = 240  # eight hashes' frames: every hash among them fits
-HASHES_A_DATAGRAM = 8
+INPUT_SIZE = 8  # a frame: four pads' buttons, u16 each, pad 1 first
+INPUTS_A_DATAGRAM = 120  # four hashes' frames: every hash among them fits
+HASHES_A_DATAGRAM = 4
+INPUTS_A_WATCH = 4  # datagrams of inputs a WATCH is answered with at most
+NAMES_A_SCENE = 4  # SCENE's settings: the match's players' names
 FRAMES_MAX = 0x40000
 FEED_ACK_SIZE = 160
 WATCH_SIZE = 192
@@ -219,6 +236,10 @@ def read_string(raw):
         if c < 0x20 or c > 0x7E:
             return None
     return text
+
+
+def room_label(code, seat):
+    return code.decode() + ("" if seat <= 1 else " seat %d" % seat)
 
 
 class Endpoint:
@@ -273,11 +294,14 @@ class Hello:
         "candidates",
         "has_v6",
         "rtt",
+        "seat_key",
+        "players",
+        "seat",
     )
 
 
 def parse_hello(data):
-    """The fields of a 208-byte version-2 HELLO, or None if malformed."""
+    """The fields of a 232-byte version-4 HELLO, or None if malformed."""
     flags = data[3]
     if flags & ~F_ALL:
         return None
@@ -317,8 +341,25 @@ def parse_hello(data):
         candidates.append(raw)
     hello.candidates = candidates
     hello.has_v6 = has_v6
-    if role == F_HOST and not hello.name and not flags & F_TICKET:
+    # version 4: a room of four's seat (a host's socket, or the one a guest
+    # asks for), its key, and the room's players
+    hello.seat_key = bytes(data[208:224])
+    hello.players = data[224]
+    hello.seat = data[225]
+    if any(data[226:232]) or hello.players not in (0, 2, 4) or hello.seat > SEATS:
         return None
+    # a room is named by its host (a second or third seat's is its room's)
+    if role == F_HOST and hello.seat <= 1 and not hello.name and not flags & F_TICKET:
+        return None
+    if role == F_GUEST:
+        if hello.players:
+            return None
+    elif hello.seat > 1:
+        # a host's second or third seat: of the room its first opened
+        if not flags & F_TICKET and (not hello.code or hello.seat_key == ZERO16):
+            return None
+    elif hello.players == 4 and not flags & F_TICKET and hello.seat_key == ZERO16:
+        return None  # an un-ticketed room of four has a key for its seats
     return hello
 
 
@@ -345,7 +386,7 @@ def parse_room_hello(data):
     hello.secret = data[92:124]
     hello.token = data[124:140]
     hello.flags, hello.rule, hello.arg = data[140], data[141], data[142]
-    if hello.flags & ~R_PLAYS or hello.rule > RULE_WINNER or data[143]:
+    if hello.flags & ~(R_PLAYS | R_FOUR) or hello.rule > RULE_WINNER or data[143]:
         return None
     hello.stamp, hello.rtt = struct.unpack_from("<IH", data, 144)
     hello.number = struct.unpack_from("<I", data, 152)[0]
@@ -434,10 +475,29 @@ class Room:
         "ticket",
         "counted",
         "host_rtt",
+        "key",
+        "players",
+        "seat_key",
+        "seats",
+        "base",
+        "seat",
+        "proven",
     )
 
-    def __init__(self, code, seq, host, now):
+    def __init__(self, code, seq, host, now, key=None):
         self.code = code
+        # where Server.rooms keeps it: its code, or (code, seat) for a room
+        # of four's second and third seats, which no code can be
+        self.key = code if key is None else key
+        # a room of four (players 4): its seats 2 and 3 (seat -> Room), the
+        # key that opens them, and the guests who proved its password
+        self.players = 2
+        self.seat_key = ZERO16
+        self.seats = {}
+        self.proven = collections.OrderedDict()
+        # a seat of a room of four: its base room (seat 1) and its number
+        self.base = None
+        self.seat = 1
         self.seq = seq
         self.created = now
         self.host = host
@@ -472,6 +532,17 @@ class Room:
 
     def locked(self):
         return self.salt != ZERO16 or self.verifier != ZERO32
+
+    def label(self):
+        """The room's code for the log, a seat's number after it."""
+        return room_label(self.code, self.seat if self.base is not None else 1)
+
+    def all_seats(self):
+        """A room of four's seats in order (seat number -> Room), itself the
+        first; a room of two is its one seat."""
+        seats = {1: self}
+        seats.update(self.seats)
+        return seats
 
     def take_host(self, hello, now):
         self.name = hello.name
@@ -543,25 +614,35 @@ class Feed:
 
 
 class Match:
-    __slots__ = ("code", "ticket", "number", "a", "b", "side", "feed", "begun", "ended")
+    __slots__ = ("code", "ticket", "number", "players", "side", "feed", "begun", "ended")
 
-    def __init__(self, code, number, a, b, side, now):
+    def __init__(self, code, number, players, side, now):
         self.code = code
         self.ticket = secrets.token_bytes(TICKET_SIZE)
         self.number = number
-        self.a = a  # member ids: the first is the match's host, player 1
-        self.b = b
+        # member ids in the match's order: the first is its host, player 1;
+        # of four, players 1 and 3 are the first team, 2 and 4 the second
+        self.players = list(players)
         self.side = side
         self.feed = Feed()
         self.begun = now
         self.ended = None
+
+    def teams(self):
+        """The two sides: (players 1 and 3, players 2 and 4) of a match of
+        four, (player 1, player 2) of a match of two."""
+        return self.players[0::2], self.players[1::2]
+
+    def team_of(self, member_id):
+        """W_FIRST if `member_id` is of the first team, else W_SECOND."""
+        return W_FIRST if self.players.index(member_id) % 2 == 0 else W_SECOND
 
 
 class Group:
     """A room of several: its members, its rotation and its matches."""
 
     __slots__ = ("code", "seq", "created", "name", "setup", "salt", "verifier", "members", "queue", "rule", "match",
-                 "sides", "ended", "number", "side_number", "next_id", "last", "challenges", "host_id")
+                 "sides", "ended", "number", "side_number", "next_id", "last", "challenges", "host_id", "size")
 
     def __init__(self, code, seq, hello, now):
         self.code = code
@@ -574,6 +655,8 @@ class Group:
         self.members = []  # in the order they came
         self.queue = []  # member ids, the rotation's order
         self.rule = hello.rule
+        # the rotation's matches: of four (two teams of two) or of two
+        self.size = 4 if hello.flags & R_FOUR else 2
         self.match = None  # the rotation's match now
         self.sides = []  # matches beside it
         self.ended = []  # matches over, their feeds kept a while
@@ -603,7 +686,7 @@ class Group:
         return ([self.match] if self.match is not None else []) + self.sides
 
     def busy(self, member_id):
-        return any(member_id in (m.a, m.b) for m in self.matches())
+        return any(member_id in m.players for m in self.matches())
 
     def host(self):
         return self.member(self.host_id)
@@ -803,7 +886,8 @@ class Server:
         first = HEADER.unpack_from(data)[3]
         # the two-player rooms and the rooms of several, a match's meeting
         # not among them; in the order they were made
-        rooms = [r for r in self.rooms.values() if r.ticket is None] + list(self.groups.values())
+        # (and a room of four's seats 2 and 3, which are its own)
+        rooms = [r for r in self.rooms.values() if r.ticket is None and r.base is None] + list(self.groups.values())
         rooms.sort(key=lambda r: r.seq)
         total = len(rooms)
         page = []
@@ -818,8 +902,9 @@ class Server:
                 player = host.player if host is not None else b""
                 rtt = host.rtt if host is not None else 0
             else:
-                players = 1 if room.guest is None else 2
-                flags = 0
+                # the host and the guests of all its seats
+                players = 1 + sum(1 for seat in room.all_seats().values() if seat.guest is not None)
+                flags = LIST_FOUR if room.players == 4 else 0
                 player = room.host_player
                 rtt = room.host_rtt
             page.append(
@@ -846,11 +931,12 @@ class Server:
         if not source.hello.take(now):
             self.rate_limited(endpoint, source, now)
             return
-        if len(data) != HELLO_SIZE:
-            self.refuse(endpoint, E_BAD_REQUEST)
-            return
+        # the version first: another version's HELLO is of another size
         if HEADER.unpack_from(data)[3] != RELAY_VERSION:
             self.refuse(endpoint, E_VERSION)
+            return
+        if len(data) != HELLO_SIZE:
+            self.refuse(endpoint, E_BAD_REQUEST)
             return
         hello = parse_hello(data)
         if hello is None:
@@ -875,7 +961,14 @@ class Server:
         return found[1]
 
     def host_hello(self, endpoint, source, hello, now):
+        if hello.seat > 1:
+            self.seat_hello(endpoint, hello, now)
+            return
         room = self.by_host.get(endpoint.key)
+        if room is not None and room.base is not None:
+            # the socket hosted a room of four's seat: a room of its own now
+            self.remove(room, "its host's socket opens a room")
+            room = None
         if hello.flags & F_TICKET:
             # a match's host: the meeting is opened under the match's code
             match = self.ticket_of(hello)
@@ -906,12 +999,69 @@ class Server:
         else:
             room.host = endpoint  # the same address; keep the socket it uses now
         room.take_host(hello, now)
+        self.take_players(room, hello)
         if hello.flags & F_RESET and room.guest is not None:
             if self.verbose:
                 log("room %s: reset by its host" % room.code.decode())
             self.drop_guest(room)
         self.decide(room, now)
         self.state(endpoint, room.mode, room, as_host=True)
+
+    def take_players(self, room, hello):
+        """A room's players (4: a room of four, else 2) and its seats' key, as
+        its host's first seat says them each hello."""
+        four = hello.players == 4
+        if not four:
+            for seat in list(room.seats.values()):
+                self.remove(seat, "its room is not of four now")
+        room.players = 4 if four else 2
+        room.seat_key = hello.seat_key
+
+    def seat_hello(self, endpoint, hello, now):
+        """A host's second or third seat of a room of four: a two-player room
+        of its own between this socket and one guest, opened by the room's
+        code and seat key (a match's: its ticket), unlisted and not counted."""
+        if hello.flags & F_TICKET:
+            match = self.ticket_of(hello)
+            base = self.rooms.get(match.code) if match is not None else None
+            good = base is not None and base.ticket is not None and hmac.compare_digest(base.ticket, match.ticket)
+        else:
+            base = self.rooms.get(hello.code)
+            good = base is not None and base.ticket is None and hmac.compare_digest(base.seat_key, hello.seat_key)
+        if not good or base.players != 4:
+            self.refuse(endpoint, E_NO_ROOM)
+            return
+        seat = base.seats.get(hello.seat)
+        mine = self.by_host.get(endpoint.key)
+        if mine is not None and mine is not seat:
+            if mine is base or mine.base is base:
+                self.refuse(endpoint, E_BAD_REQUEST)  # a socket hosts one seat
+                return
+            self.remove(mine, "its host's socket hosts a seat")
+        if seat is not None and seat.host.key != endpoint.key:
+            self.remove(seat, "its host came again from elsewhere")
+            seat = None
+        if seat is None:
+            if len(self.rooms) >= self.o.max_rooms:
+                self.refuse(endpoint, E_SERVER_FULL)
+                return
+            seat = self.create(endpoint, now, code=base.code, counted=False, key=(base.code, hello.seat))
+            seat.base = base
+            seat.seat = hello.seat
+            base.seats[hello.seat] = seat
+        else:
+            seat.host = endpoint
+        seat.ticket = base.ticket
+        seat.take_host(hello, now)
+        # what the room is, is its first seat's; its password was proved there
+        seat.name, seat.host_player, seat.setup = base.name, base.host_player, base.setup
+        seat.salt, seat.verifier = ZERO16, ZERO32
+        if hello.flags & F_RESET and seat.guest is not None:
+            if self.verbose:
+                log("room %s: reset by its host" % seat.label())
+            self.drop_guest(seat)
+        self.decide(seat, now)
+        self.state(endpoint, seat.mode, seat, as_host=True)
 
     def guest_hello(self, endpoint, source, hello, now):
         if source.blocked_until > now:
@@ -931,6 +1081,9 @@ class Server:
         if room is None or (room.ticket is not None and not ticketed):
             self.refuse(endpoint, E_NO_ROOM)
             return
+        if room.players == 4:
+            self.guest_four(endpoint, source, room, hello, ticketed, now)
+            return
         if endpoint.key == room.host.key:
             self.refuse(endpoint, E_BAD_REQUEST, room)
             return
@@ -949,6 +1102,53 @@ class Server:
         if not ticketed and room.locked() and not self.proved(room, endpoint, source, hello, now):
             return
         self.admit(room, endpoint, hello, now)
+
+    def guest_four(self, endpoint, source, room, hello, ticketed, now):
+        """A guest of a room of four: the seat it is in already, else (its
+        setup the room's, its password proved once) the seat it asks for or
+        the first free one; WAITING where that seat's socket is not open."""
+        seats = room.all_seats()
+        if any(endpoint.key == seat.host.key for seat in seats.values()):
+            self.refuse(endpoint, E_BAD_REQUEST, room)
+            return
+        for seat in seats.values():
+            if seat.guest is not None and seat.guest.key == endpoint.key:
+                seat.guest = endpoint
+                seat.take_guest(hello, now)
+                self.decide(seat, now)
+                self.state(endpoint, seat.mode, seat)
+                return
+        if hello.setup != room.setup:
+            self.refuse(endpoint, E_INCOMPATIBLE, room, setup=room.setup)
+            return
+        if not ticketed and room.locked():
+            if endpoint.key in room.proven:
+                room.proven[endpoint.key] = now
+            elif self.proved(room, endpoint, source, hello, now):
+                # proved once: it waits for its seat with no proof again
+                room.proven[endpoint.key] = now
+                while len(room.proven) > CHALLENGE_ADDRESSES:
+                    room.proven.popitem(last=False)
+            else:
+                return
+        if hello.seat:
+            seat = seats.get(hello.seat)
+            if seat is not None and seat.guest is not None:
+                self.refuse(endpoint, E_ROOM_FULL, room)
+                return
+        else:
+            free = [seats[n] for n in sorted(seats) if seats[n].guest is None]
+            seat = free[0] if free else None
+            if seat is None and len(seats) >= SEATS:
+                self.refuse(endpoint, E_ROOM_FULL, room)
+                return
+        if seat is None:
+            # the seat's socket has not said hello yet: the guest says hello
+            # again until it has, and nothing of it is kept meanwhile
+            self.state(endpoint, S_WAITING, room)
+            return
+        room.proven.pop(endpoint.key, None)
+        self.admit(seat, endpoint, hello, now)
 
     def proved(self, room, endpoint, source, hello, now):
         """A locked room: True if the proof is good, else answered."""
@@ -998,24 +1198,30 @@ class Server:
                     code not in self.ladder.codes:
                 return code
 
-    def create(self, host, now, code=None, counted=True):
+    def create(self, host, now, code=None, counted=True, key=None):
         if code is None:
             code = self.new_code()
         self.seq += 1
-        room = Room(code, self.seq, host, now)
+        room = Room(code, self.seq, host, now, key)
         room.counted = counted
-        self.rooms[code] = room
+        self.rooms[room.key] = room
         self.by_host[host.key] = room
         if counted:
             # a match of a room of several is the room's, not its host's
             self.per_ip[host.ip_key] += 1
         if self.verbose:
-            log("room %s: opened by %s" % (code.decode(), host.text()))
+            log("room %s: opened by %s" % (room.label(), host.text()))
         return room
 
     def remove(self, room, why):
+        if self.rooms.get(room.key) is not room:
+            return  # gone already: a seat with its room
+        for seat in list(room.seats.values()):
+            self.remove(seat, "its room of four closed")
+        if room.base is not None and room.base.seats.get(room.seat) is room:
+            del room.base.seats[room.seat]
         self.drop_guest(room)
-        del self.rooms[room.code]
+        del self.rooms[room.key]
         if self.by_host.get(room.host.key) is room:
             del self.by_host[room.host.key]
         key = room.host.ip_key
@@ -1024,7 +1230,7 @@ class Server:
             if self.per_ip[key] <= 0:
                 del self.per_ip[key]
         if self.verbose:
-            log("room %s: closed (%s)" % (room.code.decode(), why))
+            log("room %s: closed (%s)" % (room.label(), why))
 
     def drop_guest(self, room):
         if room.guest is not None:
@@ -1050,7 +1256,7 @@ class Server:
         room.mode = S_PUNCH
         self.guest_of[guest.key] = room
         if self.verbose:
-            log("room %s: %s joined" % (room.code.decode(), guest.text()))
+            log("room %s: %s joined" % (room.label(), guest.text()))
         self.decide(room, now)
         self.state(guest, room.mode, room)
         # Tell the host now rather than at its next heartbeat: the punch
@@ -1080,13 +1286,13 @@ class Server:
             self.relayed[room.host.key] = room
             self.relayed[room.guest.key] = room
         if self.verbose:
-            log("room %s: %s" % (room.code.decode(), MODE_NAMES[mode]))
+            log("room %s: %s" % (room.label(), MODE_NAMES[mode]))
 
     # --- rooms of several ---
 
     def roster(self, endpoint, status, group=None, member=None, stamp=0):
         """A ROSTER: the room as `member` is to see it (a match's ticket is
-        given to its two players alone), or a refusal."""
+        given to its players alone), or a refusal."""
         parts = [header(K_ROSTER, status, stamp)]
         if group is None:
             data = parts[0] + bytes(ROSTER_SIZE - HEADER.size)
@@ -1095,7 +1301,7 @@ class Server:
         me = member.id if member is not None else NOBODY
 
         def ticket_for(match):
-            return match.ticket if member is not None and me in (match.a, match.b) else bytes(TICKET_SIZE)
+            return match.ticket if member is not None and me in match.players else bytes(TICKET_SIZE)
 
         match = group.match
         parts += [
@@ -1108,10 +1314,13 @@ class Server:
             pad(group.setup, 20),
         ]
         if match is not None:
-            parts += [struct.pack("<IBB2x", match.number, match.a, match.b), pad(match.code, 8), ticket_for(match)]
+            # its four players (NOBODY for the last two of a match of two)
+            players = (match.players + [NOBODY] * 4)[:4]
+            parts += [struct.pack("<IBBBB", match.number, *players), pad(match.code, 8), ticket_for(match)]
         else:
-            parts += [struct.pack("<IBB2x", 0, NOBODY, NOBODY), bytes(8), bytes(TICKET_SIZE)]
-        parts.append(struct.pack("<IBBBx", *group.last))
+            parts += [struct.pack("<IBBBB", 0, NOBODY, NOBODY, NOBODY, NOBODY), bytes(8), bytes(TICKET_SIZE)]
+        # the last result, and the size of the room's matches
+        parts.append(struct.pack("<IBBBB", *group.last, group.size))
         for i in range(MEMBERS_MAX):
             if i < len(group.members):
                 m = group.members[i]
@@ -1124,7 +1333,8 @@ class Server:
         for i in range(SIDES_MAX):
             if i < len(group.sides):
                 side = group.sides[i]
-                parts.append(struct.pack("<BB2xI", side.a, side.b, side.number) + pad(side.code, 8) +
+                parts.append(struct.pack("<BB2xI", side.players[0], side.players[1], side.number) +
+                             pad(side.code, 8) +
                              ticket_for(side))
             else:
                 parts.append(struct.pack("<BB2xI", NOBODY, NOBODY, 0) + bytes(8 + TICKET_SIZE))
@@ -1142,11 +1352,11 @@ class Server:
                 source.limited_at = now
                 self.roster(endpoint, E_RATE_LIMITED)
             return
-        if len(data) != ROOM_SIZE_HELLO:
-            self.roster(endpoint, E_BAD_REQUEST)
-            return
         if HEADER.unpack_from(data)[3] != RELAY_VERSION:
             self.roster(endpoint, E_VERSION)
+            return
+        if len(data) != ROOM_SIZE_HELLO:
+            self.roster(endpoint, E_BAD_REQUEST)
             return
         hello = parse_room_hello(data)
         if hello is None:
@@ -1184,7 +1394,7 @@ class Server:
             self.group_result(group, member, hello.number, hello.arg, now)
         elif action == A_SIDE_OPEN and not group.busy(member.id) and len(group.sides) < SIDES_MAX:
             group.side_number += 1
-            side = Match(self.new_code(), group.side_number, member.id, NOBODY, True, now)
+            side = Match(self.new_code(), group.side_number, (member.id, NOBODY), True, now)
             group.sides.append(side)
             self.match_codes[side.code] = (group, side)
             if self.verbose:
@@ -1192,12 +1402,12 @@ class Server:
                                                                  member.player.decode()))
         elif action == A_SIDE_JOIN and not group.busy(member.id) and hello.arg < len(group.sides):
             side = group.sides[hello.arg]
-            if side.b == NOBODY:
-                side.b = member.id
+            if side.players[1] == NOBODY:
+                side.players[1] = member.id
                 side.begun = now
         elif action == A_SIDE_DONE:
             for side in list(group.sides):
-                if side.number == hello.number and member.id in (side.a, side.b):
+                if side.number == hello.number and member.id in side.players:
                     self.match_over(group, side, NOBODY, now)
         self.pick(group, now)
         self.roster(endpoint, 1, group, member, hello.stamp)
@@ -1297,12 +1507,13 @@ class Server:
         if member.id in group.queue:
             group.queue.remove(member.id)
         for match in group.matches():
-            if member.id in (match.a, match.b):
-                # the one who stays wins a match left in the middle
+            if member.id in match.players:
+                # a match left in the middle: the leaver's team loses it
                 if match.side:
                     self.match_over(group, match, NOBODY, now)
                 else:
-                    self.match_over(group, match, W_SECOND if member.id == match.a else W_FIRST, now)
+                    self.match_over(group, match, W_SECOND if match.team_of(member.id) == W_FIRST else W_FIRST,
+                                    now)
         if self.verbose:
             log("room %s: a member %s (%d left)" % (group.code.decode(), why, len(group.members)))
         if not group.members:
@@ -1328,23 +1539,24 @@ class Server:
             log("room %s: closed (%s)" % (group.code.decode(), why))
 
     def pick(self, group, now):
-        """The rotation's next match, where it is on and two players are free:
-        the first two free in the rotation's order."""
+        """The rotation's next match, where it is on and enough players are
+        free: the first two (or four) free in the rotation's order."""
         if group.rule == RULE_OFF or group.match is not None:
             return
         free = [i for i in group.queue if group.member(i) is not None and group.member(i).plays and
                 not group.busy(i)]
-        if len(free) < 2:
+        if len(free) < group.size:
             return
         group.number += 1
-        group.match = Match(self.new_code(), group.number, free[0], free[1], False, now)
+        group.match = Match(self.new_code(), group.number, free[:group.size], False, now)
         self.match_codes[group.match.code] = (group, group.match)
         if self.verbose:
-            log("room %s: match %d, members %d and %d" % (group.code.decode(), group.number, free[0], free[1]))
+            log("room %s: match %d, members %s" % (group.code.decode(), group.number,
+                                                   ", ".join(str(i) for i in group.match.players)))
 
     def group_result(self, group, member, number, winner, now):
         for match in group.matches():
-            if match.number == number and member.id in (match.a, match.b) and winner <= W_DRAW:
+            if match.number == number and member.id in match.players and winner <= W_DRAW:
                 self.match_over(group, match, winner, now)
                 return
 
@@ -1356,24 +1568,27 @@ class Server:
             group.sides.remove(match)
         else:
             group.match = None
-            group.last = (match.number, match.a, match.b, winner)
-            a, b = match.a, match.b
+            players = match.players
+            group.last = (match.number, players[0], players[1], winner)
             queue = group.queue
             if winner in (W_FIRST, W_SECOND):
-                won, lost = (a, b) if winner == W_FIRST else (b, a)
-                if group.member(won) is not None:
-                    group.member(won).wins += 1
+                first, second = match.teams()
+                won, lost = (first, second) if winner == W_FIRST else (second, first)
+                for i in won:
+                    if group.member(i) is not None:
+                        group.member(i).wins += 1
+            rest = [i for i in queue if i not in players]
             if group.rule == RULE_WINNER and winner in (W_FIRST, W_SECOND):
-                # the winner stays, first; the loser to the end
-                rest = [i for i in queue if i not in (a, b)]
-                group.queue = ([won] if won in queue else []) + rest + ([lost] if lost in queue else [])
+                # the winners stay, first (in the match's order); the losers
+                # to the end
+                group.queue = [i for i in won if i in queue] + rest + [i for i in lost if i in queue]
             elif group.rule == RULE_WINNER:
-                rest = [i for i in queue if i not in (a, b)]
-                group.queue = rest + [i for i in (a, b) if i in queue]
-            elif a in queue:
+                # a draw: the match's players to the end
+                group.queue = rest + [i for i in players if i in queue]
+            elif players[0] in queue:
                 # a fixed turn: the first of the match to the end
-                queue.remove(a)
-                queue.append(a)
+                queue.remove(players[0])
+                queue.append(players[0])
         group.ended.append(match)
         if self.verbose:
             log("room %s: match %d over (%s)" % (group.code.decode(), match.number,
@@ -1469,7 +1684,8 @@ class Server:
         feed = match.feed
         has_start, wants, flags = struct.unpack_from("<IIB", data, 40)
         if feed.settings is not None and not flags & 1:
-            names = [group.member(i) for i in (match.a, match.b)]
+            # the match's players' names in its order, empty for none
+            names = [group.member(i) for i in (match.players + [NOBODY] * NAMES_A_SCENE)[:NAMES_A_SCENE]]
             self.send(endpoint, header(K_SCENE, P_SETTINGS) + pad(code, 8) + feed.settings +
                       b"".join(pad(m.player if m else b"", 16) for m in names))
         if not feed.start_whole():
@@ -1492,7 +1708,7 @@ class Server:
                     break
         elif wants != NO_START and feed.inputs_from is not None:
             # the inputs from what it wants, with the hashes among them
-            for _ in range(2):
+            for _ in range(INPUTS_A_WATCH):
                 known = feed.next_frame()
                 if wants < feed.inputs_from or wants >= known:
                     break
@@ -1517,7 +1733,7 @@ class Server:
             if group.code not in self.groups:
                 continue
             for match in group.matches():
-                if match.side and match.b == NOBODY and now - match.begun > self.o.side_timeout:
+                if match.side and match.players[1] == NOBODY and now - match.begun > self.o.side_timeout:
                     self.match_over(group, match, NOBODY, now)
             for match in list(group.ended):
                 if now - match.ended > self.o.feed_linger:
@@ -1526,11 +1742,34 @@ class Server:
 
     # --- time ---
 
+    def seat_alive(self, room, now):
+        """Whether a room of four's base has a seat (2 or 3) whose host still
+        says hello, or whose relay is still in use: the host meets its
+        guests one after another, and the room stays until it has met
+        them all."""
+        if room.base is not None or not room.seats:
+            return False
+        for seat in room.seats.values():
+            if seat.mode in (S_WAITING, S_PUNCH) and now - seat.host_hello <= self.o.waiting_timeout:
+                return True
+            if seat.mode == S_RELAYED and now - seat.last_datagram <= self.o.relayed_timeout:
+                return True
+            if seat.mode in (S_DIRECT4, S_DIRECT6) and now - seat.last_hello <= self.o.direct_timeout:
+                return True
+        return False
+
     def tick(self, now):
         self.group_tick(now)
         self.ranked_safely(self.ladder.tick, now)
         for room in list(self.rooms.values()):
+            if self.rooms.get(room.key) is not room:
+                continue  # a seat removed with its room
             self.decide(room, now)
+            if self.seat_alive(room, now):
+                # a room of four's first seat is kept while its host still
+                # meets its other seats' guests: the room is listed, and
+                # its seats are its
+                continue
             if room.mode in (S_WAITING, S_PUNCH):
                 if now - room.host_hello > self.o.waiting_timeout:
                     self.remove(room, "host gone")
@@ -1542,6 +1781,8 @@ class Server:
         for room in self.rooms.values():
             for key in [k for k, sent in room.challenges.items() if not sent or now - sent[-1][1] > self.o.challenge_timeout]:
                 del room.challenges[key]
+            for key in [k for k, when in room.proven.items() if now - when > self.o.challenge_timeout]:
+                del room.proven[key]
         if now - self.stats_at >= self.o.stats_interval:
             self.forget_sources(now)
             span = now - self.stats_at

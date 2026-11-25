@@ -76,22 +76,43 @@ enum {
 #define HELLO_HEARD 1
 #define HELLO_REPLY 2
 
-typedef struct {
+typedef struct PortNetDelayed {
     u32 due;
     u32 bytes;
     u8 data[NET_DATAGRAM_MAX];
 } PortNetDelayed;
 
-static s32 g_port_net_socket = -1;
-static PortNetAddress g_port_net_bind;
-static PortNetAddress g_port_net_peer;
-static s32 g_port_net_wanted;
-/* --host: the peer is whoever is heard first, until it is fixed; until
- * then what is sent goes to the last program heard. */
-static s32 g_port_net_has_peer;
-static s32 g_port_net_is_fixed;
-static PortNetAddress g_port_net_heard;
-static s32 g_port_net_has_heard;
+/* A link: a socket and the one program it talks to. A session's guest
+ * has one, to its host; a host of four players on four PCs one for each
+ * guest (docs/NETPLAY.md, section 18), each its own socket, so that each
+ * meets its guest by every way of a session of two (the lobby's, the
+ * router's, a punch, the relay). What is said of the network is said of
+ * the link chosen (port_NetSelectLink), the first unless another is. */
+typedef struct {
+    s32 socket;
+    PortNetAddress bind;
+    PortNetAddress peer;
+    s32 wanted;
+    /* --host: the peer is whoever is heard first, until it is fixed;
+     * until then what is sent goes to the last program heard */
+    s32 has_peer;
+    s32 is_fixed;
+    PortNetAddress heard;
+    s32 has_heard;
+    /* (memory the system gives, for a run with --net-latency alone: it is
+     * large, and the program's variables have a place of fixed size) */
+    struct PortNetDelayed *delayed;
+    u32 delayed_count;
+} PortNetLink;
+
+static PortNetLink g_port_net_links[PORT_NET_LINKS] = {
+    {.socket = -1}, {.socket = -1}, {.socket = -1}};
+static s32 g_port_net_at;
+#define LINK (&g_port_net_links[g_port_net_at])
+/* a datagram from a program a fixed link does not talk to: the host's
+ * session answers it (another guest at a host's first port) */
+void (*g_port_net_stranger_hook)(
+    const PortNetAddress *from, const u8 *bytes, s32 count);
 /* The clock in milliseconds, and the ticks it was last read at. */
 static u32 g_port_net_clock_ms;
 static u32 g_port_net_clock_ticks;
@@ -100,10 +121,6 @@ static s32 g_port_net_clock_started;
 static u32 g_port_net_latency_ms;
 static u32 g_port_net_loss;
 static u32 g_port_net_random = 0x2545F491U;
-/* (memory the system gives, for a run with --net-latency alone: it is
- * large, and the program's variables have a place of fixed size) */
-static PortNetDelayed *g_port_net_delayed;
-static u32 g_port_net_delayed_count;
 /* What went and what was dropped, for the report. */
 static u32 g_port_net_sent;
 static u32 g_port_net_dropped;
@@ -411,51 +428,51 @@ void port_FormatNetAddress(const PortNetAddress *at, char *out, u32 room) {
 /* Where the socket goes and whom it talks to (port_net.h). */
 void port_SetNetAddresses(
     const PortNetAddress *bind, const PortNetAddress *peer) {
-    g_port_net_bind = *bind;
-    g_port_net_peer = *peer;
-    g_port_net_wanted = 1;
-    g_port_net_has_peer = 1;
-    g_port_net_is_fixed = 1;
+    LINK->bind = *bind;
+    LINK->peer = *peer;
+    LINK->wanted = 1;
+    LINK->has_peer = 1;
+    LINK->is_fixed = 1;
 }
 
 void port_SetNetListen(const PortNetAddress *bind) {
-    g_port_net_bind = *bind;
-    g_port_net_wanted = 1;
-    g_port_net_has_peer = 0;
-    g_port_net_is_fixed = 0;
+    LINK->bind = *bind;
+    LINK->wanted = 1;
+    LINK->has_peer = 0;
+    LINK->is_fixed = 0;
 }
 
 s32 port_GetNetPeer(PortNetAddress *peer) {
-    if (g_port_net_has_peer) {
-        *peer = g_port_net_peer;
+    if (LINK->has_peer) {
+        *peer = LINK->peer;
         return 1;
     }
-    if (g_port_net_has_heard) {
-        *peer = g_port_net_heard;
+    if (LINK->has_heard) {
+        *peer = LINK->heard;
         return 1;
     }
     return 0;
 }
 
 void port_FixNetPeer(void) {
-    if (!g_port_net_has_peer && g_port_net_has_heard) {
-        g_port_net_peer = g_port_net_heard;
-        g_port_net_has_peer = 1;
+    if (!LINK->has_peer && LINK->has_heard) {
+        LINK->peer = LINK->heard;
+        LINK->has_peer = 1;
     }
-    g_port_net_is_fixed = g_port_net_has_peer;
+    LINK->is_fixed = LINK->has_peer;
 }
 
 void port_SetNetPeerNow(const PortNetAddress *peer) {
-    g_port_net_peer = *peer;
-    g_port_net_has_peer = 1;
-    g_port_net_is_fixed = 1;
+    LINK->peer = *peer;
+    LINK->has_peer = 1;
+    LINK->is_fixed = 1;
 }
 
 /* A datagram straight to `to`, past --net-latency and --net-loss: the
  * relay server's, which is no part of the session (port_net.h). */
 void port_NetSendTo(const PortNetAddress *to, const void *bytes, u32 count) {
-    if (g_port_net_socket >= 0 && count <= NET_DATAGRAM_MAX) {
-        port_HostUdpSend(g_port_net_socket, to, bytes, count);
+    if (LINK->socket >= 0 && count <= NET_DATAGRAM_MAX) {
+        port_HostUdpSend(LINK->socket, to, bytes, count);
     }
 }
 
@@ -466,17 +483,17 @@ s32 port_NetReceiveFrom(
     void *bytes, u32 room, u32 wait_ms, PortNetAddress *from) {
     s32 got;
 
-    if (g_port_net_socket < 0) {
+    if (LINK->socket < 0) {
         return -1;
     }
     for (;;) {
         u32 wait = wait_ms;
 
         port_NetFlush();
-        if (g_port_net_delayed_count != 0 && wait > NET_POLL_MS) {
+        if (LINK->delayed_count != 0 && wait > NET_POLL_MS) {
             wait = NET_POLL_MS;
         }
-        got = port_HostUdpReceive(g_port_net_socket, bytes, room, from, wait);
+        got = port_HostUdpReceive(LINK->socket, bytes, room, from, wait);
         if (got >= 0) {
             g_port_net_received++;
             return got;
@@ -530,65 +547,103 @@ void port_SetNetTrouble(u32 latency_ms, u32 loss) {
 
 /* The socket, opened as the run starts. */
 s32 port_StartNet(void) {
-    if (!g_port_net_wanted) {
+    if (!LINK->wanted) {
         return 1;
     }
-    if (g_port_net_latency_ms != 0 && g_port_net_delayed == NULL) {
-        g_port_net_delayed =
+    if (g_port_net_latency_ms != 0 && LINK->delayed == NULL) {
+        LINK->delayed =
             port_HostAllocate(NET_DELAYED_MAX * (u32)sizeof(PortNetDelayed));
-        if (g_port_net_delayed == NULL) {
+        if (LINK->delayed == NULL) {
             port_Log("rebushido: the network: no memory for --net-latency\n");
             return 0;
         }
     }
-    if (!g_port_net_bind.is_v6 && g_port_net_bind.address == 0) {
+    if (!LINK->bind.is_v6 && LINK->bind.address == 0) {
         /* every address of the PC: of both kinds where the system has
          * IPv6 (port_host.h), so that a player with IPv6 is found by it */
-        PortNetAddress any = g_port_net_bind;
+        PortNetAddress any = LINK->bind;
 
         any.is_v6 = 1;
-        g_port_net_socket = port_HostUdpOpen(&any);
-        if (g_port_net_socket >= 0) {
-            g_port_net_bind = any;
+        LINK->socket = port_HostUdpOpen(&any);
+        if (LINK->socket >= 0) {
+            LINK->bind = any;
         }
     }
-    if (g_port_net_socket < 0) {
-        g_port_net_socket = port_HostUdpOpen(&g_port_net_bind);
+    if (LINK->socket < 0) {
+        LINK->socket = port_HostUdpOpen(&LINK->bind);
     }
-    if (g_port_net_socket < 0) {
+    if (LINK->socket < 0) {
         char at[PORT_NET_ADDRESS_TEXT_BYTES];
 
-        port_FormatNetAddress(&g_port_net_bind, at, sizeof(at));
+        port_FormatNetAddress(&LINK->bind, at, sizeof(at));
         port_Log("rebushido: the network: no socket at %s\n", at);
         return 0;
     }
     return 1;
 }
 
-s32 port_IsNetOn(void) { return g_port_net_socket >= 0; }
+s32 port_IsNetOn(void) { return LINK->socket >= 0; }
+
+/* A program's pads, a bit each, as words: `1`, `1 and 3` (port_net.h). */
+const char *port_NetPadsText(u32 mask) {
+    static char text[DIGITS_MAX * PORT_NET_LINKS];
+    char *put = text;
+    s32 pad;
+
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
+        if (((mask >> pad) & 1) == 0) {
+            continue;
+        }
+        if (put != text) {
+            *put++ = ' ';
+            *put++ = '&';
+            *put++ = ' ';
+        }
+        *put++ = (char)('1' + pad);
+    }
+    *put = 0;
+    return text;
+}
+
+/* The link the network's words are of (port_net.h). */
+void port_NetSelectLink(s32 link) {
+    g_port_net_at = link >= 0 && link < PORT_NET_LINKS ? link : 0;
+}
+
+s32 port_NetLink(void) { return g_port_net_at; }
+
+s32 port_NetIsFixed(void) { return LINK->is_fixed; }
 
 /* A session in the running program has ended (port_net.h): the socket
  * closed, what it heard forgotten, and nothing wanted until the next
  * session says where it goes. The trouble a test gave it stays. */
 void port_StopNet(void) {
-    if (g_port_net_socket >= 0) {
-        port_HostUdpClose(g_port_net_socket);
+    s32 link;
+
+    for (link = 0; link < PORT_NET_LINKS; link++) {
+        PortNetLink *at = &g_port_net_links[link];
+
+        if (at->socket >= 0) {
+            port_HostUdpClose(at->socket);
+        }
+        at->socket = -1;
+        at->wanted = 0;
+        at->has_peer = 0;
+        at->is_fixed = 0;
+        at->has_heard = 0;
+        at->delayed_count = 0;
     }
-    g_port_net_socket = -1;
-    g_port_net_wanted = 0;
-    g_port_net_has_peer = 0;
-    g_port_net_is_fixed = 0;
-    g_port_net_has_heard = 0;
-    g_port_net_delayed_count = 0;
+    g_port_net_at = 0;
+    g_port_net_stranger_hook = NULL;
     g_port_net_sent = 0;
     g_port_net_dropped = 0;
     g_port_net_received = 0;
 }
 
-s32 port_NetIsV6(void) { return g_port_net_bind.is_v6; }
+s32 port_NetIsV6(void) { return LINK->bind.is_v6; }
 
 s32 port_GetNetBound(PortNetAddress *at) {
-    return g_port_net_socket >= 0 && port_HostUdpBound(g_port_net_socket, at);
+    return LINK->socket >= 0 && port_HostUdpBound(LINK->socket, at);
 }
 
 /* The next of the run's own random numbers, for --net-loss. */
@@ -605,10 +660,10 @@ static u32 port_NetRandom(void) {
 /* Where a datagram goes: the peer, or before there is one (--host) the
  * program heard last; NULL if there is nobody. */
 static const PortNetAddress *port_NetTo(void) {
-    if (g_port_net_has_peer) {
-        return &g_port_net_peer;
+    if (LINK->has_peer) {
+        return &LINK->peer;
     }
-    return g_port_net_has_heard ? &g_port_net_heard : NULL;
+    return LINK->has_heard ? &LINK->heard : NULL;
 }
 
 /* Sends what --net-latency has held back long enough. */
@@ -617,29 +672,28 @@ static void port_NetFlush(void) {
     u32 kept = 0;
     u32 i;
 
-    for (i = 0; i < g_port_net_delayed_count; i++) {
-        PortNetDelayed *delayed = &g_port_net_delayed[i];
+    for (i = 0; i < LINK->delayed_count; i++) {
+        PortNetDelayed *delayed = &LINK->delayed[i];
 
         if ((s32)(now - delayed->due) >= 0) {
             if (port_NetTo() != NULL) {
-                port_HostUdpSend(g_port_net_socket, port_NetTo(), delayed->data,
-                                 delayed->bytes);
+                port_HostUdpSend(
+                    LINK->socket, port_NetTo(), delayed->data, delayed->bytes);
             }
         } else {
             if (kept != i) {
-                g_port_net_delayed[kept] = *delayed;
+                LINK->delayed[kept] = *delayed;
             }
             kept++;
         }
     }
-    g_port_net_delayed_count = kept;
+    LINK->delayed_count = kept;
 }
 
 /* A datagram to the other program (port_net.h): dropped, held back or
  * sent now. */
 void port_NetSend(const void *bytes, u32 count) {
-    if (g_port_net_socket < 0 || count > NET_DATAGRAM_MAX ||
-        port_NetTo() == NULL) {
+    if (LINK->socket < 0 || count > NET_DATAGRAM_MAX || port_NetTo() == NULL) {
         return;
     }
     g_port_net_sent++;
@@ -649,13 +703,12 @@ void port_NetSend(const void *bytes, u32 count) {
         return;
     }
     if (g_port_net_latency_ms == 0) {
-        port_HostUdpSend(g_port_net_socket, port_NetTo(), bytes, count);
+        port_HostUdpSend(LINK->socket, port_NetTo(), bytes, count);
         return;
     }
     port_NetFlush();
-    if (g_port_net_delayed_count < NET_DELAYED_MAX) {
-        PortNetDelayed *delayed =
-            &g_port_net_delayed[g_port_net_delayed_count++];
+    if (LINK->delayed_count < NET_DELAYED_MAX) {
+        PortNetDelayed *delayed = &LINK->delayed[LINK->delayed_count++];
         const u8 *from = bytes;
         u32 i;
 
@@ -675,7 +728,7 @@ s32 port_NetReceive(void *bytes, u32 room, u32 wait_ms) {
     PortNetAddress from;
     s32 got;
 
-    if (g_port_net_socket < 0) {
+    if (LINK->socket < 0) {
         return -1;
     }
     for (;;) {
@@ -683,19 +736,21 @@ s32 port_NetReceive(void *bytes, u32 room, u32 wait_ms) {
 
         port_NetFlush();
         /* what is held back must go on time while this waits */
-        if (g_port_net_delayed_count != 0 && wait > NET_POLL_MS) {
+        if (LINK->delayed_count != 0 && wait > NET_POLL_MS) {
             wait = NET_POLL_MS;
         }
-        got = port_HostUdpReceive(g_port_net_socket, bytes, room, &from, wait);
+        got = port_HostUdpReceive(LINK->socket, bytes, room, &from, wait);
         if (got >= 0) {
             /* only the peer's own, once it is fixed */
-            if (g_port_net_is_fixed &&
-                !port_NetAddressesEqual(&from, &g_port_net_peer)) {
+            if (LINK->is_fixed && !port_NetAddressesEqual(&from, &LINK->peer)) {
+                if (g_port_net_stranger_hook != NULL) {
+                    g_port_net_stranger_hook(&from, bytes, got);
+                }
                 continue;
             }
-            if (!g_port_net_is_fixed) {
-                g_port_net_heard = from;
-                g_port_net_has_heard = 1;
+            if (!LINK->is_fixed) {
+                LINK->heard = from;
+                LINK->has_heard = 1;
             }
             g_port_net_received++;
             return got;
@@ -764,7 +819,7 @@ static void port_NetLinger(void) {
 /* What went and what came (port_net.h), once the other program has had
  * what it still waits for. */
 void port_PrintNetReport(void) {
-    if (g_port_net_socket < 0) {
+    if (LINK->socket < 0) {
         return;
     }
     port_NetLinger();
@@ -784,9 +839,7 @@ void port_PrintNetReport(void) {
 
 void port_SetLinkSide(s32 side) { g_port_link_side = side; }
 
-s32 port_LinkIsUp(void) {
-    return g_port_link_side >= 0 && g_port_net_socket >= 0;
-}
+s32 port_LinkIsUp(void) { return g_port_link_side >= 0 && LINK->socket >= 0; }
 
 s32 port_LinkSide(void) { return g_port_link_side; }
 

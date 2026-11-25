@@ -758,10 +758,11 @@ target. A **team loses when both its fighters have fallen**; then, as in
 one on one, the replay (of the last to fall and his enemy), the
 winner's view and the menu, or the match's card.
 
-**Online** the host's choice holds, and each player's partner is the
-CPU's (a session carries one player's pad from each PC); in a room of
+**Online** the host's choice holds. In a session of two players each
+player's partner is the CPU's; in a session of **four players** (four
+PCs, or two on each of two: "Four players online" below) every fighter is
+a player's, players 1 and 3 one team and 2 and 4 the other. In a room of
 several the matches are the room host's, and spectators watch all four.
-Four players on four PCs is not there yet.
 
 ## Everything unlocked
 
@@ -1087,6 +1088,8 @@ rebushido --lobby 135.181.108.74:7845 --room "Tatara" --room-password sesame
 rebushido --lobby 135.181.108.74:7845 --join KGGRRY --room-password sesame
 rebushido --host 0.0.0.0:7845                 by address: the host
 rebushido --join 203.0.113.7:7845             ... and the other player
+rebushido --lobby 135.181.108.74:7845 --room "Fours" --players 4
+                                              four players, a PC each
 ```
 
 **Check you can meet first:** `rebushido --check-online` prints your
@@ -1191,6 +1194,39 @@ their round trip to the lobby), the match now and the last result.
 
 Each match is the host of the match's (its first player's) cards,
 unlocks and settings, as any session is.
+
+### Four players online
+
+Four players play two on two, **each on a PC of their own** or **two on
+each of two PCs** (a team a PC, as on a couch), every fighter a player's
+(NETPLAY.md, section 18). The host is player 1 and its team mate player
+3; on four PCs the others are 2, 3 and 4 in the order they come in (in a
+room of several, the order of the match). The host's PC passes everyone's
+presses on to the others, so each other player needs only a way to the
+host, found as for two.
+
+- **Host a room**, *Room for*: **four players, a PC each**, or **four
+  players, two on each of two PCs**; then *Open the room*. Up to three
+  others join it from *Browse rooms* (marked `[four]`, with how many of
+  four are in) or by its code; the lobby before the fight shows how many
+  are here, and the game starts once all are and everyone has said
+  *Ready*. On a PC of two, the first controller (or the first player's
+  keys) plays the first of its players and the second the other.
+- **Quick Match** with *Room for* set to four players on four PCs joins a
+  room of four that has room, or opens one.
+- **A room of several** with *Room for: several, matches of four*: its
+  rotation takes the first four who play, the first and third a team
+  against the second and fourth, and the others watch.
+- From the command line: `rebushido --lobby 135.181.108.74:7845 --room
+  Fours --players 4` (or `--players 2x2`), the others `--join CODE`; by
+  address, `--host 0.0.0.0:7845 --players 4` waits at 7845 and the two
+  ports after it, and the others all `--join` the first (a second guest
+  is sent on to the next port by itself).
+
+The line at the top says `Online: player 3 of 4` (or `player 1 and 3 of
+4`) and the worst ping among the PCs. A player who leaves, or stops
+answering, ends the session for everyone, and in a room's match his team
+loses it. Everyone needs the same setup code, as for two.
 
 ### Ranked
 

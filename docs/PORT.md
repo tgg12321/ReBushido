@@ -9645,11 +9645,23 @@ of the third pad with them). `make port-rollback` rolls back `retarget`,
 `pads` and `stock` every 24 frames on both sizes, plain and quietly,
 with no difference. Online: NETPLAY.md, section 18.
 
+**Four players online** (NETPLAY.md, section 18): a session of four pads
+(`--players 4`, four PCs, or `2x2`, two on each of two) is two on two
+with every fighter a pad's (`port_DuoPartnerIsCpu`: a session's partners
+are the CPU's only where it has two pads, `port_NetplayPads`), the
+session's match held at `PORT_TEAMS_TWO_PADS` (`port_MatchBitsTeams`).
+The four pads are netplay's (`g_np_input`), the third and fourth read as
+a local fight reads them; a replay of the fight keeps all four, as a
+local one does. A rollback at four remote pads is a rollback at four
+fighters: `tools/port_bench.py --rollback`'s `rollback-4p` (`--teams
+pads`, every fighter a pad's), on the RTX 3090's PC on 2026-11-25 while three other agents loaded it: a frame of the fight run again 1.70 ms (worst 4.25), a state put back 0.38 ms, a rollback of the whole window of 8 frames 14.0 ms on average and 37.4 at most, against 13.8 and 42.9 for two on two with the CPU's partners and 10.5 and 30.0 for one on one in the same run (the loaded machine doubles them all against the quiet run's 7.9 and 5.8 above): four remote pads cost what four fighters cost, a few hundredths of a millisecond a frame more than the CPU's partners, nothing for the pads themselves.
+
 **What is left.** Teams of two different characters, or different
 weapons, need video memory for a third and fourth character (a model's
 textures are addressed by its meshes' own pages) and two more motion
 files; a wider video memory is a change of the GPU, the side channel and
-the remastered picture alike. Four players on four PCs (NETPLAY.md,
+the remastered picture alike. A player of four who leaves ends the
+session for all (the CPU taking his fighter over is not built: NETPLAY.md,
 section 18). A team mate's face and point light are his slot's. A
 fighter left lying by his player on a roof below (the rooftop) may be
 out of his enemies' CPU partners' reach. The owner's eye on the band,
@@ -10242,7 +10254,13 @@ in `session.c` (`PORT_SESSION_RULE_ONE_MATCH`) and the room's page in
   `--room-rule`, `--room-watcher`, `--room-no-watch`, `--room-matches N`,
   `--room-side open|join`, `--net-plan-pads`) makes a program a room's
   member with no pages, for the tests; its own game idles between
-  matches.
+  matches. `--room-size 4` opens a room whose matches are of four.
+- **A match of four** (NETPLAY.md, section 18) is a session of four PCs:
+  its first player hosts it, each other meets him at the seat of its
+  place in the match (`port_SetRelaySeat`, the ask's `seat`); its result
+  is its teams' (the first and third players against the second and
+  fourth, `port_OnlineMatchEnds`), and a player who leaves it loses it for
+  his team (`port_NetplayLeftPad`).
 
 ## 64 bits
 

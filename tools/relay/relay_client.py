@@ -1,7 +1,8 @@
 """The client side of the ReBushido relay protocol, for tests and tools.
 
 Builds HELLO, LIST and WHOAMI datagrams and reads STATE, ROOMS and YOUARE
-(docs/NETPLAY.md, section 14). Standard library only.
+(docs/NETPLAY.md, section 14), and the rooms of several's and the ladder's
+(sections 16 and 17), of the protocol's version 4. Standard library only.
 
     import relay_client as rc
     v = rc.verifier(salt, "password")
@@ -20,7 +21,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ladder  # noqa: E402
 
-RELAY_VERSION = 3
+RELAY_VERSION = 4
+HELLO_SIZE = 232
 HEADER = struct.Struct("<2sBBI")
 
 K_HELLO = 48
@@ -76,6 +78,11 @@ C_LAN4 = 1
 C_MAPPED4 = 2
 C_GLOBAL6 = 3
 
+# ROOMS' flags byte (the locked byte)
+LIST_LOCKED = 0x01
+LIST_GROUP = 0x02
+LIST_FOUR = 0x04
+
 
 def header(kind, detail=0, number=0):
     return HEADER.pack(b"RB", kind, detail, number)
@@ -113,8 +120,11 @@ def proof(verifier_bytes, challenge):
 
 
 def hello(detail, code=b"", name=b"", player=b"", setup=b"", salt=b"", secret=b"", candidates=(), version=RELAY_VERSION,
-          rtt=0):
-    """A 208-byte HELLO; `rtt` the sender's round trip to the server."""
+          rtt=0, seat_key=b"", players=0, seat=0):
+    """A 232-byte HELLO; `rtt` the sender's round trip to the server. A room
+    of four: `players` 4 on its host's first seat, `seat` the seat a host's
+    socket hosts (2, 3) or a guest asks for (1..3, 0 any), `seat_key` the key
+    of its seats 2 and 3."""
     candidates = list(candidates)
     data = b"".join(
         (
@@ -127,9 +137,11 @@ def hello(detail, code=b"", name=b"", player=b"", setup=b"", salt=b"", secret=b"
             field(secret, 32),
             struct.pack("<BxH", len(candidates), rtt),
             b"".join(candidates).ljust(80, b"\0"),
+            field(seat_key, 16),
+            struct.pack("<BB6x", players, seat),
         )
     )
-    assert len(data) == 208
+    assert len(data) == HELLO_SIZE
     return data
 
 
@@ -208,8 +220,9 @@ def parse_rooms(data):
                 "player": text(r[32:48]),
                 "setup": text(r[48:68]),
                 "players": r[68],
-                "locked": r[69] & 1,
-                "group": bool(r[69] & 2),
+                "locked": r[69] & LIST_LOCKED,
+                "group": bool(r[69] & LIST_GROUP),
+                "four": bool(r[69] & LIST_FOUR),
                 "ping": struct.unpack_from("<H", r, 70)[0],
                 "salt": r[72:88],
                 "age": struct.unpack_from("<I", r, 88)[0],
@@ -244,6 +257,7 @@ A_SIDE_OPEN = 7
 A_SIDE_JOIN = 8
 A_SIDE_DONE = 9
 R_PLAYS = 0x01
+R_FOUR = 0x02
 RULE_OFF = 0
 RULE_FIXED = 1
 RULE_WINNER = 2
@@ -261,11 +275,14 @@ P_END = 4
 P_NONE = 5
 NO_START = 0xFFFFFFFF
 CHUNK = 1024
+INPUT_SIZE = 8  # a frame of a feed: four pads' buttons, u16 each
+INPUTS_A_DATAGRAM = 120
+HASHES_A_DATAGRAM = 4
 
 
 def room_hello(action, code=b"", name=b"", player=b"", setup=b"", salt=b"", secret=b"", token=b"", plays=True,
-               rule=0, arg=0, stamp=0, rtt=0, number=0, version=RELAY_VERSION):
-    """A 160-byte ROOM."""
+               rule=0, arg=0, stamp=0, rtt=0, number=0, version=RELAY_VERSION, four=False):
+    """A 160-byte ROOM; `four` (OPEN) a rotation of matches of four."""
     data = b"".join(
         (
             header(K_ROOM, action, version),
@@ -276,7 +293,8 @@ def room_hello(action, code=b"", name=b"", player=b"", setup=b"", salt=b"", secr
             field(salt, 16),
             field(secret, 32),
             field(token, 16),
-            struct.pack("<BBBxIHxxI4x", R_PLAYS if plays else 0, rule, arg, stamp, rtt, number),
+            struct.pack("<BBBxIHxxI4x", (R_PLAYS if plays else 0) | (R_FOUR if four else 0), rule, arg, stamp, rtt,
+                        number),
         )
     )
     assert len(data) == 160
@@ -290,8 +308,8 @@ def parse_roster(data):
     if kind != K_ROSTER:
         raise ValueError("kind %d, not ROSTER" % kind)
     you, count, rule, host = data[88:92]
-    number, a, b = struct.unpack_from("<IBB", data, 112)
-    last = struct.unpack_from("<IBBB", data, 144)
+    number, a, b, c, d = struct.unpack_from("<IBBBB", data, 112)
+    last = struct.unpack_from("<IBBBB", data, 144)
     members = []
     for i in range(min(count, 8)):
         r = data[152 + i * 24:176 + i * 24]
@@ -316,8 +334,10 @@ def parse_roster(data):
         "rule": rule,
         "host": host,
         "setup": text(data[92:112]),
-        "match": {"number": number, "a": a, "b": b, "code": text(data[120:128]), "ticket": data[128:144]},
+        "match": {"number": number, "a": a, "b": b, "players": [p for p in (a, b, c, d) if p != NOBODY],
+                  "code": text(data[120:128]), "ticket": data[128:144]},
         "last": {"number": last[0], "a": last[1], "b": last[2], "winner": last[3]},
+        "size": last[4],  # the room's matches: of 2 or 4
         "members": members,
         "sides": sides,
     }
@@ -334,10 +354,11 @@ def feed_start(code, ticket, start_frame, start, index):
 
 
 def feed_inputs(code, ticket, first, inputs, hashes=()):
-    """`inputs`: 4 bytes a frame; `hashes`: (frame, 8 bytes) pairs."""
+    """`inputs`: 8 bytes a frame (four pads); `hashes`: (frame, 8 bytes) pairs."""
     hashes = list(hashes)
     return header(K_FEED, P_INPUTS) + field(code, 8) + field(ticket, 16) + struct.pack(
-        "<IHBx", first, len(inputs) // 4, len(hashes)) + b"".join(struct.pack("<I", f) + h for f, h in hashes) + inputs
+        "<IHBx", first, len(inputs) // INPUT_SIZE, len(hashes)) + \
+        b"".join(struct.pack("<I", f) + h for f, h in hashes) + inputs
 
 
 def feed_end(code, ticket, frame, winner):
@@ -370,7 +391,8 @@ def parse_scene(data):
         raise ValueError("not a SCENE")
     out = {"part": part, "code": text(data[8:16])}
     if part == P_SETTINGS:
-        out.update(settings=data[16:80], first=text(data[80:96]), second=text(data[96:112]))
+        names = [text(data[80 + i * 16:96 + i * 16]) for i in range(4)]
+        out.update(settings=data[16:80], names=names, first=names[0], second=names[1])
     elif part == P_START:
         out.update(zip(("start_frame", "size", "index", "count"), struct.unpack_from("<IIHH", data, 16)))
         out["data"] = data[28:]

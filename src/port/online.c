@@ -212,6 +212,13 @@ static s32 port_OnlineSetUp(void) {
     }
     port_SetSession(ask->role, &at);
     port_SetSessionPlayer(ask->player);
+    /* four players (docs/NETPLAY.md, section 18): the host's choice, and
+     * a room's match guest's seat at the lobby */
+    port_SetSessionPlayers(
+        ask->role == PORT_SESSION_HOST ? ask->players : 2, ask->pcs);
+    if (has_lobby && ask->role == PORT_SESSION_JOIN) {
+        port_SetRelaySeat(ask->seat);
+    }
     /* a session begun here ends where both go back to the top menu, and
      * a room's match where it is decided */
     port_SetSessionRules(
@@ -296,11 +303,18 @@ static void port_OnlineMatchBegins(void) {
         }
         return;
     }
-    port_Log("room: match %d (%s vs %s) begins: this program plays player "
-             "%d%s\n",
-             next->match.number, next->first, next->second,
-             next->role == PORT_SESSION_HOST ? 1 : 2,
-             next->side ? ", a match beside the room's" : "");
+    if (next->players == PORT_RELAY_FOUR) {
+        port_Log("room: match %d (%s and %s vs %s and %s) begins: this "
+                 "program plays player %d, of two on two\n",
+                 next->match.number, next->first, next->third, next->second,
+                 next->fourth, next->place + 1);
+    } else {
+        port_Log("room: match %d (%s vs %s) begins: this program plays "
+                 "player %d%s\n",
+                 next->match.number, next->first, next->second,
+                 next->role == PORT_SESSION_HOST ? 1 : 2,
+                 next->side ? ", a match beside the room's" : "");
+    }
     if (next->role == PORT_SESSION_HOST) {
         port_FeedBegin(&next->match);
     }
@@ -310,10 +324,15 @@ static void port_OnlineMatchBegins(void) {
     }
 }
 
-/* ... and ends: who won, by why it ended, to the feed and the room. */
+/* ... and ends: who won, by why it ended, to the feed and the room. A
+ * match of four is its teams': the first and third players against the
+ * second and fourth; a player who leaves loses it for his team. */
 static void port_OnlineMatchEnds(s32 end) {
     const PortRoomNext *next = &g_online.next;
-    s32 first = next->role == PORT_SESSION_HOST;
+    s32 first = next->players == PORT_RELAY_FOUR
+                    ? next->place % 2 == 0
+                    : next->role == PORT_SESSION_HOST;
+    s32 gone = port_NetplayLeftPad();
     s32 winner = PORT_ROOM_DRAW;
 
     if (end == PORT_NETPLAY_END_MATCH) {
@@ -327,7 +346,13 @@ static void port_OnlineMatchEnds(s32 end) {
         winner = first ? PORT_ROOM_WON_SECOND : PORT_ROOM_WON_FIRST;
     } else if (
         end == PORT_NETPLAY_END_PEER_LEFT || end == PORT_NETPLAY_END_SILENT) {
-        winner = first ? PORT_ROOM_WON_FIRST : PORT_ROOM_WON_SECOND;
+        /* the other team won where it was the other team's player who
+         * went; of two, the one who stays */
+        if (next->players == PORT_RELAY_FOUR && gone >= 0) {
+            winner = gone % 2 == 0 ? PORT_ROOM_WON_SECOND : PORT_ROOM_WON_FIRST;
+        } else {
+            winner = first ? PORT_ROOM_WON_FIRST : PORT_ROOM_WON_SECOND;
+        }
     }
     if (g_online.ranked) {
         port_RankedMatchEnds(end, winner, TRUE);
@@ -620,6 +645,12 @@ static void port_OnlineMatchAsk(
         ask->ticket[i] = next->match.ticket[i];
     }
     ask->room_number = next->match.number;
+    if (next->players == PORT_RELAY_FOUR) {
+        /* a match of four: four PCs, each guest at the seat of its place */
+        ask->players = PORT_RELAY_FOUR;
+        ask->pcs = PORT_RELAY_FOUR;
+        ask->seat = next->place;
+    }
     if (port_GetSessionSeedAsked(&seed)) {
         /* a test's seed, another for each match, that each be its own */
         port_SetSessionSeed(seed + (u32)next->match.number);
@@ -736,7 +767,7 @@ static void port_OnlineRoomTurn(void) {
             room->name[0] != 0
                 ? port_RoomOpen(
                       room->lobby, room->name, room->player, room->password,
-                      room->rule, room->plays, why, sizeof(why))
+                      room->rule, room->plays, room->size, why, sizeof(why))
                 : port_RoomEnter(room->lobby, room->code, room->player,
                                  room->password, room->plays, why, sizeof(why));
 

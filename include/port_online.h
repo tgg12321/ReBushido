@@ -38,6 +38,12 @@ typedef struct {
     u8 ticket[PORT_RELAY_TICKET_BYTES];
     char code[PORT_RELAY_CODE_BYTES];
     s32 room_number;
+    /* four players (docs/NETPLAY.md, section 18): the host's players and
+     * PCs (--players: 0 or 2 for two; 4 and 4, or 4 and 2), and a room's
+     * match guest's seat, its place in the match (1 to 3; 0 any) */
+    s32 players;
+    s32 pcs;
+    s32 seat;
 } PortOnlineAsk;
 
 /* A room of several, as a program with no pages is given it (main.c's
@@ -52,7 +58,8 @@ typedef struct {
     char password[PORT_ONLINE_TEXT_BYTES];
     char bind[PORT_ONLINE_TEXT_BYTES]; /* a match's socket, or "" */
     s32 rule;                          /* PORT_ROOM_RULE_... (the host's) */
-    s32 plays;                         /* in the rotation, else a spectator */
+    s32 size;        /* the rotation's matches, of 2 or of 4 (the host's) */
+    s32 plays;       /* in the rotation, else a spectator */
     s32 watch;       /* watches the room's matches it is not in */
     u32 matches;     /* the program leaves the room, and ends, once the
                         room has had so many results (0: never) */

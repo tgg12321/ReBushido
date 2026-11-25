@@ -46,8 +46,10 @@ enum {
 
 typedef struct {
     s32 number; /* the room's count of matches; 0: none */
-    s32 a;      /* its two players' ids: the first hosts it */
+    s32 a;      /* its players' ids: the first hosts it */
     s32 b;
+    s32 c; /* a match of four's third and fourth, PORT_ROOM_NOBODY */
+    s32 d; /* in one of two; the teams a+c against b+d */
     char code[PORT_ROOM_CODE_BYTES];
     u8 ticket[PORT_RELAY_TICKET_BYTES]; /* only a player has it */
     s32 has_ticket;
@@ -81,16 +83,19 @@ typedef struct {
     s32 last_a;
     s32 last_b;
     s32 last_winner; /* PORT_ROOM_WON_..., or PORT_ROOM_NOBODY: left */
+    s32 size;        /* the rotation's matches: of 2 or of 4 players */
 } PortRoomView;
 
 /* ---- the room (room.c) ---- */
 
-/* A room opened at the lobby `lobby` (ADDRESS:PORT), or one entered by its
+/* A room opened at the lobby `lobby` (ADDRESS:PORT), its rotation's
+ * matches of `size` players (2, or 4: two on two, docs/NETPLAY.md,
+ * section 18), or one entered by its
  * code, with a password or none ("" or NULL): 1, or 0 with why in a
  * player's words. They wait for the server's answer a few seconds. */
 extern s32 port_RoomOpen(
     const char *lobby, const char *name, const char *player,
-    const char *password, s32 rule, s32 plays, char *why, u32 room);
+    const char *password, s32 rule, s32 plays, s32 size, char *why, u32 room);
 extern s32 port_RoomEnter(
     const char *lobby, const char *code, const char *player,
     const char *password, s32 plays, char *why, u32 room);
@@ -129,8 +134,12 @@ typedef struct PortRoomNext {
     s32 role; /* PORT_SESSION_HOST or _JOIN */
     s32 side; /* a match beside the room's */
     PortRoomMatch match;
+    s32 place;   /* this member's in the match: 0 its host, to 3 */
+    s32 players; /* the match's: 2 or 4 */
     char first[PORT_RELAY_PLAYER_BYTES];
     char second[PORT_RELAY_PLAYER_BYTES];
+    char third[PORT_RELAY_PLAYER_BYTES];
+    char fourth[PORT_RELAY_PLAYER_BYTES];
 } PortRoomNext;
 
 extern s32 port_RoomNext(PortRoomNext *out);
@@ -146,9 +155,10 @@ extern void port_RoomWait(u32 wait_ms);
 
 /* This program hosts `match`: its feed is sent from here on. */
 extern void port_FeedBegin(const PortRoomMatch *match);
-/* A frame whose inputs are final (netplay.c): both pads' buttons; a hash
+/* A frame whose inputs are final (netplay.c): the four pads' buttons (a
+ * match of two's last two 0); a hash
  * that is final; the session's end, and who won (PORT_ROOM_WON_...). */
-extern void port_FeedFrame(u32 frame, u16 first, u16 second);
+extern void port_FeedFrame(u32 frame, const u16 *pads);
 extern void port_FeedHash(u32 frame, u64 hash);
 extern void port_FeedEnd(u32 frame, s32 winner);
 /* Each of netplay's turns: what the server has not said it has, sent. */
@@ -173,11 +183,11 @@ extern s32 port_WatchStart(const u8 **blob, u32 *size);
 /* The start is in the state, at netplay's `frame`: inputs from there are
  * asked for. */
 extern void port_WatchStarted(u32 frame);
-/* A frame's inputs, both pads: 1 where they have come. The frames had,
- * from the start on; a final hash of the players', 1 where it has come;
- * the session's end, 1 and its frame where said; the time since the
+/* A frame's inputs, the four pads' into pads: 1 where they have come. The
+ * frames had, from the start on; a final hash of the players', 1 where it has
+ * come; the session's end, 1 and its frame where said; the time since the
  * server last said anything. */
-extern s32 port_WatchInput(u32 frame, u16 *first, u16 *second);
+extern s32 port_WatchInput(u32 frame, u16 *pads);
 extern u32 port_WatchKnown(void);
 extern s32 port_WatchHash(u32 frame, u64 *hash);
 extern s32 port_WatchEnd(u32 *frame, s32 *winner);

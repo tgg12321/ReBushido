@@ -86,8 +86,11 @@ enum {
     STATUS_INCOMPATIBLE = 0x88,
 };
 
-#define RELAY_VERSION 3
+#define RELAY_VERSION 4
 #define ROOM_FLAG_PLAYS 0x01
+/* an opening's: the rotation's matches are of four (version 4) */
+#define ROOM_FLAG_FOUR 0x02
+#define MATCH_OF_FOUR 4
 
 /* ROOM's fields. */
 enum {
@@ -143,6 +146,7 @@ static struct {
     s32 done_count;
     /* what is asked, said again until the room shows it */
     s32 rule_asked; /* -1: none */
+    s32 four;       /* opening a room whose matches are of four */
     s32 side_open;
     s32 side_join; /* the side's place, or -1 */
     s32 result_number;
@@ -201,7 +205,9 @@ static void port_RoomSay(s32 action, s32 arg, u32 number, const char *name,
     for (i = 0; i < TOKEN_BYTES; i++) {
         out[HELLO_TOKEN + i] = g_room.token[i];
     }
-    out[HELLO_FLAGS] = (u8)(g_room.plays ? ROOM_FLAG_PLAYS : 0);
+    out[HELLO_FLAGS] =
+        (u8)((g_room.plays ? ROOM_FLAG_PLAYS : 0) |
+             (action == ACTION_OPEN && g_room.four ? ROOM_FLAG_FOUR : 0));
     out[HELLO_RULE] = (u8)(g_room.rule_asked >= 0 ? g_room.rule_asked : 0);
     out[HELLO_ARG] = (u8)arg;
     port_NetPutWord(out + HELLO_STAMP, now);
@@ -212,9 +218,10 @@ static void port_RoomSay(s32 action, s32 arg, u32 number, const char *name,
     g_room.stay_at = now;
 }
 
-/* A match of ROSTER's: its number, its players, its code and ticket. */
-static void port_RoomTakeMatch(
-    PortRoomMatch *out, const u8 *head, const u8 *code, const u8 *ticket) {
+/* A match of ROSTER's: its number, its players (four of the rotation's,
+ * `four`; two of a match beside), its code and ticket. */
+static void port_RoomTakeMatch(PortRoomMatch *out, const u8 *head,
+                               const u8 *code, const u8 *ticket, s32 four) {
     u32 i;
 
     out->has_ticket = 0;
@@ -225,6 +232,8 @@ static void port_RoomTakeMatch(
     port_RoomGetText(out->code, code, CODE_FIELD - 2);
     out->a = head[0];
     out->b = head[1];
+    out->c = four ? head[2] : PORT_ROOM_NOBODY;
+    out->d = four ? head[3] : PORT_ROOM_NOBODY;
 }
 
 /* A ROSTER from the server: the room as it is now. */
@@ -261,7 +270,7 @@ static void port_RoomTake(const u8 *in) {
     view->rtt = g_room.rtt;
     view->match.number = (s32)port_NetGetWord(in + ROSTER_MATCH);
     port_RoomTakeMatch(&view->match, in + ROSTER_MATCH + WORD_BYTES,
-                       in + ROSTER_MATCH_CODE, in + ROSTER_MATCH_TICKET);
+                       in + ROSTER_MATCH_CODE, in + ROSTER_MATCH_TICKET, TRUE);
     if (view->match.a == PORT_ROOM_NOBODY) {
         view->match.number = 0;
     }
@@ -269,6 +278,8 @@ static void port_RoomTake(const u8 *in) {
     view->last_a = in[ROSTER_LAST + WORD_BYTES];
     view->last_b = in[ROSTER_LAST + WORD_BYTES + 1];
     view->last_winner = in[ROSTER_LAST + WORD_BYTES + 2];
+    view->size =
+        in[ROSTER_LAST + WORD_BYTES + 3] == MATCH_OF_FOUR ? MATCH_OF_FOUR : 2;
     for (i = 0; i < view->count; i++) {
         const u8 *at = in + ROSTER_MEMBERS + i * MEMBER_BYTES;
         PortRoomMember *member = &view->members[i];
@@ -288,8 +299,8 @@ static void port_RoomTake(const u8 *in) {
         if (at[0] == PORT_ROOM_NOBODY) {
             continue;
         }
-        port_RoomTakeMatch(
-            side, at, at + 2 * WORD_BYTES, at + 2 * WORD_BYTES + CODE_FIELD);
+        port_RoomTakeMatch(side, at, at + 2 * WORD_BYTES,
+                           at + 2 * WORD_BYTES + CODE_FIELD, FALSE);
         side->number = (s32)port_NetGetWord(at + WORD_BYTES);
         view->side_count++;
     }
@@ -508,7 +519,7 @@ static s32 port_RoomAsk(
  * salt made of the clock and its verifier, as a two-player room's. */
 s32 port_RoomOpen(
     const char *lobby, const char *name, const char *player,
-    const char *password, s32 rule, s32 plays, char *why, u32 room) {
+    const char *password, s32 rule, s32 plays, s32 size, char *why, u32 room) {
     u8 salt[SALT_FIELD];
     u8 verifier[PORT_RELAY_KEY_BYTES];
     s32 locked = password != NULL && password[0] != 0;
@@ -529,18 +540,21 @@ s32 port_RoomOpen(
     }
     g_room.code[0] = 0;
     g_room.rule_asked = rule;
+    g_room.four = size == MATCH_OF_FOUR;
     ok = port_RoomAsk(ACTION_OPEN, name, locked ? salt : NULL,
                       locked ? verifier : NULL, NULL, why, room);
     g_room.rule_asked = -1;
+    g_room.four = FALSE;
     if (!ok) {
         port_RoomLeave();
         return 0;
     }
     port_Log(
-        "room: the room's code is %s (a room of several, %s)\n", g_room.code,
+        "room: the room's code is %s (a room of several, %s%s)\n", g_room.code,
         rule == PORT_ROOM_RULE_FIXED    ? "a fixed turn"
         : rule == PORT_ROOM_RULE_WINNER ? "the winner stays"
-                                        : "no rotation");
+                                        : "no rotation",
+        size == MATCH_OF_FOUR ? ", matches of four" : "");
     return 1;
 }
 
@@ -667,11 +681,17 @@ void port_RoomSideJoin(s32 side) {
     port_RoomAskNow();
 }
 
+/* A match's result (port_room.h): said to the room until it shows it
+ * taken. */
 void port_RoomResult(s32 number, s32 winner) {
     port_Log("room: match %d over: %s\n", number,
              winner == PORT_ROOM_WON_FIRST    ? "its first player won"
              : winner == PORT_ROOM_WON_SECOND ? "its second player won"
                                               : "nobody won");
+    if (g_room.view.size == MATCH_OF_FOUR && winner != PORT_ROOM_DRAW) {
+        port_Log("room: match %d: the %s team won\n", number,
+                 winner == PORT_ROOM_WON_FIRST ? "first" : "second");
+    }
     g_room.result_number = number;
     g_room.result_winner = winner;
     port_RoomAskNow();
@@ -693,25 +713,39 @@ void port_RoomDone(s32 number) {
     g_room.done[g_room.done_count++ % DONE_KEPT] = number;
 }
 
+/* A name into `out`, a member's. */
+static void port_RoomNameOf(char *out, s32 id) {
+    const char *name = id != PORT_ROOM_NOBODY ? port_RoomPlayer(id) : "";
+    u32 i;
+
+    for (i = 0; i + 1 < PORT_RELAY_PLAYER_BYTES && name[i] != 0; i++) {
+        out[i] = name[i];
+    }
+    out[i] = 0;
+}
+
+/* This member's place in `match`: 0 its host, 1 to 3; or -1. */
+static s32 port_RoomPlaceIn(const PortRoomMatch *match, s32 you) {
+    return match->a == you   ? 0
+           : match->b == you ? 1
+           : match->c == you ? 2
+           : match->d == you ? 3
+                             : -1;
+}
+
 /* A match `next` asks of this member. */
 static void port_RoomNextOf(
     PortRoomNext *out, s32 what, const PortRoomMatch *match, s32 side) {
-    u32 i;
-
     out->what = what;
     out->side = side;
     out->match = *match;
-    out->role =
-        match->a == g_room.view.you ? PORT_SESSION_HOST : PORT_SESSION_JOIN;
-    for (i = 0; i < PORT_RELAY_PLAYER_BYTES; i++) {
-        out->first[i] = port_RoomPlayer(match->a)[i];
-        out->second[i] = port_RoomPlayer(match->b)[i];
-        if (out->first[i] == 0 && out->second[i] == 0) {
-            break;
-        }
-    }
-    out->first[PORT_RELAY_PLAYER_BYTES - 1] = 0;
-    out->second[PORT_RELAY_PLAYER_BYTES - 1] = 0;
+    out->place = port_RoomPlaceIn(match, g_room.view.you);
+    out->players = match->c != PORT_ROOM_NOBODY ? MATCH_OF_FOUR : 2;
+    out->role = out->place == 0 ? PORT_SESSION_HOST : PORT_SESSION_JOIN;
+    port_RoomNameOf(out->first, match->a);
+    port_RoomNameOf(out->second, match->b);
+    port_RoomNameOf(out->third, match->c);
+    port_RoomNameOf(out->fourth, match->d);
 }
 
 /* What this member is to do now (port_room.h): a match of its own
@@ -727,7 +761,7 @@ s32 port_RoomNext(PortRoomNext *out) {
     if (!g_room.is_on || !view->in_room) {
         return PORT_ROOM_NEXT_NONE;
     }
-    if (match->number != 0 && (match->a == you || match->b == you) &&
+    if (match->number != 0 && port_RoomPlaceIn(match, you) >= 0 &&
         match->has_ticket && !port_RoomIsDone(match->number)) {
         port_RoomNextOf(out, PORT_ROOM_NEXT_PLAY, match, FALSE);
         return out->what;
@@ -741,8 +775,8 @@ s32 port_RoomNext(PortRoomNext *out) {
             return out->what;
         }
     }
-    if (g_room.watching && match->number != 0 && match->a != you &&
-        match->b != you && !port_RoomIsDone(match->number)) {
+    if (g_room.watching && match->number != 0 &&
+        port_RoomPlaceIn(match, you) < 0 && !port_RoomIsDone(match->number)) {
         port_RoomNextOf(out, PORT_ROOM_NEXT_WATCH, match, FALSE);
         return out->what;
     }

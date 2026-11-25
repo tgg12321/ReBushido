@@ -441,15 +441,19 @@ def build_stamp():
                                              'tools/port_gte_macros.py', modern.SHIM))
 
 
-def made_since(made, deps, stamp):
+def made_since(made, deps, stamp, source=None):
     """Whether `made` (a compiler's output, which `deps` lists the inputs
     of: -MD -MF) is newer than each of its inputs and than `stamp`: then it
     is what compiling again would give, and the checks that read what gcc
-    writes of every file (port_casts, port_order) read it as it is."""
+    writes of every file (port_casts, port_order) read it as it is. Those
+    compile `source` as their standard input, which `deps` then does not
+    name: it is held to `made` too."""
     try:
         when = os.path.getmtime(made)
         with open(deps, encoding='utf-8') as f:
             words = f.read().replace('\\\n', ' ').split()
+        if source is not None and os.path.getmtime(source) >= when:
+            return False
     except OSError:
         return False
     if stamp >= when:
