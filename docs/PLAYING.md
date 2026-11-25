@@ -746,8 +746,8 @@ the rows, Left and Right change one. It goes with Single fight, Stock and
 First to (each fight is the teams'); not with Crew, whose row is not
 shown. The settings menu's **Teams** (`teams = one|cpu|pads` in
 `rebushido.cfg`) is where the page starts, and what a mode with no page
-plays. Versus the CPU, the CPU's team is the opponent twice and your
-partner the CPU's or player three's.
+plays. Versus the CPU, the CPU's team is the opponent and a partner of
+another character, and your partner the CPU's or player three's.
 
 **Fighting.** Each fighter has an enemy he faces and walks towards, as
 in one on one; **R2 turns him to the other enemy** (remapped as every
@@ -769,8 +769,9 @@ target. A **team loses when both its fighters have fallen**; then, as in
 one on one, the replay (of the last to fall and his enemy), the
 winner's view and the menu, or the match's card.
 
-**Online** the host's choice holds. In a session of two players each
-player's partner is the CPU's; in a session of **four players** (four
+**Online** the host's choice holds, and the partners are picked at the
+second grid as offline. In a session of two players each player's
+partner is the CPU's (each picks his own); in a session of **four players** (four
 PCs, or two on each of two: "Four players online" below) every fighter is
 a player's, players 1 and 3 one team and 2 and 4 the other. In a room of
 several the matches are the room host's, and spectators watch all four.

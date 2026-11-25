@@ -9782,8 +9782,9 @@ count a team's fight as a side's. A fight's second fighters stand beside
 their firsts, square to the line between the teams, at 1,600 (or 900,
 or behind), where the way is clear and the ground level
 (`port_DuoFindPlace`), the two seconds facing each other as the firsts
-do. Versus the CPU, the CPU's team is its opponent twice, the player's
-partner the CPU's or the third pad's.
+do. Versus the CPU, the CPU's team is its opponent and a partner drawn
+from the run's opponents, the player's partner the CPU's or the third
+pad's, picked at the second grid.
 
 **The pads.** The input has four pads (`PORT_INPUT_PADS`): the game's
 two, which its reads see, and the third and fourth, which only two on
@@ -9837,6 +9838,7 @@ both sizes, the traces the same line for line:
 | `pads` | the third pad: 3 turns from 4 to 2 with his R2 and his blows land (on 4, beside 2) |
 | `menu` | ReBushido's main menu: the rule page to Stock 2 and two on two with the CPU's partners, the grid, the grid again for the partners (the first's one place down, the second's his first's), the stage; fights of four characters (Kannuki and Mikado, Gengoro and Kaun), the score's card between, the result's; the second player strikes too, so that no fight stands off |
 | `menu_pads` | the same with four players: the partners picked by the third and fourth pads (`P3`, `P4`), one place and two down, their weapons one along; a first fight of four characters |
+| `vscpu` | versus the CPU from ReBushido's main menu: the rule page's Fighters row to the CPU's partners, the player's fighter and weapon, his partner one place down; the CPU's opponent and his partner drawn, another character: four characters, a fight to one team out |
 | `cpu` | all four the CPU's: a fight that plays itself to a team out |
 | `second_wins` | the firsts written down (a `poke`), the fight goes on with the seconds, then 3: the second team's win |
 | `draw` | all four written down at once: both teams out, the game's draw |
