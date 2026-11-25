@@ -53,9 +53,10 @@ state    src/port/xa.c          the XA reader and its buffer
 # the picture, the output, the program and the host
 outside  src/port/crash.c       the crash report
 outside  src/port/deflate.c     the compressor's tables: one stream at a time
+outside  src/port/fiber.c       the switch of stacks: the host's stack pointer (the game's is saved apart, state.c's "context")
 outside  src/port/fight.c       the fight --fight starts, chosen once as the program starts
 outside  src/port/fighter_view.c  the remastered fighter's bones, camera and lights, read and written down
-outside  src/port/host_linux.c  the host: file handles, the signal stack, the fiber's host side
+outside  src/port/host_linux.c  the host: file handles, the signal stack
 outside  src/port/host_windows.c  the host on Windows
 outside  src/port/main.c        the program's arguments and the disc's file
 outside  src/port/movie_shown.c  which frame of the movie each display buffer holds, for the window's picture

@@ -423,22 +423,23 @@ static u32 port_ReplayStateSize(s32 *has_prims) {
     return size;
 }
 
-/* The build, as netplay's (session.c), but for the primitive buffers. */
+/* The build: where the game's object's core lies and what its code is
+ * (port_StateBuildSum), and the state's size but for the primitive
+ * buffers. Not the version: a build whose window alone differs plays
+ * this one's replays, the next release's too where its game is this
+ * one's. A program with no window has no sum of its code, and its
+ * version (with its commit) stands for it. */
 static u64 port_ReplayBuild(void) {
     s32 has_prims;
+    u64 layout = port_StateBuildSum();
     u64 sum = FNV_OFFSET;
 
-    sum = port_SumBytes(sum, g_rb_version, port_TextLength(g_rb_version));
-    sum = port_SumWord(sum, (u32)sizeof(void *));
-#if defined(_WIN32)
-    sum = port_SumWord(sum, 1);
-#else
-    sum = port_SumWord(sum, 2);
-#endif
-    sum = port_SumWord(sum, port_ReplayStateSize(&has_prims));
-    sum = port_SumWord(sum, (u32)(g_port_data_end - g_port_data_start));
-    sum = port_SumWord(sum, (u32)(PortAddress)g_port_data_start);
-    return port_SumWord(sum, (u32)(PortAddress)port_Main);
+    if (g_port_code_sum == 0) {
+        sum = port_SumBytes(sum, g_rb_version, port_TextLength(g_rb_version));
+    }
+    sum = port_SumWord(sum, (u32)layout);
+    sum = port_SumWord(sum, (u32)(layout >> 32));
+    return port_SumWord(sum, port_ReplayStateSize(&has_prims));
 }
 
 static u64 port_ReplayMods(void) {
@@ -1959,8 +1960,8 @@ static s32 port_ReplayPlayable(const u8 *bytes, u32 size, char *why, u32 room) {
             version[0] = 0;
         }
         port_ReplayText(why, room,
-                        "recorded by another build (%s): only the build that "
-                        "recorded it plays it",
+                        "recorded by another build (%s), whose game is not "
+                        "this one's or lies elsewhere in memory",
                         version);
         return FALSE;
     }

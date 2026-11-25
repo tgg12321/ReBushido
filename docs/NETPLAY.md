@@ -497,10 +497,46 @@ position independence) and are themselves in the state or never move;
 or it was set as the program started, before any save, and is the same
 in every snapshot (a hook, a path, the plan's text); or it lies in a file
 outside the state. So a snapshot is for the same program in the same
-run: it is never given to another build. A replay's start is the one
-snapshot written to a file, for another run of the same build, which
+run, or for a program whose game lies where this one's does. A replay's
+start is the one snapshot written to a file (and a room's spectator puts
+the host's in), for another run of a build of the same **core**, which
 keeps its own hooks, cards and `run` group out of the load ([`PORT.md`](PORT.md),
 "Replays").
+
+**The core and the build's sum** (2026-11-25). A snapshot holds pointers
+into the program's code and variables, and the game's stack, whose
+frames return into the code (section 8): a program that puts the state
+of another in has to have the same code at the same addresses. The
+window's build links the game, Sony's code and the port's own into one
+object first (`tools/port_sdl_build.py`); the part of it that is not the
+window's files (`src/port/window/`'s arithmetic) nor the version's is
+its **core**, first in each kind of that object, its code one section
+(`g_port_core_text` to `g_port_core_text_end`, and the same of the
+constants, the variables and the zeroed), and the switch of stacks is in
+it (`src/port/fiber.c`). The window's hosted files keep all their code
+in `.text`, after the core's (Linux: `-fno-reorder-functions
+-fno-reorder-blocks-and-partition`). So a window that differs moves its
+own code and none of the core's, nor, while it grows within a page, the
+core's variables. `port_StateBuildSum` (`state.c`) sums where the core
+lies (each kind's two ends, the state's runs), the size of a pointer,
+the system and `g_port_code_sum`, which the build takes from the object
+before the program's link: the core's bytes, how large its zeroed
+variables are, and every relocation with the name it reaches
+(`port_sdl_build.code_sum`, into `code_sum.c` beside the object; 0 in
+the program with no window, whose version stands for its code). Before,
+the sums held the place of `port_Main` and of all the program's
+variables: on Windows the game's `main` (`.text.startup`) and its cold
+code were put after the window's code and SDL's, a window that differed
+by a few bytes moved them and passed, and a replay's start, put in,
+returned into the wrong code ("memory that is not there", exit 70).
+
+The session's build (`session.c`) is the game's version (with its
+commit), the state's size and `port_StateBuildSum`. Two programs whose
+window alone differs keep their states' hashes equal (the hash reads no
+address of the window's) and may take each other's start (a spectator):
+they would be safe to meet. The version keeps them apart all the same,
+as it keeps two releases apart, which the lobby and the relay pair
+players by; that is the owner's to loosen.
 
 **The hash** reads the console's RAM, the scratchpad, the sound chip's
 registers and its sound memory, the GTE's registers, and the game's and
@@ -693,14 +729,17 @@ at a time (`src/port/step.c`, declared in `include/port_platform.h`):
 `port_StartGame` makes the fiber ready, `port_StepGame` runs the game to
 its next frame boundary, and the host's loop in `src/port/main.c` has the
 turn between two steps. The switch is a few lines of assembly a
-processor and system (`include/port_fiber.h`): it keeps the registers a
+processor and system (`include/port_fiber.h`, `src/port/fiber.c`): it keeps the registers a
 called function must keep, and on Windows the thread's record of its
 stack's two ends (and, in 32 bits, its chain of fault handlers), since
 Windows hands a fault to nobody while the stack pointer is outside the
-stack it knows. The three hosts (`host_linux.c`, `host_windows.c`,
-`window/host_posix.c`) give it as `port_HostStartGame`,
-`port_HostEnterGame` and `port_HostLeaveGame` in place of the old
-`port_HostCallOnStack`.
+stack it knows. `fiber.c` gives `port_HostEnterGame` and
+`port_HostLeaveGame`, and the three hosts (`host_linux.c`,
+`host_windows.c`, `window/host_posix.c`) `port_HostStartGame` on
+`port_FiberStartGame`, in place of the old `port_HostCallOnStack`. The
+switch and the game's first frame are in the game's object, not the
+host's file, so that the addresses the game's stack returns to are the
+core's (section 7, "The core and the build's sum").
 
 **The boundary is where the game reads the pads.** `port_TakeInput`
 (`src/port/pad.c`), the one input point, ends the step before it takes

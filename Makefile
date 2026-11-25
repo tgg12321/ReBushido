@@ -417,11 +417,13 @@ port-net:
 # Each builds the program of 64-bit pointers; PORT_BITS=32 builds the
 # 32-bit one beside it, into build/port-sdl/linux32/ or windows32/.
 #   build/port-sdl/linux/rebushido --image "Bushido Blade 2 (USA).cue"
+#   PADDED=1: and beside it two programs whose window differs, for
+#   tools/port_replay.py --window (tools/port_sdl_build.py, --padded)
 port-sdl:
-	python3 tools/port_sdl_build.py
+	python3 tools/port_sdl_build.py $(if $(PADDED),--padded)
 
 port-sdl-windows:
-	python3 tools/port_sdl_build.py --windows
+	python3 tools/port_sdl_build.py --windows $(if $(PADDED),--padded)
 
 # The Windows program as a package for players, into build/release/
 # (tools/port_release.py; BUILD.md, "The port's package"): the build

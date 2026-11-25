@@ -10337,9 +10337,23 @@ changed, the new values, then how many frames, a varint), HASH, END. A
 fight's inputs are a few hundred bytes.
 
 **Held to the program.** A replay plays only where the build's sum
-(netplay's, session.c, but for the state's size without the primitive
-buffers), the disc's and the gameplay mods' are the ones recorded, and
-the snapshot's pieces are laid out alike; the port's primitive buffers
+(`port_ReplayBuild`: where the game's object's core lies and what its
+code is, `port_StateBuildSum`, and the state's size without the
+primitive buffers; NETPLAY.md, section 7, "The core and the build's
+sum"), the disc's and the gameplay mods' are the ones recorded, and
+the snapshot's pieces are laid out alike. Not the version: a build whose
+window alone differs plays the replay, and so would a release whose game
+is the one before's; a window that grew past a page (and so moved the
+core's variables), or any change to the game's code, Sony's or the
+port's own, makes another sum, and the replay is refused as another
+build's. The program with no window has no sum of its code, and its
+version (with its commit) is in its build's sum instead. The start holds
+the game's stack, whose frames return into the core (the switch of
+stacks is `src/port/fiber.c`, in the core): a build that put the start
+in with the core's code elsewhere would return into the wrong code, which
+the Windows program did, with "memory that is not there", until
+2026-11-25 (the sum held `port_Main`'s place and all the variables', and
+the game's `main` was linked after the window's code); the port's primitive buffers
 (a draw distance past the console's at the run's start) are needed where
 the fight had them, and kept as they are where it had none. Otherwise the
 page, `--replay` and `--replay-check` say why. The start's hash is checked
@@ -10419,6 +10433,14 @@ training, versus the CPU with `--stage-select --unlock-all`) recorded by
 both sizes, every file played back by both: the size that recorded it
 to the end with every hash the same, the other refusing it as another
 build's; the two sizes' files of a fight have the same inputs. And
+`python3 tools/port_replay.py --window` (from Windows' Python the
+Windows program, in WSL the Linux one): port_game's fight recorded by
+the window's program, then played by two programs linked beside it with
+room between the game's object and the window's files (`make port-sdl
+PADDED=1`, `port_sdl_build.py --padded`): with 96 bytes of code, which
+moves the window's code and none of the core's, every hash the one
+recorded; with 192 KB of each kind, which moves the core's variables,
+refused as another build's, never a crash. And
 `tools/port_net.py session`: both machines of a session keep the fight,
 their files have the same inputs, hashes and views, and each plays back
 headlessly with every hash the same. The window's program recorded

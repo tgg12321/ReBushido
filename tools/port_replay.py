@@ -5,6 +5,7 @@ program:
 
     python3 tools/port_replay.py [--out FOLDER] [--only PLAN...]
     python3 tools/port_replay.py --show FILE...     what replays say
+    python3 tools/port_replay.py --window           a window's replay on builds whose window differs
 
 Each plan is run on both programs `make port` builds with `--replays`
 into a folder of the plan's own: port_game's (power on, versus, a fight to
@@ -17,6 +18,16 @@ to its end with every state hash the one recorded, and the other must
 refuse it as another build's. The two sizes must have recorded as many
 fights, each as long and with the same inputs. What each file holds is
 printed: its frames, its size and its start's.
+
+`--window` records port_game's fight with the window's program (the
+Linux one, or from Windows' Python the Windows one) and plays it with two
+programs that differ from it in the window alone (`make port-sdl
+PADDED=1`: room linked between the game's object and the window's
+files): a little room moves the window's code and none of the game's,
+and the replay plays with every hash the one recorded; much moves the
+game's variables too, and the replay is refused as another build's. A
+start holds the game's stack, whose frames return into the game's code:
+a build that moved that code took the start and crashed (2026-11-25).
 
 An online session's replays, from both machines, are tools/port_net.py's
 (`session`): the two files of each fight must have the same inputs and
@@ -75,11 +86,11 @@ def describe(path):
                len(chunks.get('INPT', b'')), len(chunks.get('HASH', b'')), runs))
 
 
-def check_replay(program, path, extra):
+def check_replay(program, path, extra, env=None):
     """`--replay-check` of one file: (exit code, what it said)."""
     cmd = [program, '--image', playtest.RETAIL_CUE, '--no-cards'] + extra + ['--replay-check', path]
     done = subprocess.run(cmd, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                          stdin=subprocess.DEVNULL, timeout=SECONDS)
+                          stdin=subprocess.DEVNULL, timeout=SECONDS, env=env)
     said = [line for line in done.stderr.decode('utf-8', 'replace').splitlines() if line.startswith('replay:')]
     return done.returncode, said[-1] if said else '(nothing said)'
 
@@ -103,6 +114,55 @@ def record_port_game(report, out):
                                   timeout=SECONDS).returncode
         report.check(code == 0, 'port_game: the %d-bit port ran the plan to its end (exit %d)' % (bits, code))
     return replays
+
+
+def check_window(report, out):
+    """A replay of the window's program played by builds whose window
+    alone differs (tools/port_sdl_build.py --padded: room between the
+    game's object and the window's files): with a little, every hash the
+    one recorded; with much, which moves the game's variables, refused as
+    another build's, never a crash. Windows' program from Windows, the
+    Linux one elsewhere; the three are built first (make port-sdl
+    PADDED=1, through tools/build.sh)."""
+    windows = os.name == 'nt'
+    folder = os.path.join(REPO, 'build', 'port-sdl', 'windows' if windows else 'linux')
+    exe = '.exe' if windows else ''
+    build = (['wsl'] if windows else []) + ['bash', 'tools/build.sh',
+                                            'port-sdl-windows' if windows else 'port-sdl', 'PADDED=1']
+    code = subprocess.run(build, cwd=REPO, stdin=subprocess.DEVNULL).returncode
+    if not report.check(code == 0, "window: the window's program and the two padded beside it were built (exit %d)"
+                        % code):
+        return 0
+    program = os.path.join(folder, 'rebushido' + exe)
+    env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
+    run = os.path.join(out, 'window')
+    replays = os.path.join(run, 'replays')
+    if os.path.isdir(run):
+        shutil.rmtree(run)
+    os.makedirs(replays)
+    plan = port_rollback.write_plan(program, 'port_game', run)
+    cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plan, '--no-cards', '--out', run,
+           '--replays', replays]
+    with open(os.path.join(run, 'rec.out'), 'wb') as o, open(os.path.join(run, 'rec.err'), 'wb') as e:
+        code = subprocess.run(cmd, cwd=REPO, stdout=o, stderr=e, stdin=subprocess.DEVNULL, env=env,
+                              timeout=SECONDS).returncode
+    report.check(code == 0, "window: port_game's plan recorded by the window's program (exit %d)" % code)
+    files = sorted(os.path.join(replays, f) for f in os.listdir(replays) if f.endswith('.rbr'))
+    report.check(files != [], 'window: fights were recorded (%d files)' % len(files))
+    for path in files:
+        print('    ' + describe(path), flush=True)
+        for name, plays in (('', True), ('-pad-small', True), ('-pad-large', False)):
+            code, said = check_replay(os.path.join(folder, 'rebushido' + name + exe), path, [], env)
+            print('    rebushido%s: exit %d: %s' % (name, code, said), flush=True)
+            if plays:
+                report.check(code == 0 and 'DESYNC' not in said,
+                             'window: %s: played by rebushido%s to its end, every hash the one recorded'
+                             % (os.path.basename(path), name))
+            else:
+                report.check(code == 1 and 'another build' in said,
+                             "window: %s: refused by rebushido%s, whose game's variables lie elsewhere, as another "
+                             "build's" % (os.path.basename(path), name))
+    return len(files)
 
 
 def check_folder(report, name, replays, extra):
@@ -143,6 +203,8 @@ def main(argv):
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'replays'))
     parser.add_argument('--only', nargs='*', help='the plans: port_game, and those of tools/port_stage_select.py')
     parser.add_argument('--show', nargs='*', help='what these replay files hold, and nothing else')
+    parser.add_argument('--window', action='store_true',
+                        help="the window's program's replay played by builds whose window differs, and nothing else")
     args = parser.parse_args(argv[1:])
     if args.show:
         for path in args.show:
@@ -155,6 +217,11 @@ def main(argv):
     report = port_stage_select.Report()
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
+    if args.window:
+        count = check_window(report, out)
+        print('port_replay: window: %d replays, %d checks failed' % (count, report.failed))
+        print('%s: port_replay --window' % ('FAILED' if report.failed else 'OK'))
+        return 1 if report.failed else 0
     for program in PROGRAMS.values():
         if not report.check(os.path.isfile(os.path.join(REPO, program)), '%s is built (make port)' % program):
             return 1

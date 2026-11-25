@@ -28,9 +28,12 @@
  * which are at fixed addresses (no position independence) and are
  * themselves in the state or never move; or it was set as the program
  * started, before any save, and is the same in every snapshot (a hook,
- * a path, the plan's text); or it is in a file outside the state. A
- * snapshot is for the same program, in the same run: never written to a
- * file, never given to another build.
+ * a path, the plan's text); or it is in a file outside the state. The
+ * code and the variables they point into are the core's (below), and so
+ * is every address the stack's frames return to (src/port/fiber.c): a
+ * snapshot is for a program of the same port_StateBuildSum, the same
+ * program or one whose window alone differs (a replay's start, a
+ * spectator's, with what is a run's own kept: port_replay.h).
  *
  * The state is whole from the game's first frame on: the sound chip's
  * page is mapped as the game starts its sound. */
@@ -52,6 +55,28 @@ extern char g_port_state_bss_end[];
  * (config/port_state.txt's `run`), from these marks to the second. */
 extern char g_port_run_data[];
 extern char g_port_run_bss[];
+/* ... and each kind's part of the game's object that is its core: the
+ * game, Sony's code and the port's own, but not the window's files (in a
+ * window's build they follow the core; tools/port_sdl_build.py,
+ * BLOB_LD_TEXT). The code's sum is the core's bytes' and names'
+ * (port_sdl_build.code_sum), 0 in a program with no window. */
+extern char g_port_core_text[];
+extern char g_port_core_text_end[];
+extern char g_port_core_rodata[];
+extern char g_port_core_rodata_end[];
+extern char g_port_core_data[];
+extern char g_port_core_data_end[];
+extern char g_port_core_bss[];
+extern char g_port_core_bss_end[];
+extern const u64 g_port_code_sum;
+
+/* Where the core lies in this program and, where the build knows it, what
+ * it is (g_port_code_sum): two programs with the same sum run the same
+ * game at the same addresses, so that a state one saved is the other's to
+ * put in (a replay's start, a spectator's), its stack's return addresses
+ * and the pointers among its variables included. What the window's code
+ * is and where it lies is not in it (docs/PORT.md, "Replays"). */
+extern u64 port_StateBuildSum(void);
 
 /* The bytes a snapshot takes: the same all through a run. */
 extern u32 port_StateSize(void);
