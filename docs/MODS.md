@@ -421,6 +421,20 @@ the stage's, the list beside each naming its owner (`owner stage`, `owner
 fighter 1` or `2`) and that owner's own textures in it;
 `tools/port_stage_hd.py` makes the stage's alone larger.
 
+- **Two on two's partners** (PORT.md, "Two on two"): a team's second of a
+  character no slot holds has his textures in a second bank of the port's
+  video memory, where his slot's would be in the console's. His pages are
+  keyed and replaced the same way, of the bank's pixels and his own TIMs
+  (`model_PortLoadPartner` says which), the list beside a dumped one
+  saying `owner fighter 3 bank` (the first slot's partner) or `owner
+  fighter 4 bank`; where his texels and colours are what his character's
+  are in a slot, the key is the same, and one picture serves both. A
+  partner of his first's character is his first's copy, his pages his
+  first's. Four fighters bring more pages than two, and a face as it
+  changes (eyes shut, mouth open) is a new key of its page: where the
+  pictures found outgrow the card's array of them, it is made twice as
+  large and the pages read again, up to 192.
+
 **How it is proved** (the GL prover, `port_game`'s plan, Graphics:
 Remastered, no mod but this): the first fighter's pages dumped from the
 fight (27 pages and tables), each given its colours turned (red to green,
@@ -429,7 +443,13 @@ pictures are the plain run's, pixel for pixel, until the fight; in the
 fight the first fighter alone differs, his clothes and skin in the turned
 colours, the stage, the second fighter and the lettering as they were. The
 trace of the run is the plain run's, and so are both sizes' of the port
-with the mod.
+with the mod. Two on two's (2026-11-25, the Windows prover on the card,
+`--fight tatara-shrine kannuki mikado --partners tatsumi:nodachi
+utsusemi:yari --teams cpu`): the fight's pages dumped (25 of fighter 1,
+24 of fighter 3 in the bank, 42 of fighter 4 in the bank, his face's
+states among them), fighter 1's made red and the partners' green with a
+grid: in the fight Kannuki is red, Tatsumi and Utsusemi green and gridded
+all over, Mikado and the stage as they were.
 
 ## The stages' pages made larger
 

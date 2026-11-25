@@ -9,7 +9,8 @@
  * stage the renderer draws as primitives (gl_draw.c). A stage's textures
  * are then a few files, a page and a table each, and not hundreds of
  * pieces. A fighter's pages are replaced the same way, keyed by what his
- * model's file loaded (docs/MODS.md, "A fighter's pages").
+ * model's file loaded (docs/MODS.md, "A fighter's pages"), a partner's of
+ * two on two in the second bank of video memory as well.
  *
  * The page's key is of the stage's own texels in it and the table as the
  * stage's file loaded it (port_mods.h, port_TexturePageKey), so it is the
@@ -47,6 +48,9 @@ extern void port_GlSceneNewFrame(void);
 extern s32 port_GlSceneFind(const PortRemasterPrim *prim);
 /* The game wrote this rectangle of video memory. */
 extern void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h);
+/* ... or lines `y` to `y + h - 1` of two on two's second bank, which
+ * changed since the last frame (port_gpu.h). */
+extern void port_GlSceneWroteBank(s32 y, s32 h);
 /* Binds the three tables to their units for a draw and says whether any
  * page has a picture: the shaders' `u_scene_on`. */
 extern s32 port_GlSceneBind(void);
@@ -80,8 +84,9 @@ extern float port_GlSceneLevels(void);
     "    if (u_scene_on == 0) { return -1; }\n"                                   \
     "    int column = (((page.x >> 6) & 15) + ((page.y >> 8) & 1) * 16) * 64\n"   \
     "               + ((page.z >> 4) & 63);\n"                                    \
-    "    uint entry = texelFetch(u_scene_lookup,\n"                               \
-    "                            ivec2(column, page.w & 511), 0).r;\n"            \
+    "    int row = page.w >= 1024 ? 512 + ((page.w - 1024) & 255)\n"              \
+    "                             : (page.w & 511);\n"                           \
+    "    uint entry = texelFetch(u_scene_lookup, ivec2(column, row), 0).r;\n"     \
     "    int layer = int(entry & 4095u) - 1;\n"                                   \
     "    if (layer < 0 || ((entry >> 12) & 3u) != bits) { return -1; }\n"         \
     "    return layer;\n"                                                         \

@@ -165,11 +165,20 @@ s32 model_PortLoadPartner(Model *model, s32 slot, s32 model_id, s32 file_addr,
         mesh_block + 1);
     model->cloth_params = (s32)file + ALIGN4(file[MODEL_FILE_CLOTH]);
     port_DuoBankLoading(TRUE);
+#if RB_REMASTER_VIEW
+    /* his TIMs, for a mod's picture of his whole pages: his own list, of
+     * the bank's pixels (port_remaster.h) */
+    port_RemasterBeginFighterTextures(PORT_PARTNER_TEXTURES(slot));
+    port_RemasterNoteFighterTextures(PORT_PARTNER_TEXTURES(slot), 0);
+#endif
     if (slot == 0) {
         tex_LoadGroup(textures, 0);
     } else {
         tex_LoadGroupAt(textures, 0, MODEL_SECOND_SLOT_DX, 0);
     }
+#if RB_REMASTER_VIEW
+    port_RemasterNoteFighterTextures(-1, 0);
+#endif
     port_DuoBankLoading(FALSE);
     if (slot != 0) {
         tex_ShiftBlockPages(

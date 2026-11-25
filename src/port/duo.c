@@ -716,6 +716,8 @@ void port_DuoLoadPartners(s32 staging) {
         s32 model_id = g_fighter_roster_models[roster];
 
         duo->partner_own[slot] = FALSE;
+        /* none of his TIMs yet, for a mod's pages (port_remaster.h) */
+        port_RemasterBeginFighterTextures(PORT_PARTNER_TEXTURES(slot));
         if (!duo->will_be_on) {
             continue;
         }

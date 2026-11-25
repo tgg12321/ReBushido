@@ -18,6 +18,13 @@
  * shaders find it; and the colours the picture was made with, the table
  * as the stage loaded it, are a row of the table of bases, by layer.
  *
+ * Two on two's partners of characters of their own have their textures
+ * in the second bank of video memory (port_gpu.h), and their faces name
+ * their pages and tables PORT_VRAM_BANK_NAMED_Y further down: their pages
+ * are looked up the same way, keyed by the bank's pixels where the bank
+ * has them (port_GlSceneVramOf), their tables' entries in rows of the
+ * lookup table below the console's 512.
+ *
  * Nothing here is in the build without a window, and nothing here changes
  * a value the game computes. */
 #include <stdarg.h>
@@ -99,7 +106,8 @@ PORT_GL_SCENE_FUNCTIONS
 /* ---- what is kept ---- */
 
 /* The lookup table: a column for each of the 32 pages' 64 columns of
- * colour tables, and a row for each row of video memory. An entry is the
+ * colour tables, and a row for each row of video memory, then one for each
+ * row of the second bank (port_GlSceneRow). An entry is the
  * layer and one, in its low twelve bits; the depth of the texels it was
  * found for, in the next two; whether the table is a fighter's in the
  * next; and the top bit once it has been looked up, with a layer or
@@ -111,16 +119,17 @@ PORT_GL_SCENE_FUNCTIONS
 #define TABLE_COLUMNS 64
 #define TABLE_STEP 16
 #define LOOKUP_W (PAGES * TABLE_COLUMNS)
-#define LOOKUP_H PORT_VRAM_HEIGHT
+#define LOOKUP_H (PORT_VRAM_HEIGHT + PORT_VRAM_BANK_H)
 #define ENTRY_LAYER_MASK 0x0FFF
 #define ENTRY_BITS_SHIFT 12
 #define ENTRY_SEEN 0x8000
 /* the table is a fighter's, not the stage's (no shader reads it) */
 #define ENTRY_FIGHTER 0x4000
 
-/* The most pictures a stage may have. A stage's pages and tables come to
- * some twenty or thirty. */
-#define LAYERS_MAX 64
+/* The most pictures a stage and its fighters may have. A stage's pages and
+ * tables come to some twenty or thirty, a fighter's to as many again, and
+ * two on two has four. */
+#define LAYERS_MAX 192
 /* ... and how many more the array has room for than the stage's TIMs
  * asked for, for a page found later */
 #define LAYERS_SPARE 4
@@ -158,7 +167,17 @@ enum { LAYER_READING = 0, LAYER_READY, LAYER_FAILED };
 /* Whose textures a page's are: the stage's, or a fighter's model's, by its
  * slot (port_remaster.h). Each has its own pixels of video memory, and a
  * page's key is of its owner's texels alone. */
-enum { OWNER_STAGE = 0, OWNER_FIGHTER_1, OWNER_FIGHTER_2, OWNERS };
+enum {
+    OWNER_STAGE = 0,
+    OWNER_FIGHTER_1,
+    OWNER_FIGHTER_2,
+    /* two on two's partners of their own, in the second bank: the lists
+     * PORT_PARTNER_TEXTURES(0) and (1) */
+    OWNER_PARTNER_1,
+    OWNER_PARTNER_2,
+    OWNERS
+};
+#define OWNER_IS_BANK(owner) ((owner) >= OWNER_PARTNER_1)
 
 typedef struct {
     s16 page_x;
@@ -169,6 +188,8 @@ typedef struct {
     s16 base_y;
     s16 bits;
     s16 owner;      /* OWNER_... whose table it is */
+    s16 is_bank;    /* of the second bank: the coordinates above are of
+                       the console's part it stands in for */
     s16 is_stale;   /* written over since: looked up again next frame */
     s16 is_waiting; /* its picture is being read (gl_load.h) */
     u64 key;
@@ -185,6 +206,11 @@ static struct {
     u16 *lookup_table; /* what the card's lookup table holds */
     u8 *own[OWNERS];   /* which pixels of video memory are each owner's */
     u32 owned_pages;   /* a bit for each page that has any */
+    u32 owned_bank_pages; /* ... and of the second bank's */
+    /* video memory with the second bank where it has pixels, as a bank
+     * face reads it (port_GlSceneVramOf), and whether it is this frame's */
+    u16 *bank_view;
+    s32 is_bank_view_fresh;
     u32 version;       /* the stage's textures the tables were made for */
     s32 side;          /* the pictures' size, each way */
     s32 levels;        /* ... and how many levels each has */
@@ -196,6 +222,11 @@ static struct {
      * one before is not put in */
     u32 generation;
     s32 is_full_said; /* the stage's pages filled the array, said once */
+    /* a page with a picture found no room since the stage's pages were
+     * read; and the fewest layers the array is made with when they are
+     * read again (0 until then) */
+    s32 is_short;
+    s32 layers_least;
     u16 *base_rows;   /* the bases, LAYERS_MAX rows of COLORS_MAX */
     Looked *looked;
     s32 looked_count;
@@ -274,13 +305,19 @@ static s32 port_GlSceneMakeTables(void) {
         for (i = 0; i < OWNERS; i++) {
             g_scene.own[i] = calloc((size_t)PORT_VRAM_PIXELS, 1);
         }
+        g_scene.bank_view =
+            malloc((size_t)PORT_VRAM_PIXELS * sizeof(*g_scene.bank_view));
         g_scene.base_rows =
             calloc((size_t)LAYERS_MAX * COLORS_MAX, sizeof(*g_scene.base_rows));
         g_scene.looked = calloc(LOOKED_MAX, sizeof(*g_scene.looked));
     }
-    if (g_scene.lookup_table == NULL || g_scene.own[OWNER_STAGE] == NULL ||
-        g_scene.own[OWNER_FIGHTER_1] == NULL ||
-        g_scene.own[OWNER_FIGHTER_2] == NULL || g_scene.base_rows == NULL ||
+    for (i = 0; i < OWNERS; i++) {
+        if (g_scene.own[i] == NULL) {
+            break;
+        }
+    }
+    if (g_scene.lookup_table == NULL || i < OWNERS ||
+        g_scene.bank_view == NULL || g_scene.base_rows == NULL ||
         g_scene.looked == NULL) {
         port_GlSceneSay("mods: no memory for the stage's pages");
         return FALSE;
@@ -326,6 +363,42 @@ static s32 port_GlSceneColumn(s32 page_x, s32 page_y, s32 clut_x) {
     return page * TABLE_COLUMNS + ((clut_x / TABLE_STEP) % TABLE_COLUMNS);
 }
 
+/* The row of the lookup table of a table the faces name at row `clut_y`:
+ * its own within the console's lines, and below them, from row 512, one
+ * of the second bank's (named PORT_VRAM_BANK_NAMED_Y further down); -1
+ * for none. The shader works it out as this does (gl_scene.h). */
+static s32 port_GlSceneRow(s32 clut_y) {
+    if (clut_y >= PORT_VRAM_BANK_NAMED_Y) {
+        clut_y -= PORT_VRAM_BANK_NAMED_Y;
+        return clut_y < PORT_VRAM_BANK_H ? PORT_VRAM_HEIGHT + clut_y : -1;
+    }
+    return clut_y >= 0 && clut_y < PORT_VRAM_HEIGHT ? clut_y : -1;
+}
+
+/* Video memory as a face of the bank, or of the console's, reads it: the
+ * console's with the second bank's pixels where it has them, made once a
+ * frame it is wanted (the bank's own pixels are the game's memory,
+ * port_VramBank, which the card's copy follows each frame). */
+static const u16 *port_GlSceneVramOf(s32 is_bank) {
+    const u16 *bank = port_VramBank();
+    s32 row;
+
+    if (!is_bank || bank == NULL) {
+        return g_port_gl_vram;
+    }
+    if (!g_scene.is_bank_view_fresh) {
+        memcpy(g_scene.bank_view, g_port_gl_vram,
+               (size_t)PORT_VRAM_PIXELS * sizeof(*g_scene.bank_view));
+        for (row = 0; row < PORT_VRAM_BANK_H; row++) {
+            memcpy(&g_scene.bank_view[row * PORT_VRAM_WIDTH + PORT_VRAM_BANK_X],
+                   &bank[row * PORT_VRAM_BANK_W],
+                   PORT_VRAM_BANK_W * sizeof(*bank));
+        }
+        g_scene.is_bank_view_fresh = TRUE;
+    }
+    return g_scene.bank_view;
+}
+
 static void port_GlSceneSetEntry(s32 column, s32 row, u16 entry) {
     u16 *at = &g_scene.lookup_table[row * LOOKUP_W + column];
 
@@ -350,6 +423,11 @@ static s32 port_GlSceneMakeArray(s32 side, s32 layers) {
     s32 level;
     s32 size;
 
+    /* never more than the tables have rows for (the stage's pages read
+     * again asked for as many as it found) */
+    if (layers > LAYERS_MAX) {
+        layers = LAYERS_MAX;
+    }
     if (g_scene.pages != 0 && side == g_scene.side &&
         layers <= g_scene.capacity) {
         return TRUE;
@@ -595,6 +673,7 @@ static const PortStageTexture *port_GlSceneTextures(s32 owner, s32 *count) {
     if (owner == OWNER_STAGE) {
         return port_RemasterStageTextures(count, &version);
     }
+    /* the partners' lists follow the slots' (PORT_PARTNER_TEXTURES) */
     return port_RemasterFighterTextures(owner - OWNER_FIGHTER_1, count);
 }
 
@@ -610,6 +689,7 @@ static u8 port_GlSceneByte(u16 pixel, s32 shift) {
 static void port_GlSceneDump(
     const PortTexturePage *page, s32 owner, const char *name) {
     const char *folder = port_ModsGetDumpFolder();
+    const u16 *vram = port_GlSceneVramOf(OWNER_IS_BANK(owner));
     const PortStageTexture *textures;
     char path[TEXT_SIZE];
     s32 count;
@@ -661,7 +741,7 @@ static void port_GlSceneDump(
                 region.or_u = 0;
                 region.and_v = PORT_MOD_PAGE_SIDE - 1;
                 region.or_v = 0;
-                texel = port_TextureTexel(g_port_gl_vram, &region, u, v);
+                texel = port_TextureTexel(vram, &region, u, v);
             }
             out[0] = port_GlSceneByte(texel, RED_SHIFT);
             out[1] = port_GlSceneByte(texel, GREEN_SHIFT);
@@ -690,10 +770,13 @@ static void port_GlSceneDump(
     }
     fprintf(file, "page %d %d bits %d table %d %d\n", page->page_x,
             page->page_y, page->bits, page->clut_x, page->clut_y);
+    /* a partner of two on two is fighter 3 (the first slot's) or 4, his
+     * pixels the second bank's */
     if (owner == OWNER_STAGE) {
         fprintf(file, "owner stage\n");
     } else {
-        fprintf(file, "owner fighter %d\n", owner - OWNER_FIGHTER_1 + 1);
+        fprintf(file, "owner fighter %d%s\n", owner - OWNER_FIGHTER_1 + 1,
+                OWNER_IS_BANK(owner) ? " bank" : "");
     }
     textures = port_GlSceneTextures(owner, &count);
     for (i = 0; i < count; i++) {
@@ -723,13 +806,16 @@ static void port_GlSceneDump(
  * writes over, and a fogged fighter's are the plain copy below the fog's
  * block (port_remaster.h). FALSE for a table of nobody's. */
 static s32 port_GlSceneBaseOf(
-    s32 x, s32 y, s32 *base_x, s32 *base_y, s32 *owner) {
+    s32 x, s32 y, s32 is_bank, s32 *base_x, s32 *base_y, s32 *owner) {
     const PortStageTexture *textures;
     s32 count;
     s32 who;
     s32 i;
 
     for (who = 0; who < OWNERS; who++) {
+        if (OWNER_IS_BANK(who) != (is_bank != 0)) {
+            continue;
+        }
         textures = port_GlSceneTextures(who, &count);
         for (i = 0; i < count; i++) {
             const PortStageTexture *one = &textures[i];
@@ -759,7 +845,7 @@ static void port_GlSceneKeyOf(Looked *one, char *name) {
     page.clut_x = one->base_x;
     page.clut_y = one->base_y;
     page.own = g_scene.own[one->owner];
-    one->key = port_TexturePageKey(g_port_gl_vram, &page);
+    one->key = port_TexturePageKey(port_GlSceneVramOf(one->is_bank), &page);
     port_TexturePageKeyName(one->key, &page, name, PORT_MOD_KEY_SIZE);
     one->path = port_ModFind(PORT_MOD_TEXTURES, name);
     if (one->path == NULL) {
@@ -778,6 +864,7 @@ static s32 port_GlSceneLayerOf(u64 key, const char *path, const char *name) {
         }
     }
     if (g_scene.layer_count >= g_scene.capacity) {
+        g_scene.is_short = TRUE;
         /* said once a stage: a page the game writes again and again (a
          * stage's water) is a new key each time */
         if (!g_scene.is_full_said) {
@@ -809,6 +896,7 @@ static void port_GlSceneEnter(Looked *one) {
     char name[PORT_MOD_KEY_SIZE];
     s32 column = port_GlSceneColumn(one->page_x, one->page_y, one->clut_x);
     s32 colors = one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX;
+    const u16 *vram = port_GlSceneVramOf(one->is_bank);
     s32 layer = -1;
     s32 i;
 
@@ -827,9 +915,8 @@ static void port_GlSceneEnter(Looked *one) {
         u16 *row = &g_scene.base_rows[layer * COLORS_MAX];
 
         for (i = 0; i < colors; i++) {
-            row[i] =
-                g_port_gl_vram[one->base_y * PORT_VRAM_WIDTH +
-                               ((one->base_x + i) & (PORT_VRAM_WIDTH - 1))];
+            row[i] = vram[one->base_y * PORT_VRAM_WIDTH +
+                          ((one->base_x + i) & (PORT_VRAM_WIDTH - 1))];
         }
         glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_BASES_UNIT);
         glBindTexture(GL_TEXTURE_2D, g_scene.bases);
@@ -840,7 +927,9 @@ static void port_GlSceneEnter(Looked *one) {
         glActiveTexture(GL_TEXTURE0);
     }
     port_GlSceneSetEntry(
-        column, one->clut_y,
+        column,
+        port_GlSceneRow(one->clut_y +
+                        (one->is_bank ? PORT_VRAM_BANK_NAMED_Y : 0)),
         (u16)(ENTRY_SEEN | (one->owner != OWNER_STAGE ? ENTRY_FIGHTER : 0U) |
               (layer >= 0
                    ? (u32)(layer + 1) | ((u32)one->bits << ENTRY_BITS_SHIFT)
@@ -879,7 +968,9 @@ static void port_GlSceneLookUp(Looked *one) {
 }
 
 /* A page and a table the faces name, kept and, where `is_now` says,
- * looked up at once: FALSE where it is no page of the stage's. */
+ * looked up at once: FALSE where it is no page of the stage's. A page and
+ * table of the second bank are named PORT_VRAM_BANK_NAMED_Y further
+ * down. */
 static s32 port_GlSceneAdd(
     s32 page_x, s32 page_y, s32 clut_x, s32 clut_y, s32 bits, s32 is_now) {
     PortTexturePage page;
@@ -888,7 +979,17 @@ static s32 port_GlSceneAdd(
     s32 base_y;
     s32 owner;
     s32 column;
+    s32 row = port_GlSceneRow(clut_y);
+    s32 is_bank = clut_y >= PORT_VRAM_BANK_NAMED_Y;
+    u32 owned = is_bank ? g_scene.owned_bank_pages : g_scene.owned_pages;
 
+    if (is_bank) {
+        if (page_y < PORT_VRAM_BANK_NAMED_Y) {
+            return FALSE;
+        }
+        page_y -= PORT_VRAM_BANK_NAMED_Y;
+        clut_y -= PORT_VRAM_BANK_NAMED_Y;
+    }
     page.bits = bits;
     page.page_x = page_x;
     page.page_y = page_y;
@@ -896,16 +997,17 @@ static s32 port_GlSceneAdd(
     page.clut_y = 0;
     page.own = NULL;
     column = port_GlSceneColumn(page_x, page_y, clut_x);
-    if (clut_y < 0 || clut_y >= LOOKUP_H ||
-        (g_scene.lookup_table[clut_y * LOOKUP_W + column] & ENTRY_SEEN) != 0) {
+    if (row < 0 ||
+        (g_scene.lookup_table[row * LOOKUP_W + column] & ENTRY_SEEN) != 0) {
         return FALSE;
     }
     /* seen, whatever comes of it: a table that is not the stage's is not
      * asked about again */
-    g_scene.lookup_table[clut_y * LOOKUP_W + column] = ENTRY_SEEN;
+    g_scene.lookup_table[row * LOOKUP_W + column] = ENTRY_SEEN;
     if (bits == PORT_MOD_TEXELS_16 || !port_TexturePageFits(&page) ||
-        (g_scene.owned_pages & (1U << (column / TABLE_COLUMNS))) == 0 ||
-        !port_GlSceneBaseOf(clut_x, clut_y, &base_x, &base_y, &owner) ||
+        (owned & (1U << (column / TABLE_COLUMNS))) == 0 ||
+        !port_GlSceneBaseOf(
+            clut_x, clut_y, is_bank, &base_x, &base_y, &owner) ||
         g_scene.looked_count >= LOOKED_MAX) {
         return FALSE;
     }
@@ -918,6 +1020,7 @@ static s32 port_GlSceneAdd(
     one->base_y = (s16)base_y;
     one->bits = (s16)bits;
     one->owner = (s16)owner;
+    one->is_bank = (s16)is_bank;
     one->is_stale = FALSE;
     one->is_waiting = FALSE;
     one->key = 0;
@@ -936,6 +1039,9 @@ static void port_GlSceneOwn(s32 owner) {
     s32 count;
     s32 i;
 
+    u32 *owned = OWNER_IS_BANK(owner) ? &g_scene.owned_bank_pages
+                                      : &g_scene.owned_pages;
+
     textures = port_GlSceneTextures(owner, &count);
     memset(own, 0, (size_t)PORT_VRAM_PIXELS);
     for (i = 0; i < count; i++) {
@@ -949,7 +1055,7 @@ static void port_GlSceneOwn(s32 owner) {
                     continue;
                 }
                 own[y * PORT_VRAM_WIDTH + x] = 1;
-                g_scene.owned_pages |=
+                *owned |=
                     1U << (((x / PAGE_X_STEP) % PAGES_ACROSS) +
                            ((y / PAGE_Y_STEP) & 1) * PAGES_ACROSS);
             }
@@ -957,12 +1063,18 @@ static void port_GlSceneOwn(s32 owner) {
     }
 }
 
-/* Every page and table one TIM of the stage brings: its picture's page,
- * with each table of its colour table's block (a block of 4-bit tables
- * may hold several side by side, and rows of them). */
-static void port_GlSceneAddTim(const PortStageTexture *one) {
+/* Every page and table one TIM of the stage brings: each page its picture
+ * lies in (one wider than a page goes on into the next, as a fighter's
+ * do), with each table of its colour table's block (a block of 4-bit
+ * tables may hold several side by side, and rows of them). */
+static void port_GlSceneAddTim(const PortStageTexture *one, s32 owner) {
     s32 colors = one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX;
     s32 across = one->clut_w / colors;
+    s32 named = OWNER_IS_BANK(owner) ? PORT_VRAM_BANK_NAMED_Y : 0;
+    /* a page's width in pixels: 64 of 4-bit texels, 128 of 8-bit */
+    s32 page_w = one->bits == PORT_MOD_TEXELS_4 ? PAGE_X_STEP : 2 * PAGE_X_STEP;
+    s32 page_x;
+    s32 page_y;
     s32 row;
     s32 i;
 
@@ -972,11 +1084,18 @@ static void port_GlSceneAddTim(const PortStageTexture *one) {
     if (across < 1) {
         across = 1;
     }
-    for (row = 0; row < one->clut_h; row++) {
-        for (i = 0; i < across; i++) {
-            port_GlSceneAdd(
-                one->x - one->x % PAGE_X_STEP, one->y - one->y % PAGE_Y_STEP,
-                one->clut_x + i * colors, one->named_y + row, one->bits, FALSE);
+    for (page_y = one->y - one->y % PAGE_Y_STEP; page_y < one->y + one->h;
+         page_y += PAGE_Y_STEP) {
+        for (page_x = one->x - one->x % PAGE_X_STEP; page_x < one->x + one->w;
+             page_x += page_w) {
+            for (row = 0; row < one->clut_h; row++) {
+                for (i = 0; i < across; i++) {
+                    port_GlSceneAdd(page_x, page_y + named,
+                                    one->clut_x + i * colors,
+                                    one->named_y + row + named, one->bits,
+                                    FALSE);
+                }
+            }
         }
     }
 }
@@ -1008,15 +1127,22 @@ static void port_GlSceneReadStage(void) {
     g_scene.layer_count = 0;
     g_scene.generation++;
     g_scene.is_full_said = FALSE;
+    g_scene.is_short = FALSE;
     g_scene.has_stale = FALSE;
     g_scene.owned_pages = 0;
+    g_scene.owned_bank_pages = 0;
+    g_scene.is_bank_view_fresh = FALSE;
     for (owner = 0; owner < OWNERS; owner++) {
         port_GlSceneOwn(owner);
     }
     for (owner = 0; owner < OWNERS; owner++) {
         textures = port_GlSceneTextures(owner, &count);
+        /* a partner's only while the fight has the bank */
+        if (OWNER_IS_BANK(owner) && port_VramBank() == NULL) {
+            continue;
+        }
         for (i = 0; i < count; i++) {
-            port_GlSceneAddTim(&textures[i]);
+            port_GlSceneAddTim(&textures[i], owner);
         }
     }
     /* the keys first, to know how many pictures there are; then the array
@@ -1038,6 +1164,9 @@ static void port_GlSceneReadStage(void) {
             pictures++;
             first = first != NULL ? first : one->path;
         }
+    }
+    if (pictures + LAYERS_SPARE < g_scene.layers_least) {
+        pictures = g_scene.layers_least - LAYERS_SPARE;
     }
     if (first != NULL &&
         (g_scene.pages == 0 || g_scene.capacity < pictures + LAYERS_SPARE)) {
@@ -1067,9 +1196,23 @@ void port_GlSceneNewFrame(void) {
     if (!port_GlSceneIsWanted() || !port_GlSceneMakeTables()) {
         return;
     }
+    /* the bank as this frame has it (port_GlSceneVramOf) */
+    g_scene.is_bank_view_fresh = FALSE;
     textures = port_RemasterStageTextures(&count, &version);
     (void)textures;
     if (version != g_scene.version) {
+        g_scene.layers_least = 0;
+        port_GlSceneReadStage();
+        return;
+    }
+    /* Pages with pictures found after the stage's were read, more than
+     * the array had room for: a fighter's face as it changes (his eyes
+     * shut, his mouth open) is a new key of the page it is copied into,
+     * and of each table of it, and four fighters bring many. The pages
+     * are read again, the array twice as large, as many times as it
+     * takes up to LAYERS_MAX. */
+    if (g_scene.is_short && g_scene.capacity < LAYERS_MAX) {
+        g_scene.layers_least = 2 * g_scene.capacity;
         port_GlSceneReadStage();
         return;
     }
@@ -1086,6 +1229,7 @@ void port_GlSceneNewFrame(void) {
 
 s32 port_GlSceneFind(const PortRemasterPrim *prim) {
     s32 column;
+    s32 row;
     u16 entry;
 
     /* port_StageIsDressed(): a stage fought Classic is drawn from the
@@ -1099,16 +1243,16 @@ s32 port_GlSceneFind(const PortRemasterPrim *prim) {
         !port_GlSceneIsWanted() ||
         prim->window_and_u != PORT_MOD_PAGE_SIDE - 1 ||
         prim->window_and_v != PORT_MOD_PAGE_SIDE - 1 ||
-        prim->window_or_u != 0 || prim->window_or_v != 0 || prim->clut_y < 0 ||
-        prim->clut_y >= LOOKUP_H) {
+        prim->window_or_u != 0 || prim->window_or_v != 0 ||
+        (row = port_GlSceneRow(prim->clut_y)) < 0) {
         return FALSE;
     }
     column = port_GlSceneColumn(prim->page_x, prim->page_y, prim->clut_x);
-    entry = g_scene.lookup_table[prim->clut_y * LOOKUP_W + column];
+    entry = g_scene.lookup_table[row * LOOKUP_W + column];
     if ((entry & ENTRY_SEEN) == 0) {
         port_GlSceneAdd(prim->page_x, prim->page_y, prim->clut_x, prim->clut_y,
                         prim->texel_bits, TRUE);
-        entry = g_scene.lookup_table[prim->clut_y * LOOKUP_W + column];
+        entry = g_scene.lookup_table[row * LOOKUP_W + column];
     }
     /* a fighter's face by a fighter's table, the stage's by the stage's */
     return (entry & ENTRY_LAYER_MASK) != 0 &&
@@ -1149,7 +1293,10 @@ static s32 port_GlSceneWritesOwn(s32 owner, s32 x, s32 y, s32 w, s32 h) {
     return FALSE;
 }
 
-void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
+/* A write of the console's video memory (is_bank FALSE) or of the second
+ * bank's, at the console's coordinates of what it stands in for: the
+ * pages and tables of that memory it reaches looked up again. */
+static void port_GlSceneWrote(s32 x, s32 y, s32 w, s32 h, s32 is_bank) {
     s32 writes_own[OWNERS]; /* -1: not yet asked */
     s32 i;
 
@@ -1164,7 +1311,7 @@ void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
         PortTexturePage page;
 
         page.bits = one->bits;
-        if (one->is_stale) {
+        if (one->is_stale || (one->is_bank != 0) != (is_bank != 0)) {
             continue;
         }
         if ((port_GlSceneMeets(x, y, w, h, one->page_x, one->page_y,
@@ -1180,6 +1327,16 @@ void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
             one->is_stale = TRUE;
             g_scene.has_stale = TRUE;
         }
+    }
+}
+
+void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
+    port_GlSceneWrote(x, y, w, h, FALSE);
+}
+
+void port_GlSceneWroteBank(s32 y, s32 h) {
+    if (h > 0) {
+        port_GlSceneWrote(PORT_VRAM_BANK_X, y, PORT_VRAM_BANK_W, h, TRUE);
     }
 }
 
