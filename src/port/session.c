@@ -82,8 +82,10 @@
  * is a character and weapon of his own, picked at the grid as his first
  * is (the third and fourth pads' with four players; port_match.h), his
  * model, textures and motions in the state beside the slots' (port_duo.h,
- * docs/NETPLAY.md, section 20). */
-#define SESSION_PROTOCOL 18
+ * docs/NETPLAY.md, section 20). 20: a second of his own sounds as himself,
+ * his voice, weapon's and class's banks of sounds in the state, in the
+ * port's second bank of sound memory (port_duo.h, port_spu.h). */
+#define SESSION_PROTOCOL 20
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)

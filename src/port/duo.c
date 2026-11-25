@@ -43,6 +43,20 @@
  * fit a word; and a length under one sixteenth is no direction. */
 #define LINE_SIXTEENTH 16
 
+/* A fighter's sounds (snd.h, SND_FIGHTER_FIRST): his model's bank's,
+ * then his weapon's, then his class's. */
+#define FIGHTER_VOICE_SOUNDS 16
+#define FIGHTER_WEAPON_SOUNDS 16
+/* Where the partners' samples are in the second bank of sound memory:
+ * their voices and weapons from where the chip's own banks begin in the
+ * first, after its buffers, up to their classes' (which are loaded with the
+ * stage, not each fight), a room each. A transfer may write a DMA block
+ * past what it was asked to, so each bank starts on one. */
+#define PARTNER_SPU_START 0x1040
+#define PARTNER_SPU_CLASSES 0x60000
+#define PARTNER_SPU_CLASS_BYTES 0x10000
+#define SPU_DMA_BLOCK 64
+
 /* The room a model's cloth may take in its copy (ModelCloth and what
  * follows it: the pieces' vertices, points and springs). */
 #define CLONE_CLOTH_BYTES 0x4000
@@ -153,6 +167,17 @@ typedef struct {
     s16 partner_weapon[2];
     u16 area_set[2]; /* the motion set in it, 0 for none */
     PortDuoMotion motion_home[2];
+    /* each team's second's own banks of sounds (port_duo.h): the head of
+     * each part's in his room, 0 where it is his slot's; where the next
+     * one's samples go in the second bank of sound memory; and his
+     * fighter's sounds as snd_Play is given them while he is in the slot,
+     * where any is not his slot's (own_sounds) */
+    u32 vab_head[2][PORT_DUO_SOUND_PARTS];
+    u32 spu_next;
+    s8 weapon_bank[2];  /* the other first's weapon bank where it is his */
+    u8 class_loaded[2]; /* the class whose bank is his own, plus 1; 0 */
+    u8 own_sounds[2];
+    SoundDef sounds[2][SND_FIGHTER_COUNT];
 } PortDuo;
 
 /* Where tests/play/state.toml reads the duo (its `port_duo_*`): a member
@@ -173,6 +198,8 @@ PORT_DUO_AT(kind, 29);
 PORT_DUO_AT(character, 33);
 
 static PortDuo g_port_duo;
+
+static void port_DuoCloseSounds(s32 parts);
 
 s32 port_DuoIsOn(void) { return g_port_duo.on; }
 
@@ -517,6 +544,8 @@ void port_DuoForget(void) {
      * reads into them next is read there */
     port_DuoMotionsHome();
     port_SetVramBank(NULL);
+    port_DuoCloseSounds(PORT_DUO_SOUND_PARTS);
+    g_port_duo.class_loaded[0] = g_port_duo.class_loaded[1] = 0;
 }
 
 /* The arena moved a slot's model data (port_duo.h): the copy reads the
@@ -702,15 +731,232 @@ static void port_DuoAskWeapons(s32 slot, s32 roster, s32 weapon) {
     }
 }
 
-/* Each team's second of a model no slot has: his model loaded, his
- * weapons asked for (port_duo.h). */
+/* ---- a partner's own sounds ---- */
+
+/* The partners' banks of sounds of the first `parts` parts closed: those
+ * sounds are each fighter's slot's (port_duo.h). */
+static void port_DuoCloseSounds(s32 parts) {
+    PortDuo *duo = &g_port_duo;
+    s32 slot;
+    s32 part;
+
+    for (slot = 0; slot < 2; slot++) {
+        for (part = 0; part < parts; part++) {
+            if (duo->vab_head[slot][part] != 0) {
+                SsVabClose(PORT_DUO_VAB(slot, part));
+                duo->vab_head[slot][part] = 0;
+            }
+        }
+        duo->own_sounds[slot] = FALSE;
+    }
+}
+
+/* The pack at `pack` (0: none) opened as the bank of part `part` of the
+ * second of team `slot`, its samples next in the second bank of sound
+ * memory (a class's in its room there). */
+static void port_DuoOpenSounds(s32 slot, s32 part, s32 pack) {
+    PortDuo *duo = &g_port_duo;
+    u32 head = PORT_DUO_HEAD_ADDR(slot, part);
+    u32 at = duo->spu_next;
+    u32 end = PARTNER_SPU_CLASSES;
+    s32 bytes;
+
+    if (pack == 0) {
+        return;
+    }
+    if (part == PORT_DUO_SOUND_CLASS) {
+        at = PARTNER_SPU_CLASSES + (u32)slot * PARTNER_SPU_CLASS_BYTES;
+        end = at + PARTNER_SPU_CLASS_BYTES;
+    }
+    bytes = snd_PortOpenVab(pack, PORT_DUO_VAB(slot, part), (s32)head,
+                            PORT_DUO_HEAD_BYTES, (s32)at, (s32)end);
+    if (bytes == 0) {
+        port_Log("two on two: a partner's bank of sounds does not fit; "
+                 "those sounds are his first's\n");
+        return;
+    }
+    duo->vab_head[slot][part] = head;
+    if (part != PORT_DUO_SOUND_CLASS) {
+        duo->spu_next +=
+            ((u32)bytes + SPU_DMA_BLOCK - 1) & ~(u32)(SPU_DMA_BLOCK - 1);
+    }
+}
+
+/* The weapon's sounds of each team's second, with `banks` the bank of
+ * the firsts' that is his (or -1) and `kinds` his weapon's sound kind:
+ * of his first's kind, his first's bank (-1 in `banks`); of the other
+ * first's, that bank; of another kind, a bank of his own, the two seconds'
+ * read in one go (one file has both kinds) to `staging`. */
+static void port_DuoWeaponSounds(s32 *banks, const s32 *kinds, s32 staging) {
+    s32 want[2];
+    s32 pack[2];
+    s32 slot;
+
+    for (slot = 0; slot < 2; slot++) {
+        banks[slot] =
+            kinds[slot] < 0 ? -1 : resource_PortWeaponSoundsBank(kinds[slot]);
+        want[slot] = kinds[slot] >= 0 && banks[slot] < 0 ? kinds[slot] : -1;
+        if (banks[slot] == (slot == 0 ? SND_VAB_WEAPON_1 : SND_VAB_WEAPON_2)) {
+            banks[slot] = -1;
+        }
+    }
+    if ((want[0] >= 0 || want[1] >= 0) &&
+        resource_PortReadWeaponSounds(
+            want[0], want[1], staging, &pack[0], &pack[1])) {
+        for (slot = 0; slot < 2; slot++) {
+            port_DuoOpenSounds(slot, PORT_DUO_SOUND_WEAPON, pack[slot]);
+        }
+    }
+}
+
+/* A team's second's class, of his own (a bank of his own, -1 where it is
+ * his first's or the other first's: `other`, if not NULL, says which). */
+static s32 port_DuoPartnerClass(s32 slot, s32 *other) {
+    const PortDuo *duo = &g_port_duo;
+    s32 own = g_fighter_roster_classes[duo->partner_roster[slot]];
+
+    if (other != NULL) {
+        *other = FALSE;
+    }
+    if (!duo->will_be_on ||
+        own == g_fighter_roster_classes[g_fight_config.roster[slot]]) {
+        return -1;
+    }
+    if (own == g_fighter_roster_classes[g_fight_config.roster[slot ^ 1]]) {
+        if (other != NULL) {
+            *other = TRUE;
+        }
+        return -1;
+    }
+    return own;
+}
+
+/* The sounds of the second of team `slot` as snd_Play is to give them
+ * (PortDuo.sounds): his slot's fighter's; his own bank's where he has
+ * one; the other first's where his weapon or class is that first's. */
+static void port_DuoMakeSounds(s32 slot) {
+    PortDuo *duo = &g_port_duo;
+    const SoundDef *game =
+        &g_snd_sounds[SND_FIGHTER_FIRST + slot * SND_FIGHTER_COUNT];
+    SoundDef *own = duo->sounds[slot];
+    s32 other_class;
+    s32 sound;
+
+    duo->own_sounds[slot] = FALSE;
+    port_DuoPartnerClass(slot, &other_class);
+    for (sound = 0; sound < SND_FIGHTER_COUNT; sound++) {
+        s32 part = sound < FIGHTER_VOICE_SOUNDS ? PORT_DUO_SOUND_VOICE
+                   : sound < FIGHTER_VOICE_SOUNDS + FIGHTER_WEAPON_SOUNDS
+                       ? PORT_DUO_SOUND_WEAPON
+                       : PORT_DUO_SOUND_CLASS;
+
+        own[sound] = game[sound];
+        if (duo->vab_head[slot][part] != 0) {
+            own[sound].vab = (u16)PORT_DUO_VAB(slot, part);
+        } else if (
+            part == PORT_DUO_SOUND_WEAPON && duo->weapon_bank[slot] >= 0) {
+            own[sound].vab = (u16)duo->weapon_bank[slot];
+        } else if (part == PORT_DUO_SOUND_CLASS && other_class) {
+            /* (the second slot's shares the first's where the two firsts'
+             * classes are one: snd_FlushQueue) */
+            own[sound].vab =
+                (u16)(slot == 0 ? SND_VAB_CLASS_2 : SND_VAB_CLASS_1);
+        } else {
+            continue;
+        }
+        duo->own_sounds[slot] = TRUE;
+    }
+}
+
+/* (port_duo.h) A second's class of his own whose bank is not loaded. */
+s32 port_DuoStageClassesChanged(void) {
+    const PortDuo *duo = &g_port_duo;
+    s32 slot;
+
+    for (slot = 0; slot < 2; slot++) {
+        s32 want = port_DuoPartnerClass(slot, NULL);
+
+        if (want >= 0 && want + 1 != duo->class_loaded[slot]) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* A stage's file begins with a table of its banks: (offset, size), the
+ * stage's own, then one for each class (snd.c). */
+#define STAGE_FILE_ENTRY_WORDS 2
+
+/* (port_duo.h) Each slot's bank of a class closed, and the class of his
+ * own opened in its room. */
+void port_DuoLoadStageClasses(s32 file) {
+    PortDuo *duo = &g_port_duo;
+    const s32 *table = (const s32 *)ADDR(file);
+    s32 slot;
+
+    for (slot = 0; slot < 2; slot++) {
+        s32 want = port_DuoPartnerClass(slot, NULL);
+        s32 id = PORT_DUO_VAB(slot, PORT_DUO_SOUND_CLASS);
+
+        if (duo->vab_head[slot][PORT_DUO_SOUND_CLASS] != 0) {
+            SsVabClose(id);
+            duo->vab_head[slot][PORT_DUO_SOUND_CLASS] = 0;
+        }
+        duo->class_loaded[slot] = 0;
+        if (want < 0) {
+            continue;
+        }
+        port_DuoOpenSounds(slot, PORT_DUO_SOUND_CLASS,
+                           file + table[(want + 1) * STAGE_FILE_ENTRY_WORDS]);
+        if (duo->vab_head[slot][PORT_DUO_SOUND_CLASS] != 0) {
+            duo->class_loaded[slot] = (u8)(want + 1);
+        }
+    }
+}
+
+/* (port_duo.h) A fighter's sound is one of the 40 of his slot's. */
+SoundDef *port_DuoSound(s32 sound, SoundDef *def) {
+    PortDuo *duo = &g_port_duo;
+    s32 at = sound - SND_FIGHTER_FIRST;
+    s32 slot;
+
+    if (!duo->on || at < 0 || at >= 2 * SND_FIGHTER_COUNT) {
+        return def;
+    }
+    slot = at / SND_FIGHTER_COUNT;
+    if (duo->in_slot[slot] < 2 || !duo->own_sounds[slot]) {
+        return def;
+    }
+    return &duo->sounds[slot][at % SND_FIGHTER_COUNT];
+}
+
+SoundVab *port_DuoVab(s32 id) {
+    s32 at = id - PORT_DUO_VAB_FIRST;
+    u32 head;
+
+    if (at < 0 || at >= 2 * PORT_DUO_SOUND_PARTS) {
+        return NULL;
+    }
+    head = g_port_duo
+               .vab_head[at / PORT_DUO_SOUND_PARTS][at % PORT_DUO_SOUND_PARTS];
+    return head != 0 ? (SoundVab *)ADDR(head) : NULL;
+}
+
+/* Each team's second of a model no slot has: his model loaded, his voice
+ * opened, his weapons asked for; and his weapon's sounds where they are
+ * not his first's (port_duo.h). */
 void port_DuoLoadPartners(s32 staging) {
     PortDuo *duo = &g_port_duo;
+    s32 kinds[2] = {-1, -1};
+    s32 banks[2];
     s32 slot;
 
     /* the second bank of video memory, which a partner's textures go to
      * (port_gpu.h) */
     port_SetVramBank(duo->will_be_on ? (u16 *)ADDR(PORT_DUO_BANK_ADDR) : NULL);
+    port_DuoCloseSounds(PORT_DUO_SOUND_CLASS);
+    duo->spu_next = PARTNER_SPU_START;
+    duo->weapon_bank[0] = duo->weapon_bank[1] = -1;
     for (slot = 0; slot < 2; slot++) {
         s32 roster = duo->partner_roster[slot];
         s32 model_id = g_fighter_roster_models[roster];
@@ -723,9 +969,13 @@ void port_DuoLoadPartners(s32 staging) {
             ndata_ReadModel(model_id, staging);
             duo->partner_own[slot] = (u8)model_PortLoadPartner(
                 &duo->clone[slot], slot, model_id, staging,
-                (s32)PORT_DUO_MODEL_ADDR(slot), (s32)PORT_DUO_MODEL_BYTES,
+                (s32)PORT_DUO_MODEL_ADDR(slot),
+                (s32)(PORT_DUO_MODEL_BYTES - PORT_DUO_HEADS_BYTES),
                 PORT_DUO_RELOC_BLOCK(slot));
-            if (!duo->partner_own[slot]) {
+            if (duo->partner_own[slot]) {
+                port_DuoOpenSounds(
+                    slot, PORT_DUO_SOUND_VOICE, model_PortVabOf(staging));
+            } else {
                 /* (no model of the game's is this big) */
                 port_Log("two on two: model %d does not fit its room; the "
                          "partner is his first's character\n",
@@ -735,6 +985,16 @@ void port_DuoLoadPartners(s32 staging) {
             }
         }
         port_DuoAskWeapons(slot, roster, duo->partner_weapon[slot]);
+        kinds[slot] =
+            g_resource_weapon_sound_kinds[g_fighter_roster_characters[roster]]
+                                         [duo->partner_weapon[slot]];
+    }
+    if (!duo->will_be_on) {
+        return;
+    }
+    port_DuoWeaponSounds(banks, kinds, staging);
+    for (slot = 0; slot < 2; slot++) {
+        duo->weapon_bank[slot] = (s8)banks[slot];
     }
 }
 
@@ -995,6 +1255,10 @@ void port_DuoFightSet(void) {
         }
     }
     port_DuoMotionsOut();
+    /* each second's sounds, his banks loaded (port_duo.h) */
+    for (slot = 0; slot < 2; slot++) {
+        port_DuoMakeSounds(slot);
+    }
     for (who = 0; who < PORT_DUO_FIGHTERS; who++) {
         PortDuoFighter *own = &duo->f[who];
 

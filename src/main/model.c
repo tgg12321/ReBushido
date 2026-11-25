@@ -134,8 +134,8 @@ Model *model_Load(s32 slot, s32 model_id, s32 staging_addr) {
  * cloth after it; his meshes are table `mesh_block`, his shadows' the
  * next; his textures go to the second bank of video memory where slot
  * `slot`'s are in the first, and his meshes' colour tables say so
- * (port_gpu.h). His voice is the slot's sound bank. FALSE if the file
- * does not fit. */
+ * (port_gpu.h). His voice, the file's bank of sounds, two on two opens
+ * itself (model_PortVabOf). FALSE if the file does not fit. */
 s32 model_PortLoadPartner(Model *model, s32 slot, s32 model_id, s32 file_addr,
                           s32 data, s32 room, s32 mesh_block) {
     s32 *file = (s32 *)ADDR(file_addr);
@@ -184,6 +184,14 @@ s32 model_PortLoadPartner(Model *model, s32 slot, s32 model_id, s32 file_addr,
     cloth_RequestRebuild(model);
     model_BuildShadows(model);
     return TRUE;
+}
+
+s32 model_PortVabOf(s32 file_addr) {
+    s32 *file = (s32 *)ADDR(file_addr);
+    s32 count = file[0];
+
+    return count >= MODEL_FILE_WITH_VAB ? file_addr + ALIGN4(file[count - 1])
+                                        : 0;
 }
 #endif
 

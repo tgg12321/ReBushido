@@ -12,6 +12,10 @@
  * channel) or plain CD audio; their volume is the CD mix, which can be faded.
  * The last part of the file runs the movie player, a separate program. */
 #include "common.h"
+#if RB_PORT
+#include "port_disc.h"
+#include "port_movie.h"
+#endif
 #include "bb2.h"
 
 /* Defined further down. */
@@ -665,6 +669,29 @@ s32 cdrom_StartReadAt(
     g_cdrom.read_sector_count = sector_count;
     return 1;
 }
+
+#if RB_PORT
+/* (The native port.) The sectors read from the image there and then
+ * (cdrom.h). */
+s32 cdrom_PortReadNow(
+    s32 file_index, s32 dest, s32 sector_offset, s32 sector_count) {
+    u8 raw[PORT_DISC_SECTOR_BYTES];
+    u8 *to = (u8 *)ADDR(dest);
+    s32 first = CdPosToInt(&g_cdrom_files[file_index].loc) + sector_offset;
+    s32 i;
+    s32 byte;
+
+    for (i = 0; i < sector_count; i++) {
+        if (!port_DriveReadSector(first + i, raw)) {
+            return FALSE;
+        }
+        for (byte = 0; byte < SECTOR_SIZE; byte++) {
+            to[i * SECTOR_SIZE + byte] = raw[PORT_DISC_DATA_OFFSET + byte];
+        }
+    }
+    return TRUE;
+}
+#endif
 
 s32 cdrom_GetFileIndex(s32 group, s32 file) {
     return g_cdrom_group_first_file[group] + file;

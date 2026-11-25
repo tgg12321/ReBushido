@@ -286,6 +286,7 @@ typedef struct {
     u8 flags;        /* the flags of the block being played */
     u8 phase;        /* of the envelope */
     u8 sample_index; /* the next of the block's samples to play */
+    u8 bank;         /* the sound memory it reads: 0, or the second's 1 */
     s16 block[BLOCK_SAMPLES];
     s32 old; /* the last sample decoded, and the one before */
     s32 older;
@@ -315,7 +316,12 @@ static struct {
     s32 reverb_now[2];
     u32 capture; /* where in its four buffers the chip writes next */
     PortSpuCounts counts;
+    /* the second bank (port_spu.h): what each voice's next key on reads,
+     * and whether a transfer writes it */
+    u8 key_bank[PORT_SPU_VOICES];
+    u8 transfer_bank;
     u8 ram[PORT_SPU_RAM_BYTES];
+    u8 bank_ram[PORT_SPU_RAM_BYTES];
 } g_port_spu;
 
 void (*g_port_spu_key_on_hook)(s32 voice, u32 addr, u32 pitch);
@@ -381,6 +387,7 @@ static s32 port_InterpolateSpu(const s16 *recent, u32 index) {
  * ended; without the flag to repeat it falls silent as well. */
 static void port_FetchSpuBlock(PortSpuVoice *voice, u32 index) {
     u16 *regs = g_port_spu.regs + index * PORT_SPU_VOICE_REGS;
+    const u8 *ram;
 
     if (voice->flags & FLAG_END) {
         g_port_spu.regs[PORT_SPU_ENDED + index / VOICES_PER_HALFWORD] |=
@@ -393,12 +400,13 @@ static void port_FetchSpuBlock(PortSpuVoice *voice, u32 index) {
         }
     }
     voice->addr &= RAM_MASK & ~(u32)(BLOCK_BYTES - 1);
-    voice->flags = g_port_spu.ram[voice->addr + BLOCK_FLAGS];
+    ram = voice->bank ? g_port_spu.bank_ram : g_port_spu.ram;
+    voice->flags = ram[voice->addr + BLOCK_FLAGS];
     if (voice->flags & FLAG_LOOP_START) {
         regs[PORT_SPU_VOICE_LOOP] = (u16)(voice->addr / ADDRESS_UNIT);
     }
     port_DecodeSpuBlock(
-        g_port_spu.ram + voice->addr, &voice->old, &voice->older, voice->block);
+        ram + voice->addr, &voice->old, &voice->older, voice->block);
     voice->addr += BLOCK_BYTES;
     voice->sample_index = 0;
 }
@@ -523,13 +531,16 @@ static u32 port_ReadSpuVoiceBits(u32 reg) {
 
 /* A voice's key on: it starts its waveform from the start, with no
  * memory of the last one, its envelope at nothing and rising, and is no
- * longer one that has ended. */
+ * longer one that has ended. It reads the sound memory its latch says
+ * (port_SetSpuKeyBank), the chip's own unless it was set. */
 static void port_KeyOnSpuVoice(u32 index) {
     PortSpuVoice *voice = &g_port_spu.voices[index];
     u16 *regs = g_port_spu.regs + index * PORT_SPU_VOICE_REGS;
     u32 i;
 
     voice->addr = (u32)regs[PORT_SPU_VOICE_START] * ADDRESS_UNIT;
+    voice->bank = g_port_spu.key_bank[index];
+    g_port_spu.key_bank[index] = 0;
     regs[PORT_SPU_VOICE_LOOP] = regs[PORT_SPU_VOICE_START];
     voice->flags = 0;
     voice->sample_index = BLOCK_SAMPLES;
@@ -547,8 +558,10 @@ static void port_KeyOnSpuVoice(u32 index) {
         (u16) ~(1U << (index % VOICES_PER_HALFWORD));
     g_port_spu.counts.key_ons++;
     if (g_port_spu_key_on_hook != NULL) {
+        /* (a voice of the second bank, PORT_SPU_RAM_BYTES further on) */
         g_port_spu_key_on_hook(
-            (s32)index, voice->addr, regs[PORT_SPU_VOICE_PITCH]);
+            (s32)index, voice->addr + voice->bank * PORT_SPU_RAM_BYTES,
+            regs[PORT_SPU_VOICE_PITCH]);
     }
     port_AdvanceSpuVoice(voice, index);
 }
@@ -870,6 +883,20 @@ void port_AttachSpu(u16 *regs) {
 }
 
 u8 *port_GetSpuRam(void) { return g_port_spu.ram; }
+
+u8 *port_GetSpuTransferRam(void) {
+    return g_port_spu.transfer_bank ? g_port_spu.bank_ram : g_port_spu.ram;
+}
+
+void port_SetSpuTransferBank(s32 is_on) {
+    g_port_spu.transfer_bank = (u8)(is_on != 0);
+}
+
+void port_SetSpuKeyBank(s32 voice, s32 bank) {
+    if (voice >= 0 && voice < PORT_SPU_VOICES) {
+        g_port_spu.key_bank[voice] = (u8)(bank != 0);
+    }
+}
 
 const PortSpuCounts *port_GetSpuCounts(void) { return &g_port_spu.counts; }
 

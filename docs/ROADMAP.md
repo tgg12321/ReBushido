@@ -573,8 +573,10 @@ the stage").
     headless on this PC, by address and through a local lobby (a punched
     hole, the relay), in a room of several with a spectator and a leave,
     on Linux and Windows, every hash the same on all; replays of the fight
-    of four played back. Left: four real PCs and players; the partners'
-    own voices (the sound chip's memory holds two characters' banks); the
+    of four played back. Each partner sounds as himself (2026-11-25,
+    protocol 20): his voice, weapon's and class's banks of sounds in a
+    second bank of the port's sound memory. Left: four real PCs and
+    players; the
     owner's eye on the band, the tags and the pages (`tmp/2v2/`) and on
     fights of four characters (`tmp/2v2-chars/`).
 25. **A ladder and Elo** (longer term): ranked matches through the

@@ -9,6 +9,9 @@
 #define INCLUDE_ASM_USE_MACRO_INC 1
 #include "common.h"
 #include "include_asm.h"
+#if RB_PORT
+#include "port_spu.h"
+#endif
 #include "bb2.h"
 
 /* Defined further down. */
@@ -298,6 +301,11 @@ s32 snd_LoadStageVabs(
             snd_LoadVab((SoundVab *)ADDR(load.ent[i].off),
                         g_snd_stage_vab_ids[i], (s32)file + size);
     }
+#if RB_PORT
+    /* two on two's seconds' classes, from the file as it is read (port_duo.h)
+     */
+    port_DuoLoadStageClasses((s32)file);
+#endif
     for (i = 0; i < vab_count; i++) {
         for (byte = 0; byte < load.kept_size[i]; byte++) {
             file[byte] = ((u8 *)ADDR(load.ent[i].off))[byte];
@@ -534,6 +542,52 @@ s16 id;
     return SsVabTransBody((u8 *)ADDR(vab->vab_body), id);
 }
 
+#if RB_PORT
+/* (The native port.) A partner's bank of two on two (snd.h): opened as
+ * snd_OpenVab opens one, from a copy of its head, at an address of the
+ * port's second bank of sound memory, where the transfer writes. A
+ * transfer may write up to a DMA block past the samples. */
+#define PORT_DMA_BLOCK_BYTES 64
+
+/* (snd.h) The head copied and its offsets made addresses, its samples
+ * sent from the pack where it is. */
+s32 snd_PortOpenVab(
+    s32 pack, s32 id, s32 head, s32 room, s32 spu_addr, s32 spu_end) {
+    SoundVab *from = (SoundVab *)ADDR(pack);
+    SoundVab *to = (SoundVab *)ADDR(head);
+    s32 kept = from->vab_body;
+    s32 body = from->vab_body_size;
+    s16 opened_id;
+    s32 i;
+
+    SsVabClose(id);
+    if (kept <= 0 || kept > room || body <= 0 ||
+        spu_addr + body + PORT_DMA_BLOCK_BYTES > spu_end ||
+        spu_end > (s32)PORT_SPU_RAM_BYTES) {
+        return 0;
+    }
+    for (i = 0; i < kept; i++) {
+        ((u8 *)to)[i] = ((u8 *)from)[i];
+    }
+    to->key_on_table += head;
+    to->vab_header += head;
+    to->vab_body = 0; /* its samples are in sound memory */
+    opened_id = SsVabOpenHeadSticky((u8 *)ADDR(to->vab_header), id, spu_addr);
+    if (opened_id != id) {
+        return 0;
+    }
+    ((VabHdr *)ADDR(to->vab_header))->id = id;
+    port_SetSpuTransferBank(TRUE);
+    opened_id = SsVabTransBody((u8 *)ADDR(pack + kept), id);
+    SsVabTransCompleted(SS_WAIT_COMPLETED);
+    port_SetSpuTransferBank(FALSE);
+    if (opened_id != id) {
+        SsVabClose(id);
+        return 0;
+    }
+    return body;
+}
+#endif
 void snd_SetDefaultOutput(void) {
     SsSetMVol(SND_VOLUME_MAX, SND_VOLUME_MAX);
     SsUtAllKeyOff(0);
@@ -547,6 +601,11 @@ s32 snd_Play(s32 sound, s32 right, s32 left) {
     s16 i = 0;
     SoundDef *def = &g_snd_sounds[sound];
 
+#if RB_PORT
+    /* a fighter's sound made by a team's second of two on two: his own
+     * banks' (port_duo.h) */
+    def = port_DuoSound(sound, def);
+#endif
     for (; i < SND_QUEUE_SIZE; i++) {
         if (!g_snd_queue[i].sound) {
             g_snd_queue[i].sound = def;
@@ -567,10 +626,14 @@ s32 snd_Play(s32 sound, s32 right, s32 left) {
  * arena, the stage's buffer), and on a PC those have addresses without
  * that bit: every sound of a fight was dropped. So a sound whose bank is
  * open and is at such an address is started here (docs/PORT.md,
- * "Sound"). */
+ * "Sound"); and a sound of a bank of two on two's partners, which is none
+ * of g_snd_vabs and whose samples are in the port's second bank of sound
+ * memory, whose voice is told so (port_duo.h, port_spu.h). */
 static s16 snd_StartQueuedSound(s16 i, s16 next_voice) {
     SoundDef *def = g_snd_queue[i].sound;
     u16 vab = def->vab;
+    s32 is_partners = vab >= PORT_DUO_VAB_FIRST;
+    SoundVab *bank;
     u32 *key_on;
     s16 voice;
 
@@ -580,11 +643,18 @@ static s16 snd_StartQueuedSound(s16 i, s16 next_voice) {
                 g_snd_vabs[SND_VAB_CLASS_2] == g_snd_vabs[SND_VAB_CLASS_1]) {
                 vab = SND_VAB_CLASS_1;
             }
-            key_on = &((u32 *)ADDR(g_snd_vabs[vab]->key_on_table))[def->key];
-            SsUtKeyOnV(
-                voice, vab, KEY_ON_PROGRAM(*key_on), KEY_ON_TONE(*key_on),
-                KEY_ON_NOTE(*key_on), KEY_ON_FINE(*key_on), g_snd_queue[i].left,
-                g_snd_queue[i].right);
+            bank = is_partners ? port_DuoVab(vab) : g_snd_vabs[vab];
+            key_on = &((u32 *)ADDR(bank->key_on_table))[def->key];
+            if (is_partners) {
+                port_SetSpuKeyBank(voice, TRUE);
+            }
+            if (SsUtKeyOnV(
+                    voice, vab, KEY_ON_PROGRAM(*key_on), KEY_ON_TONE(*key_on),
+                    KEY_ON_NOTE(*key_on), KEY_ON_FINE(*key_on),
+                    g_snd_queue[i].left, g_snd_queue[i].right) != voice &&
+                is_partners) {
+                port_SetSpuKeyBank(voice, FALSE);
+            }
             return voice + 1;
         }
     }
@@ -610,9 +680,12 @@ void snd_FlushQueue(void) {
         def = g_snd_queue[i].sound;
 #if RB_PORT
         /* (a bank that is open at a PC's address, which the test below
-         * does not take for open: snd_StartQueuedSound) */
-        if (def && g_snd_vabs[def->vab] != NULL &&
-            (s32)g_snd_vabs[def->vab] >= 0) {
+         * does not take for open, or a partner's of two on two:
+         * snd_StartQueuedSound) */
+        if (def && ((def->vab >= PORT_DUO_VAB_FIRST &&
+                     port_DuoVab(def->vab) != NULL) ||
+                    (g_snd_vabs[def->vab] != NULL &&
+                     (s32)g_snd_vabs[def->vab] >= 0))) {
             next_voice = snd_StartQueuedSound(i, next_voice);
         }
 #endif

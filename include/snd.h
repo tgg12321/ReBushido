@@ -80,7 +80,7 @@ typedef struct SoundVab {
 
 /* What a sound number means: which bank, and which entry of its key-on table.
  */
-typedef struct {
+typedef struct SoundDef {
     u16 vab;
     u16 key;
 } SoundDef;
@@ -156,6 +156,18 @@ extern s32 snd_LoadVab(SoundVab *vab, s32 id, s32 scratch);
 /* Tells the sound system that bank `id`'s part in RAM has moved by
  * `rebase_delta` bytes. */
 extern s32 snd_RebaseVab(s32 rebase_delta, s32 id);
+#if RB_PORT
+/* The native port's two on two (port_duo.h): the pack at `pack` (its
+ * offsets from its start, as in a file) opened as bank `id`, one of the
+ * partners' (PORT_DUO_VAB_FIRST on), which is none of g_snd_vabs: its
+ * head (all before its samples) copied to `head`, at most `room` bytes,
+ * and its samples sent to the port's second bank of sound memory at
+ * `spu_addr`, before `spu_end` (port_spu.h). Returns the bytes the samples
+ * take there, 0 if it did not open. The game's banks are where they
+ * were. */
+extern s32 snd_PortOpenVab(
+    s32 pack, s32 id, s32 head, s32 room, s32 spu_addr, s32 spu_end);
+#endif
 extern void snd_CloseAllVabs(void); /* all but the common bank */
 
 /* Each Load reads a file to `load_addr`, opens its banks and returns how many

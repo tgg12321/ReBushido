@@ -202,6 +202,9 @@ extern void model_PortPut(s32 slot, Model *model);
 extern s32 model_PortLoadPartner(
     Model *model, s32 slot, s32 model_id, s32 file_addr, s32 data, s32 room,
     s32 mesh_block);
+/* ... and the model file at `file_addr`'s bank of sounds (a pack as
+ * snd_LoadVab takes it): his voice. 0 if the file has none. */
+extern s32 model_PortVabOf(s32 file_addr);
 #endif
 
 /* ---- the tiny model ----

@@ -709,6 +709,16 @@ void ndata_ReadWeapons(s32 weapon_set, s32 file, s32 dest_addr) {
     }
 }
 
+#if RB_PORT
+/* (The native port.) The weapon file read at once (ndata.h). */
+void ndata_PortReadWeaponsNow(s32 weapon_set, s32 file, s32 dest_addr) {
+    s32 id = file + (weapon_set ? NDATA_WEAPONS_SET_1 : NDATA_WEAPONS);
+
+    cdrom_PortReadNow(FILE_NDATA_DAT, dest_addr, g_ndata_inf[id].start_sector,
+                      g_ndata_inf[id].length_sectors);
+}
+#endif
+
 /* In grayscale mode the caller has already added the step to the gray
  * copies. */
 void ndata_ReadTinyModel(s32 tiny_model, s32 dest_addr) {
