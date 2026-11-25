@@ -1561,7 +1561,8 @@ void render_DrawQueue(void) {
         port_RemasterNoteFighter(
             node->kind != STAGE_TILE_KIND && node->kind != NODE_KIND_WAVE &&
             (node->mesh_block < RELOC_STAGE ||
-             node->mesh_block == RELOC_TINY_MODEL));
+             node->mesh_block == RELOC_TINY_MODEL ||
+             node->mesh_block >= PORT_DUO_RELOC_BLOCK(0)));
         if (render_SetupNode(node)) {
             /* The node's mesh: a row of parts, each a word (how many
              * vertices, and above that their format), the vertices and

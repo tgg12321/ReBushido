@@ -225,7 +225,8 @@ extern const u16 *port_GlVramAt(s32 x, s32 y);
 #define PORT_GL_VRAM_SHADER                                                    \
     "uniform usamplerBuffer u_vram;\n"                                         \
     "uint vram(int x, int y) {\n"                                              \
-    "    return texelFetch(u_vram, ((y & 511) << 10) | (x & 1023)).r;\n"       \
+    "    int row = (y & 511) | ((y >> 1) & 512);\n"                            \
+    "    return texelFetch(u_vram, (row << 10) | (x & 1023)).r;\n"             \
     "}\n"
 
 /* The counts of the frame being drawn (vertices, draws, pixels of the

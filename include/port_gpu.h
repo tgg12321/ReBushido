@@ -34,6 +34,14 @@
 #define PORT_VRAM_ROWS (2 * PORT_VRAM_HEIGHT)
 #define PORT_VRAM_STORED (PORT_VRAM_WIDTH * PORT_VRAM_ROWS)
 #define PORT_VRAM_BANK_BIT 0x8000
+/* How such a polygon names its page and table to the remastered picture
+ * (port_remaster.h, gl.h): this much further down, where every other
+ * names them within the console's lines. A line of 1024 or more is the
+ * second bank's, round within its own lines as the first's go round
+ * within theirs (PORT_VRAM_ROW). */
+#define PORT_VRAM_BANK_NAMED_Y 1024
+#define PORT_VRAM_ROW(y)                                                       \
+    (((y) & (PORT_VRAM_HEIGHT - 1)) | (((y) >> 1) & PORT_VRAM_HEIGHT))
 extern u16 g_port_vram[PORT_VRAM_STORED];
 /* The second bank read by polygons whose colour table's top bit is set
  * (src/port/raster.c, a state file; port_duo.h sets it for a fight). */

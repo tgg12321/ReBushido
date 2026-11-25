@@ -81,7 +81,9 @@ enum {
 #define PORT_DUO_MOTION_ADDR(slot)                                                (PORT_DUO_WIN_ADDR(2) + (u32)(slot) * PORT_DUO_MOTION_BYTES)
 #define PORT_DUO_MODEL_BYTES                                                      ((PORT_DUO_AREA_END - PORT_DUO_MOTION_ADDR(2)) / 2 & ~0xFFFU)
 #define PORT_DUO_MODEL_ADDR(slot)                                                 (PORT_DUO_MOTION_ADDR(2) + (u32)(slot) * PORT_DUO_MODEL_BYTES)
-/* the renderer's tables of a partner's meshes and shadows (RELOC_...) */
+/* the renderer's tables of a partner's meshes and shadows (RELOC_...),
+ * the last of the renderer's that anything uses: a fighter's (the
+ * remastered picture's port_RemasterNoteFighter, render_asm.c) */
 #define PORT_DUO_RELOC_BLOCK(slot) (10 + 2 * (slot))
 
 /* A fighter's slot (its team) and his team mate. */
