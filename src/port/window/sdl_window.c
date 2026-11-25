@@ -54,6 +54,7 @@
 #include "port_music.h"
 #include "port_online.h"
 #include "port_paint.h"
+#include "port_weapons.h"
 #include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"

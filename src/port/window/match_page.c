@@ -18,6 +18,7 @@
 #include "menu.h"
 #include "port_match.h"
 #include "port_duo.h"
+#include "port_weapons.h"
 
 /* The game's screen, whose places these are given in: 640 by 240, shown
  * 4:3, so that a unit across is half a unit down. */
