@@ -101,8 +101,9 @@ PORT_GL_SCENE_FUNCTIONS
 /* The lookup table: a column for each of the 32 pages' 64 columns of
  * colour tables, and a row for each row of video memory. An entry is the
  * layer and one, in its low twelve bits; the depth of the texels it was
- * found for, in the next two; and the top bit once it has been looked up,
- * with a layer or without. */
+ * found for, in the next two; whether the table is a fighter's in the
+ * next; and the top bit once it has been looked up, with a layer or
+ * without. */
 #define PAGES 32
 #define PAGES_ACROSS 16
 #define PAGE_X_STEP 64
@@ -114,6 +115,8 @@ PORT_GL_SCENE_FUNCTIONS
 #define ENTRY_LAYER_MASK 0x0FFF
 #define ENTRY_BITS_SHIFT 12
 #define ENTRY_SEEN 0x8000
+/* the table is a fighter's, not the stage's (no shader reads it) */
+#define ENTRY_FIGHTER 0x4000
 
 /* The most pictures a stage may have. A stage's pages and tables come to
  * some twenty or thirty. */
@@ -152,6 +155,11 @@ PORT_GL_SCENE_FUNCTIONS
 /* what a layer holds */
 enum { LAYER_READING = 0, LAYER_READY, LAYER_FAILED };
 
+/* Whose textures a page's are: the stage's, or a fighter's model's, by its
+ * slot (port_remaster.h). Each has its own pixels of video memory, and a
+ * page's key is of its owner's texels alone. */
+enum { OWNER_STAGE = 0, OWNER_FIGHTER_1, OWNER_FIGHTER_2, OWNERS };
+
 typedef struct {
     s16 page_x;
     s16 page_y;
@@ -160,6 +168,7 @@ typedef struct {
     s16 base_x; /* ... and where its colours are as the stage loaded it */
     s16 base_y;
     s16 bits;
+    s16 owner;      /* OWNER_... whose table it is */
     s16 is_stale;   /* written over since: looked up again next frame */
     s16 is_waiting; /* its picture is being read (gl_load.h) */
     u64 key;
@@ -174,7 +183,7 @@ static struct {
     GLuint pages;
     GLuint bases;
     u16 *lookup_table; /* what the card's lookup table holds */
-    u8 *own;           /* which pixels of video memory are the stage's */
+    u8 *own[OWNERS];   /* which pixels of video memory are each owner's */
     u32 owned_pages;   /* a bit for each page that has any */
     u32 version;       /* the stage's textures the tables were made for */
     s32 side;          /* the pictures' size, each way */
@@ -253,6 +262,8 @@ static s32 port_GlSceneIsWanted(void) {
 
 /* The lookup table and the bases, made the first time they are wanted. */
 static s32 port_GlSceneMakeTables(void) {
+    s32 i;
+
     if (g_scene.has_tables) {
         return g_scene.lookup != 0;
     }
@@ -260,13 +271,17 @@ static s32 port_GlSceneMakeTables(void) {
     if (g_scene.lookup_table == NULL) {
         g_scene.lookup_table =
             calloc((size_t)LOOKUP_W * LOOKUP_H, sizeof(*g_scene.lookup_table));
-        g_scene.own = calloc((size_t)PORT_VRAM_PIXELS, 1);
+        for (i = 0; i < OWNERS; i++) {
+            g_scene.own[i] = calloc((size_t)PORT_VRAM_PIXELS, 1);
+        }
         g_scene.base_rows =
             calloc((size_t)LAYERS_MAX * COLORS_MAX, sizeof(*g_scene.base_rows));
         g_scene.looked = calloc(LOOKED_MAX, sizeof(*g_scene.looked));
     }
-    if (g_scene.lookup_table == NULL || g_scene.own == NULL ||
-        g_scene.base_rows == NULL || g_scene.looked == NULL) {
+    if (g_scene.lookup_table == NULL || g_scene.own[OWNER_STAGE] == NULL ||
+        g_scene.own[OWNER_FIGHTER_1] == NULL ||
+        g_scene.own[OWNER_FIGHTER_2] == NULL || g_scene.base_rows == NULL ||
+        g_scene.looked == NULL) {
         port_GlSceneSay("mods: no memory for the stage's pages");
         return FALSE;
     }
@@ -573,19 +588,30 @@ static s32 port_GlSceneSideOf(const char *path) {
 
 /* ---- writing a page out ---- */
 
+/* An owner's textures as the game loaded them, and how many. */
+static const PortStageTexture *port_GlSceneTextures(s32 owner, s32 *count) {
+    u32 version;
+
+    if (owner == OWNER_STAGE) {
+        return port_RemasterStageTextures(count, &version);
+    }
+    return port_RemasterFighterTextures(owner - OWNER_FIGHTER_1, count);
+}
+
 static u8 port_GlSceneByte(u16 pixel, s32 shift) {
     return (u8)(((pixel >> shift) & FIVE_MAX) * BYTE_MAX / FIVE_MAX);
 }
 
 /* The page as the stage's colours draw it, as a PNG named by its key in
  * the dump's folder of pages, and beside it which of its rectangles are
- * the stage's own textures (tools/port_stage_hd.py reads both). A texel
- * that is not the stage's own, and one of nothing, is clear. */
-static void port_GlSceneDump(const PortTexturePage *page, const char *name) {
+ * its owner's own textures, the stage's or a fighter's
+ * (tools/port_stage_hd.py reads both). A texel that is not its owner's
+ * own, and one of nothing, is clear. */
+static void port_GlSceneDump(
+    const PortTexturePage *page, s32 owner, const char *name) {
     const char *folder = port_ModsGetDumpFolder();
     const PortStageTexture *textures;
     char path[TEXT_SIZE];
-    u32 version;
     s32 count;
     u8 *rgba;
     u8 *png;
@@ -621,7 +647,7 @@ static void port_GlSceneDump(const PortTexturePage *page, const char *name) {
             s32 x = page->page_x + port_TexturePagePixel(page, u);
             u16 texel = 0;
 
-            if (g_scene.own[(page->page_y + v) * PORT_VRAM_WIDTH + x] != 0) {
+            if (page->own[(page->page_y + v) * PORT_VRAM_WIDTH + x] != 0) {
                 region.bits = page->bits;
                 region.page_x = page->page_x;
                 region.page_y = page->page_y;
@@ -656,7 +682,7 @@ static void port_GlSceneDump(const PortTexturePage *page, const char *name) {
     }
     free(rgba);
     free(png);
-    /* the stage's own textures in it, in texels from its corner */
+    /* its owner's own textures in it, in texels from its corner */
     snprintf(path, sizeof(path), "%s/%s/%s.txt", folder, DUMP_PAGES, name);
     file = fopen(path, "w");
     if (file == NULL) {
@@ -664,7 +690,12 @@ static void port_GlSceneDump(const PortTexturePage *page, const char *name) {
     }
     fprintf(file, "page %d %d bits %d table %d %d\n", page->page_x,
             page->page_y, page->bits, page->clut_x, page->clut_y);
-    textures = port_RemasterStageTextures(&count, &version);
+    if (owner == OWNER_STAGE) {
+        fprintf(file, "owner stage\n");
+    } else {
+        fprintf(file, "owner fighter %d\n", owner - OWNER_FIGHTER_1 + 1);
+    }
+    textures = port_GlSceneTextures(owner, &count);
     for (i = 0; i < count; i++) {
         const PortStageTexture *one = &textures[i];
         s32 per = port_TexturePagePixel(page, PORT_MOD_PAGE_SIDE);
@@ -686,28 +717,33 @@ static void port_GlSceneDump(const PortTexturePage *page, const char *name) {
 
 /* ---- looking a page up ---- */
 
-/* Where the colours of the table the faces name at (x, y) are as the
- * stage loaded them: the stage's tables left of the display's width are
- * loaded a row below where the faces name them, the row the fog writes
- * over (port_remaster.h). FALSE for a table that is not the stage's. */
-static s32 port_GlSceneBaseOf(s32 x, s32 y, s32 *base_x, s32 *base_y) {
+/* Whose table the faces name at (x, y) is, and where its colours are as
+ * its owner loaded them: the stage's tables left of the display's width
+ * are loaded a row below where the faces name them, the row the fog
+ * writes over, and a fogged fighter's are the plain copy below the fog's
+ * block (port_remaster.h). FALSE for a table of nobody's. */
+static s32 port_GlSceneBaseOf(
+    s32 x, s32 y, s32 *base_x, s32 *base_y, s32 *owner) {
     const PortStageTexture *textures;
-    u32 version;
     s32 count;
+    s32 who;
     s32 i;
 
-    textures = port_RemasterStageTextures(&count, &version);
-    for (i = 0; i < count; i++) {
-        const PortStageTexture *one = &textures[i];
+    for (who = 0; who < OWNERS; who++) {
+        textures = port_GlSceneTextures(who, &count);
+        for (i = 0; i < count; i++) {
+            const PortStageTexture *one = &textures[i];
 
-        if (one->clut_x < 0 || x < one->clut_x ||
-            x >= one->clut_x + one->clut_w || y < one->named_y ||
-            y >= one->named_y + one->clut_h) {
-            continue;
+            if (one->clut_x < 0 || x < one->clut_x ||
+                x >= one->clut_x + one->clut_w || y < one->named_y ||
+                y >= one->named_y + one->clut_h) {
+                continue;
+            }
+            *base_x = x;
+            *base_y = y + (one->clut_y - one->named_y);
+            *owner = who;
+            return TRUE;
         }
-        *base_x = x;
-        *base_y = y + (one->clut_y - one->named_y);
-        return TRUE;
     }
     return FALSE;
 }
@@ -722,12 +758,12 @@ static void port_GlSceneKeyOf(Looked *one, char *name) {
     page.page_y = one->page_y;
     page.clut_x = one->base_x;
     page.clut_y = one->base_y;
-    page.own = g_scene.own;
+    page.own = g_scene.own[one->owner];
     one->key = port_TexturePageKey(g_port_gl_vram, &page);
     port_TexturePageKeyName(one->key, &page, name, PORT_MOD_KEY_SIZE);
     one->path = port_ModFind(PORT_MOD_TEXTURES, name);
     if (one->path == NULL) {
-        port_GlSceneDump(&page, name);
+        port_GlSceneDump(&page, one->owner, name);
     }
 }
 
@@ -805,7 +841,7 @@ static void port_GlSceneEnter(Looked *one) {
     }
     port_GlSceneSetEntry(
         column, one->clut_y,
-        (u16)(ENTRY_SEEN |
+        (u16)(ENTRY_SEEN | (one->owner != OWNER_STAGE ? ENTRY_FIGHTER : 0U) |
               (layer >= 0
                    ? (u32)(layer + 1) | ((u32)one->bits << ENTRY_BITS_SHIFT)
                    : 0U)));
@@ -850,6 +886,7 @@ static s32 port_GlSceneAdd(
     Looked *one;
     s32 base_x;
     s32 base_y;
+    s32 owner;
     s32 column;
 
     page.bits = bits;
@@ -868,7 +905,7 @@ static s32 port_GlSceneAdd(
     g_scene.lookup_table[clut_y * LOOKUP_W + column] = ENTRY_SEEN;
     if (bits == PORT_MOD_TEXELS_16 || !port_TexturePageFits(&page) ||
         (g_scene.owned_pages & (1U << (column / TABLE_COLUMNS))) == 0 ||
-        !port_GlSceneBaseOf(clut_x, clut_y, &base_x, &base_y) ||
+        !port_GlSceneBaseOf(clut_x, clut_y, &base_x, &base_y, &owner) ||
         g_scene.looked_count >= LOOKED_MAX) {
         return FALSE;
     }
@@ -880,6 +917,7 @@ static s32 port_GlSceneAdd(
     one->base_x = (s16)base_x;
     one->base_y = (s16)base_y;
     one->bits = (s16)bits;
+    one->owner = (s16)owner;
     one->is_stale = FALSE;
     one->is_waiting = FALSE;
     one->key = 0;
@@ -890,13 +928,16 @@ static s32 port_GlSceneAdd(
     return TRUE;
 }
 
-/* Which pixels of video memory are the stage's own, and which pages have
- * any. */
-static void port_GlSceneOwn(const PortStageTexture *textures, s32 count) {
+/* Which pixels of video memory are an owner's own, and which pages have
+ * any of anyone's. */
+static void port_GlSceneOwn(s32 owner) {
+    const PortStageTexture *textures;
+    u8 *own = g_scene.own[owner];
+    s32 count;
     s32 i;
 
-    memset(g_scene.own, 0, (size_t)PORT_VRAM_PIXELS);
-    g_scene.owned_pages = 0;
+    textures = port_GlSceneTextures(owner, &count);
+    memset(own, 0, (size_t)PORT_VRAM_PIXELS);
     for (i = 0; i < count; i++) {
         const PortStageTexture *one = &textures[i];
         s32 x;
@@ -907,7 +948,7 @@ static void port_GlSceneOwn(const PortStageTexture *textures, s32 count) {
                 if (x < 0 || y < 0) {
                     continue;
                 }
-                g_scene.own[y * PORT_VRAM_WIDTH + x] = 1;
+                own[y * PORT_VRAM_WIDTH + x] = 1;
                 g_scene.owned_pages |=
                     1U << (((x / PAGE_X_STEP) % PAGES_ACROSS) +
                            ((y / PAGE_Y_STEP) & 1) * PAGES_ACROSS);
@@ -940,19 +981,20 @@ static void port_GlSceneAddTim(const PortStageTexture *one) {
     }
 }
 
-/* The stage's textures as the game has just loaded them: which pixels are
- * its own, and every page and table its TIMs bring looked up, the
- * pictures of all of them read now. */
+/* The stage's and the fighters' textures as the game has just loaded
+ * them: which pixels are whose, and every page and table their TIMs bring
+ * looked up, the pictures of all of them read now. */
 static void port_GlSceneReadStage(void) {
     char name[PORT_MOD_KEY_SIZE];
     const PortStageTexture *textures;
     const char *first = NULL;
     s32 count;
     s32 pictures = 0;
+    s32 owner;
     s32 i;
     s32 j;
 
-    textures = port_RemasterStageTextures(&count, &g_scene.version);
+    (void)port_RemasterStageTextures(&count, &g_scene.version);
     memset(g_scene.lookup_table, 0,
            (size_t)LOOKUP_W * LOOKUP_H * sizeof(*g_scene.lookup_table));
     glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_LOOKUP_UNIT);
@@ -967,9 +1009,15 @@ static void port_GlSceneReadStage(void) {
     g_scene.generation++;
     g_scene.is_full_said = FALSE;
     g_scene.has_stale = FALSE;
-    port_GlSceneOwn(textures, count);
-    for (i = 0; i < count; i++) {
-        port_GlSceneAddTim(&textures[i]);
+    g_scene.owned_pages = 0;
+    for (owner = 0; owner < OWNERS; owner++) {
+        port_GlSceneOwn(owner);
+    }
+    for (owner = 0; owner < OWNERS; owner++) {
+        textures = port_GlSceneTextures(owner, &count);
+        for (i = 0; i < count; i++) {
+            port_GlSceneAddTim(&textures[i]);
+        }
     }
     /* the keys first, to know how many pictures there are; then the array
      * as large as that and a few more, and the pictures into it */
@@ -1041,11 +1089,12 @@ s32 port_GlSceneFind(const PortRemasterPrim *prim) {
     u16 entry;
 
     /* port_StageIsDressed(): a stage fought Classic is drawn from the
-     * game's own textures, not a mod's pages (stages-hd) */
-    if (!port_StageIsDressed()) {
+     * game's own textures, not a mod's pages (stages-hd); a fighter's
+     * pages are his whatever the stage is */
+    if (!prim->is_fighter && !port_StageIsDressed()) {
         return FALSE;
     }
-    if (!prim->is_textured || !prim->has_depth || prim->is_fighter ||
+    if (!prim->is_textured || !prim->has_depth ||
         prim->texel_bits == PORT_MOD_TEXELS_16 || g_scene.lookup == 0 ||
         !port_GlSceneIsWanted() ||
         prim->window_and_u != PORT_MOD_PAGE_SIDE - 1 ||
@@ -1061,8 +1110,10 @@ s32 port_GlSceneFind(const PortRemasterPrim *prim) {
                         prim->texel_bits, TRUE);
         entry = g_scene.lookup_table[prim->clut_y * LOOKUP_W + column];
     }
+    /* a fighter's face by a fighter's table, the stage's by the stage's */
     return (entry & ENTRY_LAYER_MASK) != 0 &&
-           (s32)((entry >> ENTRY_BITS_SHIFT) & 3) == prim->texel_bits;
+           (s32)((entry >> ENTRY_BITS_SHIFT) & 3) == prim->texel_bits &&
+           ((entry & ENTRY_FIGHTER) != 0) == (prim->is_fighter != 0);
 }
 
 /* Whether two rectangles of video memory meet. */
@@ -1071,13 +1122,13 @@ static s32 port_GlSceneMeets(
     return x < x2 + w2 && x2 < x + w && y < y2 + h2 && y2 < y + h;
 }
 
-/* Whether the rectangle holds any pixel that is the stage's own: a page's
+/* Whether the rectangle holds any pixel that is an owner's own: a page's
  * key is made of those alone (port_TexturePageKey, `own`), so a write of
  * none of them (the fog's colour tables, a line at a time every frame,
  * which lie inside the pages' rectangles) cannot change it. Looking the
  * pages up again for those writes was a sixth of the processor's time in
  * a fight on the owner's PC (2026-11-18). */
-static s32 port_GlSceneWritesOwn(s32 x, s32 y, s32 w, s32 h) {
+static s32 port_GlSceneWritesOwn(s32 owner, s32 x, s32 y, s32 w, s32 h) {
     s32 right = x + w < PORT_VRAM_WIDTH ? x + w : PORT_VRAM_WIDTH;
     s32 bottom = y + h < PORT_VRAM_HEIGHT ? y + h : PORT_VRAM_HEIGHT;
     s32 i;
@@ -1087,7 +1138,7 @@ static s32 port_GlSceneWritesOwn(s32 x, s32 y, s32 w, s32 h) {
         return TRUE;
     }
     for (j = y; j < bottom; j++) {
-        const u8 *row = g_scene.own + j * PORT_VRAM_WIDTH;
+        const u8 *row = g_scene.own[owner] + j * PORT_VRAM_WIDTH;
 
         for (i = x; i < right; i++) {
             if (row[i] != 0) {
@@ -1099,11 +1150,14 @@ static s32 port_GlSceneWritesOwn(s32 x, s32 y, s32 w, s32 h) {
 }
 
 void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
-    s32 writes_own = -1; /* not yet asked */
+    s32 writes_own[OWNERS]; /* -1: not yet asked */
     s32 i;
 
     if (g_scene.looked == NULL) {
         return;
+    }
+    for (i = 0; i < OWNERS; i++) {
+        writes_own[i] = -1;
     }
     for (i = 0; i < g_scene.looked_count; i++) {
         Looked *one = &g_scene.looked[i];
@@ -1116,9 +1170,10 @@ void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
         if ((port_GlSceneMeets(x, y, w, h, one->page_x, one->page_y,
                                port_TexturePagePixel(&page, PORT_MOD_PAGE_SIDE),
                                PORT_MOD_PAGE_SIDE) &&
-             (writes_own >= 0
-                  ? writes_own
-                  : (writes_own = port_GlSceneWritesOwn(x, y, w, h)))) ||
+             (writes_own[one->owner] >= 0
+                  ? writes_own[one->owner]
+                  : (writes_own[one->owner] =
+                         port_GlSceneWritesOwn(one->owner, x, y, w, h)))) ||
             port_GlSceneMeets(
                 x, y, w, h, one->base_x, one->base_y,
                 one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX, 1)) {

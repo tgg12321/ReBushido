@@ -1585,6 +1585,69 @@ const PortStageTexture *port_RemasterStageTextures(s32 *count, u32 *version) {
     return g_stage_textures;
 }
 
+/* ---- the fighters' own textures (port_remaster.h) ---- */
+
+static PortStageTexture
+    g_fighter_textures[PORT_MODEL_TEXTURE_SLOTS][PORT_FIGHTER_TEXTURES_MAX];
+static s32 g_fighter_texture_counts[PORT_MODEL_TEXTURE_SLOTS];
+/* the slot whose TIMs tex_LoadTim is loading, or -1; and how far above
+ * where a table is loaded the faces name it */
+static s32 g_fighter_noting = -1;
+static s32 g_fighter_named_dy;
+
+void port_RemasterBeginFighterTextures(s32 slot) {
+    if (g_backend == NULL || slot < 0 || slot >= PORT_MODEL_TEXTURE_SLOTS) {
+        return;
+    }
+    g_fighter_texture_counts[slot] = 0;
+    /* the stage's number: gl_scene.c reads every list again */
+    g_stage_texture_version++;
+}
+
+void port_RemasterNoteFighterTextures(s32 slot, s32 named_dy) {
+    g_fighter_noting =
+        g_backend != NULL && slot >= 0 && slot < PORT_MODEL_TEXTURE_SLOTS
+            ? slot
+            : -1;
+    g_fighter_named_dy = named_dy;
+}
+
+/* A TIM tex_LoadTim has just loaded: the noting slot's, read as the
+ * stage's are, into its own list. */
+void port_RemasterNoteTim(
+    const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y) {
+    s32 slot = g_fighter_noting;
+    s32 *count;
+    s32 keep;
+
+    if (slot < 0 || tim == NULL) {
+        return;
+    }
+    count = &g_fighter_texture_counts[slot];
+    if (*count >= PORT_FIGHTER_TEXTURES_MAX) {
+        return;
+    }
+    /* port_RemasterNoteStageTexture writes the stage's list: kept aside
+     * and put back, so that its code is the one reader of a TIM */
+    keep = g_stage_texture_count;
+    port_RemasterNoteStageTexture(
+        tim, x, y, clut_x, clut_y, clut_y + g_fighter_named_dy);
+    if (g_stage_texture_count > keep) {
+        g_fighter_textures[slot][(*count)++] = g_stage_textures[keep];
+        g_stage_texture_count = keep;
+    }
+    g_stage_texture_version++;
+}
+
+const PortStageTexture *port_RemasterFighterTextures(s32 slot, s32 *count) {
+    if (slot < 0 || slot >= PORT_MODEL_TEXTURE_SLOTS) {
+        *count = 0;
+        return NULL;
+    }
+    *count = g_fighter_texture_counts[slot];
+    return g_fighter_textures[slot];
+}
+
 const void *port_RemasterTileLights(void) {
     /* TILE_LIGHT_SETUP, the setup render_DrawStageTiles lights a tile's
      * faces with (src/main/render_asm.c) */

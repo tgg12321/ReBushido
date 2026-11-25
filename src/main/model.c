@@ -200,12 +200,23 @@ static void model_FinishLoad(Model *model) {
      * second's two pages to the right, its meshes shifted to match. The
      * model the stage's fog falls on has its colour tables loaded a second
      * time, into the fog's block, and its meshes pointed at that. */
+#if RB_REMASTER_VIEW
+    /* which TIMs are the fighter's, for a mod's picture of his whole pages
+     * (port_remaster.h); a fogged model's faces name the fog's rows, and
+     * the tables as loaded are the plain copy below them */
+    port_RemasterBeginFighterTextures(model->slot);
+    port_RemasterNoteFighterTextures(model->slot, 0);
+#endif
     switch (model->slot) {
     case 0:
         tex_LoadGroup(textures, 0);
         if (stage_GetFoggedModel() == 0) {
             tex_ShiftBlock(
                 model->mesh_block, 0, 0, MODEL_FOG_CLUT_DX, MODEL_FOG_CLUT_DY);
+#if RB_REMASTER_VIEW
+            port_RemasterNoteFighterTextures(
+                model->slot, MODEL_FOG_CLUT_DY - MODEL_FOG_PLAIN_CLUT_DY);
+#endif
             tex_LoadGroupAtSplit(
                 textures, 0, 0, 0, MODEL_FOG_CLUT_DX, MODEL_FOG_PLAIN_CLUT_DY);
         }
@@ -215,6 +226,10 @@ static void model_FinishLoad(Model *model) {
         if (stage_GetFoggedModel() == 1) {
             tex_ShiftBlock(model->mesh_block, MODEL_SECOND_SLOT_DX, 0,
                            MODEL_FOG_CLUT_DX, MODEL_FOG_CLUT_DY);
+#if RB_REMASTER_VIEW
+            port_RemasterNoteFighterTextures(
+                model->slot, MODEL_FOG_CLUT_DY - MODEL_FOG_PLAIN_CLUT_DY);
+#endif
             tex_LoadGroupAtSplit(textures, 0, MODEL_SECOND_SLOT_DX, 0,
                                  MODEL_FOG_CLUT_DX, MODEL_FOG_PLAIN_CLUT_DY);
         } else {
@@ -226,6 +241,9 @@ static void model_FinishLoad(Model *model) {
     case 2:
         break;
     }
+#if RB_REMASTER_VIEW
+    port_RemasterNoteFighterTextures(-1, 0);
+#endif
 
     DrawSync(0);
     model_LoadExtraTextures(
@@ -967,6 +985,13 @@ static void model_LoadExtraTextures(
         if (!(has & bit) || !(groups & bit)) {
             continue;
         }
+#if RB_REMASTER_VIEW
+        /* the fighter's (port_remaster.h), but a fogged model's, whose
+         * tables go straight into the fog's rows and have no plain copy
+         * to be keyed by */
+        port_RemasterNoteFighterTextures(
+            stage_GetFoggedModel() == slot ? -1 : slot, 0);
+#endif
         switch (slot) {
         case 0:
             if (stage_GetFoggedModel() == 0) {
@@ -988,6 +1013,9 @@ static void model_LoadExtraTextures(
             break;
         }
     }
+#if RB_REMASTER_VIEW
+    port_RemasterNoteFighterTextures(-1, 0);
+#endif
 }
 
 /* If `model` is one that can be tinted and is in the second slot, reads

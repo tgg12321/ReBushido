@@ -8360,7 +8360,7 @@ dressing asks it where it decides:
 | Feature | Classic | Remastered Classic | Where it asks |
 |---|---|---|---|
 | The stage's own lights (torches, fires, lanterns: the lights files, MODS.md "Lights") | off | as `stage_lights` says | `port_LightsOfStage` (`src/port/lights.c`) |
-| The stages' pages made larger (`stages-hd`) and any mod's page pictures | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
+| The stages' pages made larger (`stages-hd`) and any mod's page pictures of the stage (a fighter's are his on either: MODS.md, "A fighter's pages") | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
 | The night sky | the game's colour of the distance | as `sky` says | the sky's drawing (`src/port/gl/gl_sky.c`) |
 | The dressing (grass, bushes, water, particles, meshes: ROADMAP 17, "The dressing") | off | as `dressing` says | `port_DressingOfStage` (`src/port/dressing.c`) |
 | The time of day ("The time of day") | the game's own | as chosen | `port_StageTime` (`src/port/stage_choice.c`) |
