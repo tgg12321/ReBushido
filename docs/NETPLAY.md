@@ -13,8 +13,8 @@ and `--join` or the settings menu's Play online page, proved between two
 window programs on one PC (section 13). Then the lobby and its ways
 (section 14), sessions begun in the running program (15), rooms of several
 (16), the ranked ladder (17), two on two online, four players on four
-PCs among them (18), and the CPU playing on for one of four who leaves
-(19). What is left is play between two real PCs,
+PCs among them (18), the CPU playing on for one of four who leaves
+(19), and teams of four characters (20). What is left is play between two real PCs,
 and what section 13 leaves to the owner.
 
 **In short:** the game step is already deterministic and repeatable from its
@@ -2421,3 +2421,42 @@ several fights with a leaver in its first is not run by a test (the
 tests' are of one): the next fight's first step makes the fighter the
 CPU's again, but whether the game's menu between fights waits on the
 second pad, where its player has left, is not seen. Four real PCs.
+
+## 20. Teams of four characters
+
+ROADMAP 24's last piece of the game's (docs/PORT.md, "Two on two":
+"Each fighter his own character and weapon"): each team's second is a
+character and weapon of his own, picked at the select screen after his
+first. Nothing of it is carried beside the session's inputs, because all
+of it is the game's state and its inputs:
+
+- **The picks** are the select screen's, which every machine runs from
+  the same pads: the grid comes up a second time for the partners
+  (`PortMatch.crew`, its second place; `PortMatch.partner` as the match
+  begins), picked by the first two pads in a session of two players (the
+  partners the CPU's) and by the third and fourth in a session of four
+  players (`port_MatchPartnerPads`, the third and fourth pads of
+  `g_port_input`, which netplay fills). Versus the CPU the CPU's partner is
+  drawn by the crew's dice, in the state. A room's rule is chosen before
+  its grid, so its partners are picked before its stage page, a
+  session's after it.
+- **What is loaded for them** is loaded by the game's own step on every
+  machine alike (`fight_Init`): a partner's model and what it keeps into
+  the console's RAM below the common sound bank (`PORT_DUO_AREA_ADDR`),
+  saved and hashed with the rest of the RAM; his textures into the second
+  bank of the port's video memory, which is after the lines the GPU
+  writes and so kept as the game's watched pages (port_gpu.h); his motion
+  file and win pose into the same room. Each fighter's motion file, its
+  decoder and his win pose are put into his slot with him
+  (`PortDuoMotion`, a state file's). A rollback puts all of it back as it
+  puts back the fight.
+
+**Protocol 18** (`SESSION_PROTOCOL`, setup codes `P18-...`): a program
+before it plays a fight of four with each team two of one character, and
+its select screen has no second grid, so the two would part at the first
+partner's pick; 17 and 18 do not meet. The lobby is unchanged (version 4).
+
+**How it is proved.**
+
+| Case | Programs | What runs | Result |
+| --- | --- | --- | --- |

@@ -29,8 +29,9 @@ lessons still holds unless this section says otherwise.
 - **Online**: rooms of several, spectators, the rotation of three,
   leaving a fight, the list's ping (ROADMAP 22); the ladder (25:
   Ed25519 identities, ranked play, Glicko-2, disputes by replay); two on
-  two (24: four fighters, retargeting, four pads, CPU partners, and four
-  PCs as a star through the host).
+  two (24: four fighters, retargeting, four pads, CPU partners, four
+  PCs as a star through the host, and each fighter a character and
+  weapon of his own, the partners picked at a second grid; protocol 18).
 - **Looks**: the movies on the card and made larger (`movies-hd`,
   realesr-animevideov3) and the static art (`art`, Real-ESRGAN, the
   upscaler in `prepare/upscaler/`: MIT program, BSD-3 ncnn and weights);

@@ -180,9 +180,9 @@ static s32 port_FightFighterInto(const char *text, s32 *roster, s32 *weapon) {
                              COUNT(g_port_fight_roster));
     *weapon = WEAPON_ID_KATANA;
     if (*colon == ':') {
-        *weapon = port_FightFind(colon + 1, NULL, "weapon_id_",
-                                 g_port_fight_weapons,
-                                 COUNT(g_port_fight_weapons));
+        *weapon =
+            port_FightFind(colon + 1, NULL, "weapon_id_", g_port_fight_weapons,
+                           COUNT(g_port_fight_weapons));
     }
     return *roster >= 0 && *weapon >= 0;
 }

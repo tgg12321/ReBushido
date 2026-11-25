@@ -211,8 +211,8 @@ void port_MatchPartnerPads(s32 *held, s32 *pressed) {
             continue;
         }
         *held = (s32)(((u32)*held & ~mask) | (match->pads_held & mask));
-        *pressed = (s32)(((u32)*pressed & ~mask) |
-                         (match->pads_held & ~was & mask));
+        *pressed =
+            (s32)(((u32)*pressed & ~mask) | (match->pads_held & ~was & mask));
     }
 }
 

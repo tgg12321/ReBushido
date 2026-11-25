@@ -124,7 +124,7 @@ typedef struct {
                                   */
     u8 kind[PORT_DUO_FIGHTERS];  /* each one's move_kind after his step */
     u8 character[PORT_DUO_FIGHTERS]; /* each one's (enum CharacterId) */
-    u8 models_out;               /* a copy is in a slot of the game's models */
+    u8 models_out; /* a copy is in a slot of the game's models */
     u8 clone_made[2];
     u16 falls; /* fighters fallen, for the order */
     /* the port's primitive buffers are the game's for two on two, and
@@ -500,7 +500,7 @@ void port_DuoForget(void) {
     duo->in_slot[1] = 1;
     /* the game's motion files are made again from nothing after this */
     duo->motions_out = FALSE;
-    port_SetVramBankOn(FALSE);
+    port_SetVramBank(NULL);
 }
 
 /* The arena moved a slot's model data (port_duo.h): the copy reads the
@@ -674,8 +674,8 @@ static void port_DuoAskWeapons(s32 slot, s32 roster, s32 weapon) {
     if (kind != OBJECT_NONE) {
         resource_RequestWeapon(g_object_weapon_models[kind]);
         if (kind == OBJECT_FROG) {
-            resource_RequestWeapon(g_object_weapon_models[OBJECT_FROG] +
-                                   WEAPON_MODEL_FROG_IN_AIR);
+            resource_RequestWeapon(
+                g_object_weapon_models[OBJECT_FROG] + WEAPON_MODEL_FROG_IN_AIR);
         }
     }
 }
@@ -684,6 +684,9 @@ void port_DuoLoadPartners(s32 staging) {
     PortDuo *duo = &g_port_duo;
     s32 slot;
 
+    /* the second bank of video memory, which a partner's textures go to
+     * (port_gpu.h) */
+    port_SetVramBank(duo->will_be_on ? (u16 *)ADDR(PORT_DUO_BANK_ADDR) : NULL);
     for (slot = 0; slot < 2; slot++) {
         s32 roster = duo->partner_roster[slot];
         s32 model_id = g_fighter_roster_models[roster];
@@ -840,8 +843,8 @@ static void port_DuoSetPartner(
         port_DuoMotionTake(slot, &duo->f[who].motion);
         motion_set = duo->f[who].motion.set;
     }
-    fighter_Init(slot, is_cpu, duo->partner_roster[slot],
-                 duo->partner_weapon[slot], 0);
+    fighter_Init(
+        slot, is_cpu, duo->partner_roster[slot], duo->partner_weapon[slot], 0);
     /* whose sounds a thrown thing makes stays the slot's */
     g_object_fighter_kinds[slot] = object_kind;
     fighter->motion_set = motion_set;
@@ -882,10 +885,10 @@ void port_DuoFightBegin(void) {
     duo->on = FALSE;
     duo->in_slot[0] = 0;
     duo->in_slot[1] = 1;
-    port_SetVramBankOn(FALSE);
-    duo->will_be_on = (u8)(g_port_match.teams != PORT_TEAMS_ONE &&
-                           port_MatchModeHasRules(g_fight_mode) &&
-                           !g_fight_first_person);
+    port_SetVramBank(NULL);
+    duo->will_be_on =
+        (u8)(g_port_match.teams != PORT_TEAMS_ONE &&
+             port_MatchModeHasRules(g_fight_mode) && !g_fight_first_person);
     if (g_fight_restart) {
         /* the fight again: its fighters and what is loaded for them stay,
          * the firsts' motion sets theirs (a second may have rested in the
@@ -939,6 +942,9 @@ void port_DuoFightSet(void) {
     duo->decided = FALSE;
     duo->falls = 0;
     duo->models_out = FALSE;
+    /* the second bank of video memory, where a partner of his own has his
+     * textures: read only in a fight that has one (port_gpu.h) */
+    port_SetVramBank(NULL);
     for (slot = 0; slot < 2; slot++) {
         duo->first_set[slot] = g_fighters[slot].motion_set;
         duo->own_model[slot] = model_Get(slot);
@@ -952,7 +958,7 @@ void port_DuoFightSet(void) {
                 cloth->snap_request = 1;
             }
             duo->clone_made[slot] = TRUE;
-            port_SetVramBankOn(TRUE);
+            port_SetVramBank((u16 *)ADDR(PORT_DUO_BANK_ADDR));
         } else {
             port_DuoCloneModel(slot);
         }

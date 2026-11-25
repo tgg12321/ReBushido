@@ -51,7 +51,8 @@ void rb_PortQuickFight(void) {
 
             for (side = 0; side < 2; side++) {
                 port_MatchSetPartner(
-                    side, g_fighter_roster_characters[fight->partner_roster[side]],
+                    side,
+                    g_fighter_roster_characters[fight->partner_roster[side]],
                     fight->partner_weapon[side]);
             }
         }

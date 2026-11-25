@@ -1981,7 +1981,7 @@ static void port_RemasterPaint(
     prim->clut_y = (s32)((clut >> CLUT_Y_SHIFT) & VRAM_Y_MASK);
     /* a polygon of two on two's second bank (port_gpu.h) */
     if (prim->is_textured && (clut & PORT_VRAM_BANK_BIT) &&
-        port_VramBankIsOn()) {
+        port_VramBank() != NULL) {
         prim->page_y += PORT_VRAM_BANK_NAMED_Y;
         prim->clut_y += PORT_VRAM_BANK_NAMED_Y;
     }

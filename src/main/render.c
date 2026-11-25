@@ -523,7 +523,8 @@ static s16 tex_ShiftClut(s16 clut, s16 dcx, s32 dcy) {
     s32 y;
     x &= CLUT_X_MASK;
     y = (dcy + (((u32)(clut << 17)) >> 23)) & CLUT_Y_MASK;
-    return x | ((clut & CLUT_TOP_BIT) | TEX_PORT_CLUT_TOP | (y << CLUT_Y_SHIFT));
+    return x |
+           ((clut & CLUT_TOP_BIT) | TEX_PORT_CLUT_TOP | (y << CLUT_Y_SHIFT));
 }
 
 /* ---- mesh pointer tables ---- */

@@ -606,9 +606,9 @@ static void port_MatchCrewPick(const PortMatch *match) {
                match->crew_picked > 0;
 
     if (teams) {
-        snprintf(line, sizeof(line), "Two on two: %s",
-                 match->crew_picked == 0 ? "pick the fighter"
-                                         : "pick the partner");
+        snprintf(
+            line, sizeof(line), "Two on two: %s",
+            match->crew_picked == 0 ? "pick the fighter" : "pick the partner");
     } else {
         snprintf(line, sizeof(line), "Crew %d: pick %d of %d", (int)count,
                  (int)match->crew_picked + 1, (int)count);
@@ -617,15 +617,15 @@ static void port_MatchCrewPick(const PortMatch *match) {
                    COLOR_GOLD, 0);
     port_MatchText(CREW_HUD_X + 6, CREW_PICK_Y + 11, SIZE_HUD - 1,
                    PORT_FACE_BOLD, pads ? "3P" : "1P", COLOR_SIDE_1, -1);
-    port_MatchText(right, CREW_PICK_Y + 11, SIZE_HUD - 1, PORT_FACE_BOLD,
-                   match->crew_sides > 1 ? (pads ? "4P" : "2P") : "CPU",
-                   COLOR_SIDE_2, 1);
+    port_MatchText(
+        right, CREW_PICK_Y + 11, SIZE_HUD - 1, PORT_FACE_BOLD,
+        match->crew_sides > 1 ? (pads ? "4P" : "2P") : "CPU", COLOR_SIDE_2, 1);
     if (match->crew_sides < 2) {
-        port_MatchText(right - 30, CREW_PICK_Y + 11, SIZE_HUD - 1,
-                       PORT_FACE_TEXT,
-                       teams ? "its partner drawn at random"
-                             : "drawn at random, led by the opponent",
-                       COLOR_DIM, 1);
+        port_MatchText(
+            right - 30, CREW_PICK_Y + 11, SIZE_HUD - 1, PORT_FACE_TEXT,
+            teams ? "its partner drawn at random"
+                  : "drawn at random, led by the opponent",
+            COLOR_DIM, 1);
     }
     for (side = 0; side < match->crew_sides && side < 2; side++) {
         u32 color = side == 0 ? COLOR_SIDE_1 : COLOR_SIDE_2;

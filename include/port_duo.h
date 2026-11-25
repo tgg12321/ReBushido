@@ -17,10 +17,13 @@
  * what a pair has (the game's pair globals) is kept for each of the four
  * pairs of enemies.
  *
- * Video memory holds two characters' textures and the RAM two motion
- * files, so a team is two of its first fighter's character with his
- * weapon: the second of each team is a copy of the first's model (its
- * own nodes, matrices and cloth, the meshes and textures shared).
+ * Each team's second is a character and weapon of his own, picked at the
+ * select screen after his first (port_match.h, port_MatchPartner): of
+ * his first's model, his is a copy of it (its own nodes, matrices and
+ * cloth, the meshes and textures shared); of another, his own, loaded
+ * beside the game's (below), his textures in a second bank of video
+ * memory (port_gpu.h). His motion file and win pose go with him into his
+ * slot as his model does.
  *
  * Each fighter targets an enemy (his `other` while he is stepped); a
  * press of the retarget button (R2, which the fight does not read) turns
@@ -75,12 +78,21 @@ enum {
  * room is the game's memory: saved, put back and hashed with it. */
 #define PORT_DUO_AREA_ADDR 0x80010000U
 #define PORT_DUO_AREA_END 0x8010DB00U /* SYS_SOUND_VAB_ADDR */
+/* first the second bank of video memory (port_gpu.h) */
+#define PORT_DUO_BANK_ADDR PORT_DUO_AREA_ADDR
+#define PORT_DUO_BANK_BYTES 0x20000   /* PORT_VRAM_BANK_PIXELS, two bytes each \
+                                       */
 #define PORT_DUO_WIN_BYTES 0x3800     /* MOTION_WIN_SECTORS of WIN.DAT */
 #define PORT_DUO_MOTION_BYTES 0x48000 /* the game's room for a motion file */
-#define PORT_DUO_WIN_ADDR(slot)                                                   (PORT_DUO_AREA_ADDR + (u32)(slot) * PORT_DUO_WIN_BYTES)
-#define PORT_DUO_MOTION_ADDR(slot)                                                (PORT_DUO_WIN_ADDR(2) + (u32)(slot) * PORT_DUO_MOTION_BYTES)
-#define PORT_DUO_MODEL_BYTES                                                      ((PORT_DUO_AREA_END - PORT_DUO_MOTION_ADDR(2)) / 2 & ~0xFFFU)
-#define PORT_DUO_MODEL_ADDR(slot)                                                 (PORT_DUO_MOTION_ADDR(2) + (u32)(slot) * PORT_DUO_MODEL_BYTES)
+#define PORT_DUO_WIN_ADDR(slot)                                                \
+    (PORT_DUO_BANK_ADDR + PORT_DUO_BANK_BYTES +                                \
+     (u32)(slot) * PORT_DUO_WIN_BYTES)
+#define PORT_DUO_MOTION_ADDR(slot)                                             \
+    (PORT_DUO_WIN_ADDR(2) + (u32)(slot) * PORT_DUO_MOTION_BYTES)
+#define PORT_DUO_MODEL_BYTES                                                   \
+    ((PORT_DUO_AREA_END - PORT_DUO_MOTION_ADDR(2)) / 2 & ~0xFFFU)
+#define PORT_DUO_MODEL_ADDR(slot)                                              \
+    (PORT_DUO_MOTION_ADDR(2) + (u32)(slot) * PORT_DUO_MODEL_BYTES)
 /* the renderer's tables of a partner's meshes and shadows (RELOC_...),
  * the last of the renderer's that anything uses: a fighter's (the
  * remastered picture's port_RemasterNoteFighter, render_asm.c) */

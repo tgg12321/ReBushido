@@ -217,9 +217,9 @@ static const s16 g_port_display_widths[] = {256, 320, 512, 640};
 
 /* on a page of its own at each end (state.c's pages): the painter's thread,
  * which writes it, never writes a page the state watches */
-u16 g_port_vram[PORT_VRAM_STORED] __attribute__((aligned(4096)));
-/* two on two's second bank is read (port_gpu.h) */
-static s32 g_port_vram_bank_on;
+u16 g_port_vram[PORT_VRAM_PIXELS] __attribute__((aligned(4096)));
+/* two on two's second bank (port_gpu.h), or NULL */
+static u16 *g_port_vram_bank;
 static PortGpu g_port_gpu = {
     .range_x = RANGE_X_RESET,
     .range_y = RANGE_Y_RESET,
@@ -233,9 +233,20 @@ void port_SetGpuLikeEmulator(s32 is_on) {
 
 s32 port_GpuIsLikeEmulator(void) { return g_port_gpu.is_like_emulator; }
 
-void port_SetVramBankOn(s32 is_on) { g_port_vram_bank_on = is_on != 0; }
+void port_SetVramBank(u16 *bank) { g_port_vram_bank = bank; }
 
-s32 port_VramBankIsOn(void) { return g_port_vram_bank_on; }
+u16 *port_VramBank(void) { return g_port_vram_bank; }
+
+u16 *port_VramBankAt(s32 x, s32 y) {
+    s32 across = (x & VRAM_X_MASK) - PORT_VRAM_BANK_X;
+    s32 down = y & VRAM_Y_MASK;
+
+    if (g_port_vram_bank == NULL || across < 0 || across >= PORT_VRAM_BANK_W ||
+        down >= PORT_VRAM_BANK_H) {
+        return NULL;
+    }
+    return &g_port_vram_bank[down * PORT_VRAM_BANK_W + across];
+}
 
 /* ---- small things ---- */
 
@@ -367,10 +378,20 @@ static void port_PutPixel(
 }
 
 /* The texel at (u, v) of a paint's page, through the texture window. */
-/* A pixel of the bank a paint reads its texture from (port_gpu.h). */
+/* A pixel a paint reads its texture from: of two on two's second bank
+ * where the paint has it and it has the place (port_gpu.h), otherwise
+ * of video memory. */
 static u16 port_TexelAt(const PortPaint *paint, s32 x, s32 y) {
-    return paint->texels[(y & VRAM_Y_MASK) * PORT_VRAM_WIDTH +
-                         (x & VRAM_X_MASK)];
+    x &= VRAM_X_MASK;
+    y &= VRAM_Y_MASK;
+    if (paint->bank != NULL) {
+        s32 across = x - PORT_VRAM_BANK_X;
+
+        if (across >= 0 && across < PORT_VRAM_BANK_W && y < PORT_VRAM_BANK_H) {
+            return paint->bank[y * PORT_VRAM_BANK_W + across];
+        }
+    }
+    return g_port_vram[y * PORT_VRAM_WIDTH + x];
 }
 
 static u16 port_ReadTexel(const PortPaint *paint, s32 u, s32 v) {
@@ -382,13 +403,15 @@ static u16 port_ReadTexel(const PortPaint *paint, s32 u, s32 v) {
     v = (v & gpu->window_and_v) | gpu->window_or_v;
     y = paint->page_y + v;
     if (paint->depth == DEPTH_4) {
-        u16 word = port_TexelAt(paint, paint->page_x + (u >> TEXELS_4_SHIFT), y);
+        u16 word =
+            port_TexelAt(paint, paint->page_x + (u >> TEXELS_4_SHIFT), y);
 
         index = (word >> ((u & TEXELS_4_MASK) * TEXEL_4_BITS)) & TEXEL_4_MASK;
         return port_TexelAt(paint, paint->clut_x + index, paint->clut_y);
     }
     if (paint->depth == DEPTH_8) {
-        u16 word = port_TexelAt(paint, paint->page_x + (u >> TEXELS_8_SHIFT), y);
+        u16 word =
+            port_TexelAt(paint, paint->page_x + (u >> TEXELS_8_SHIFT), y);
 
         index = (word >> ((u & TEXELS_8_MASK) * TEXEL_8_BITS)) & BYTE_MASK;
         return port_TexelAt(paint, paint->clut_x + index, paint->clut_y);
@@ -464,9 +487,7 @@ static void port_SetUpPaint(
     paint->clut_x = (s32)(clut & CLUT_X_MASK) * CLUT_X_STEP;
     paint->clut_y = (s32)((clut >> CLUT_Y_SHIFT) & VRAM_Y_MASK);
     /* two on two's second bank (port_gpu.h) */
-    paint->texels = g_port_vram_bank_on && (clut & PORT_VRAM_BANK_BIT)
-                        ? g_port_vram + PORT_VRAM_BANK_Y * PORT_VRAM_WIDTH
-                        : g_port_vram;
+    paint->bank = (clut & PORT_VRAM_BANK_BIT) ? g_port_vram_bank : NULL;
 }
 
 static void port_SetCornerColor(PortCorner *corner, u32 color) {

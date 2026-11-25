@@ -727,13 +727,17 @@ room for the next match.
 ## Two on two
 
 Versus, Vs. CPU and online can be fought **two on two**: four fighters,
-two teams. Each side picks its fighter and weapon on the character
-select as for one on one, and its team is **two of that fighter**: the
-game keeps two characters in the console's video memory, so a team is
-one character twice (told apart by the tags over their heads). The
-second of each team is the CPU's, or played from the **third and fourth
-pads** (the third controller plugged in is player three's, the team of
-player one; the fourth is player four's, with player two).
+two teams, **each fighter a character and weapon of his own**. Each side
+picks its fighter and weapon on the character select as for one on one,
+then the grid comes up again (the strip under it says *pick the
+partner*) and each side picks its **partner** and his weapon: any
+fighter, the same as the first or another. The second of each team is
+the CPU's, or played from the **third and fourth pads** (the third
+controller plugged in is player three's, the team of player one; the
+fourth is player four's, with player two), and then players three and
+four pick their own fighters on that second grid. Versus the CPU, the
+CPU's partner is drawn from the run's opponents. The partner's voice is
+his first's, the one thing of his that is not his own.
 
 **Choosing it.** On the Battle type page before the character select
 (ReBushido's main menu) the third row, **Fighters**: One on one, Two on

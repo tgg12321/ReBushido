@@ -175,8 +175,8 @@ s32 model_PortLoadPartner(Model *model, s32 slot, s32 model_id, s32 file_addr,
     }
     port_SetVramBankLoading(FALSE);
     if (slot != 0) {
-        tex_ShiftBlockPages(mesh_block, MODEL_SECOND_SLOT_PAGES, 0,
-                            MODEL_SECOND_SLOT_PAGES, 0);
+        tex_ShiftBlockPages(
+            mesh_block, MODEL_SECOND_SLOT_PAGES, 0, MODEL_SECOND_SLOT_PAGES, 0);
     }
     tex_PortMarkBank(mesh_block);
     tex_PortMarkBank(mesh_block + 1);

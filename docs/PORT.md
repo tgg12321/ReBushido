@@ -7005,7 +7005,10 @@ prefix allowed, or the number: `--fight tatara-shrine kannuki
 mikado:nodachi`. A fighter's weapon follows a colon (a katana if none),
 the second fighter is the CPU's (`--fight-2p`: the second pad's;
 `--fight-cpu`: the first is the CPU's too, a fight that plays itself, as
-the select screen's own choice of two CPUs), the mode is versus. A
+the select screen's own choice of two CPUs), the mode is versus. With
+`--teams cpu` or `pads` it is two on two, each team two of its first
+unless `--partners FIGHTER FIGHTER` names the seconds the same way
+(`--partners tatsumi:nodachi utsusemi:yari`; "Two on two"). A
 stage's name that is no stage's is a mod's arena's (MODS.md, "Custom
 arenas": the fight is on the stage it stands in for, with the arena in
 play); a fighter's name not known prints the names, and a stage's that no
@@ -9830,17 +9833,19 @@ both sizes, the traces the same line for line:
 | --- | --- |
 | `retarget` | `--fight` Kannuki against Mikado, every fighter a person's, only the first played: 1 targets 2 as the fight starts, R2 turns him to 4, his blow lands on 4 (counted against 4, by 1, none on 2), 4 falls and 1 is turned to 2 by himself, 2 falls: the second team out, the winner the first, the fight resting on 1 and 2 (the last to fall), the game's fall, replay and menu |
 | `pads` | the third pad: 3 turns from 4 to 2 with his R2 and his blows land (on 4, beside 2) |
-| `menu` | ReBushido's main menu: the rule page to Stock 2 and two on two with the CPU's partners, the grid, the stage; three fights of four, the score's card between, the result's |
+| `menu` | ReBushido's main menu: the rule page to Stock 2 and two on two with the CPU's partners, the grid, the grid again for the partners (the first's one place down, the second's his first's), the stage; fights of four characters (Kannuki and Mikado, Gengoro and Kaun), the score's card between, the result's; the second player strikes too, so that no fight stands off |
+| `menu_pads` | the same with four players: the partners picked by the third and fourth pads (`P3`, `P4`), one place and two down, their weapons one along; a first fight of four characters |
 | `cpu` | all four the CPU's: a fight that plays itself to a team out |
 | `second_wins` | the firsts written down (a `poke`), the fight goes on with the seconds, then 3: the second team's win |
 | `draw` | all four written down at once: both teams out, the game's draw |
 | `stock` | `--match stock:2`, the CPU's partners: two fights, the score's card, the next fight with all four up, the result |
+| `four` | `--fight` Kannuki against Mikado, `--partners tatsumi:nodachi utsusemi:yari`, all four the CPU's: four characters and four weapons (`port_duo_character_1` to `_4`), a fight to one team out, the game's own fall, replay and winner's view |
 
-`retarget`, `pads` and `cpu` are recorded as replays and played back by
-both sizes with `--replay-check`, every hash the same (and `pads`' input
-of the third pad with them). `make port-rollback` rolls back `retarget`,
-`pads` and `stock` every 24 frames on both sizes, plain and quietly,
-with no difference. Online: NETPLAY.md, section 18.
+`retarget`, `pads`, `cpu` and `four` are recorded as replays and played
+back by both sizes with `--replay-check`, every hash the same (and `pads`'
+input of the third pad with them). `make port-rollback` rolls back
+`retarget`, `pads`, `stock` and `four` every 24 frames on both sizes,
+plain and quietly, with no difference. Online: NETPLAY.md, section 18.
 
 **Four players online** (NETPLAY.md, section 18): a session of four pads
 (`--players 4`, four PCs, or `2x2`, two on each of two) is two on two
