@@ -1919,28 +1919,96 @@ moves), when its weapon can hit (the marks), the frames themselves, and
 the CPU's scripts. The log says it: `motions: u123 from ..., 252816
 bytes over the disc's sectors 3871 to 3994`.
 
-**What is not done yet**, and how it would be:
+### A mod's weapon on the select screens
 
-- **A motion of a mod's own beside the game's**, not in place of one:
-  a weapon's file saying `motions = KEY`, and its fighters loading
-  that file into their motion slot in place of their set's
-  (`motion_LoadFighterFiles`). The slot's file is found by the set's
-  number (`g_motion_loaded_sets`), so the mod's set needs a number of
-  its own (a weapon class past 7 in the set's top digit) that the rest
-  of the game, which reads the weapon from the fighter and not from the
-  set, never sees; the slot's room is the largest disc file's.
+Every new slot (a weapon file with `replaces = no`) is on the **weapon
+select**, on its base: with the cursor on the katana, **L1** and **R1**
+go round the katana's variants, the game's own katana first and then
+each mod's weapon on the katana in the mods' order, and Cross picks
+the one shown. A line under the weapon row says which (the mod's
+weapon's `name` in gold, or "the game's own" and how many of the mods'
+there are); the weapon row's own picture and name stay the base's.
+Moving the cursor to another weapon goes back to the game's own. Each
+side chooses on its own pad, as the row is chosen. In every mode whose
+select screen has the weapon row (versus, versus the CPU, story,
+practice), the fighter picked keeps it until the select screen loads
+again, through a versus the CPU run and every rematch. A `--weapon`
+of the run still gives a fighter a new slot without the select screen;
+a pick on the select screen comes before it.
+
+What the select screen holds of it is **the game's state**
+(`g_port_weapon_pick`, `src/port/weapon_pick.c`, a state file): each
+side's variant under its cursor and each fighter's pick, saved, put back
+and hashed with the rest, so a rollback puts it back, the two machines
+of a session pick the same with the same presses, and a replay picks it
+again. The weapons themselves are the same on both machines or the
+session is refused (Netplay, below).
+
+**Its own model.** `model = KEY` (format 2) names a mod's
+`models/KEY.glb`, which the remastered picture draws in the fighter's
+hand in place of the weapon model, in the format of the game's own
+weapon models (PORT.md, "The fighters' own models", "The weapons"). The
+fighter is told by the hand whose bone the game gave the weapon's
+matrix (`weapon_Queue`, `port_FighterHeldModel`). The console's picture,
+Graphics: Original, draws `models =`'s numbers, the base's if it does not
+say; so does a weapon lying loose after a fight, and two on two. A model
+that no mod has is said in the log, and the base's is drawn.
+
+**Its own motions.** `motions = KEY` (format 2) names a mod's
+`motions/KEY.bbm`, a whole motion file in the disc's format
+([`formats/BBM.md`](formats/BBM.md)): every character fighting with the
+weapon loads it in place of his set's file. Its motion set is a number of
+its own (`port_WeaponMotionSet`): the weapon class 8 and on in the top
+digit (one for each weapon with motions, eight at most) and the base's
+stance kinds below, so the game's two slots of motion files tell it
+from the disc's sets and two fighters share it only when both have it;
+`motion_LoadFighterFiles` reads it from the mod
+(`port_WeaponReadMotions`) where it would read a set's file off the disc,
+and the two special stances follow the base's class
+(`port_WeaponMotionClass`). A file larger than the game's room for one
+(the disc's largest set's file) or missing leaves the weapon out, with the
+reason in the log. The log says the set the base would have had,
+`weapons: the fighter in place 1 fights with kanabo, whose base's motion
+set is 0321`: its file on the disc (`U123.BBM`) is where a weapon's own
+motions start from. Everything else of the weapon is still the base's:
+its sounds, the CPU's scripts (in the motion file: so a weapon's own file
+brings its own), the scabbard, the dropped weapon.
+
+**A file of format 2**: `model =` and `motions =` are its; a file that
+says them with `format = 1` is refused ("model and motions are format
+2's"), and a program before them refuses a format 2 file with "a later
+ReBushido is needed".
+
+### The kanabo
+
+The program ships one weapon as an example, **`mods/kanabo/`**
+(`src/port/mods/kanabo/`), left out until its `mod.txt` says `enabled =
+yes`: an iron-studded war club on the katana, longer (its tip at 1,100
+to the katana's 950), a little slower (0.95) and heavier in a clash (1.4), with
+the katana's motions. Its model, `models/kanabo.glb`, is made by
+`tools/weapon_kanabo.py` from numbers alone: an octagonal shaft
+widening to the cap, rows of iron studs, a corded grip, a collar and a
+pommel ring, its texture drawn by the script; nothing of the disc's or of
+any other game's, and no AI-made or bought mesh.
+
+### What is not done yet
+
+- **A place of its own in the grid**: a mod's weapon is a variant of its
+  base on the base's place, its picture and name the base's; a seventh
+  place needs the select screen's file's pictures and names
+  (`select_data.c`, `SelectFile.weapon_pixels`) and a `weapon_id` of its
+  own everywhere the game indexes by weapon (the tables above, the
+  sounds', the CPU's, the dropped object's).
 - **One move attached to another file's motion**: a move's motion is a
   number in its own file's table, and its frames are in that file's
   stream, so a move of another file's is the file's own after a merge:
   a tool (beside `tools/inspect_bbm.py`) that adds a motion, its marks
-  and its frames to a file and points a move at it.
-- **New weapon types on the select screens**: a slot past the eight
-  with its place in the grid, its picture and its name
-  (`select_data.c`, the select screen's file), and its own
-  `weapon_id` everywhere the game indexes by weapon (the tables above,
-  the motion set's digit, the sounds' table, the CPU's): the port's
-  table would give those rows for it.
-- **A weapon's sounds and its dropped object** as numbers of the file.
+  and its frames to a file and points a move at it. A weapon's own motion
+  file is whole, made from a disc file by such a tool or by hand.
+- **A weapon's sounds and its dropped object** as numbers of the file;
+  the CPU's own weapons in versus the CPU (`g_vscpu_weapons`) and team
+  battle's are the game's.
+- **Its own model in two on two** and on a weapon lying loose.
 
 ### Netplay
 
@@ -1952,9 +2020,13 @@ not the same" ([`NETPLAY.md`](NETPLAY.md), section 13). Both players
 give the same `--weapon`s, which say both places'. What is read is
 none of the game's state (`config/port_state.txt`): the table is made
 once and only read; which weapon a fighter has is worked out each time
-from his place and his `weapon_id`, which are the game's, so a rollback
-has nothing of it to put back. A motion file is the game's state where
-the game loaded it, as the disc's is.
+from his place and his `weapon_id` and the weapon select's pick, which
+are the game's (`g_port_weapon_pick`), so a rollback puts it back with
+the rest. A motion file is the game's state where the game loaded it, as
+the disc's is; a weapon's own motion file, read from the mod, likewise.
+A weapon's own model is hashed into the session's set-up too: both
+players must have the same mod, every file of it, or the guest is turned
+away with the reason on the online page.
 
 ### How it is proved
 

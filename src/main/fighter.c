@@ -130,6 +130,17 @@ void motion_LoadFighterFiles(
             set_2 = MOTION_SET(
                 weapon_2, g_fighter_stance_kinds[character_2][weapon_2]);
         }
+#if RB_PORT
+        /* a mod's weapon with a motion file of its own has a set of its
+         * own (port_weapons.h) */
+        if (g_fight_mode != FIGHT_MODE_CHANBARA) {
+            set_2 = (u16)port_WeaponMotionSet(1, weapon_2, set_2);
+        }
+        set_1 = (u16)port_WeaponMotionSet(0, weapon_1, set_1);
+        if (g_fight_mode == FIGHT_MODE_CHANBARA) {
+            set_2 = set_1;
+        }
+#endif
         g_fighters[0].motion_set = set_1;
         g_fighters[1].motion_set = set_2;
 
@@ -159,15 +170,23 @@ void motion_LoadFighterFiles(
 
     for (i = 0; i < 2; i++) {
         if (sets_to_load[i] != 0) {
-            for (work = 0; g_motion_set_files[work].set != 0; work++) {
-                if (g_motion_set_files[work].set == sets_to_load[i]) {
-                    break;
+#if RB_PORT
+            /* a mod's weapon's own file, read from the mod: none of the
+             * disc's files is its */
+            if (!port_WeaponReadMotions(
+                    sets_to_load[i], g_motion_fighter_files[i]))
+#endif
+            {
+                for (work = 0; g_motion_set_files[work].set != 0; work++) {
+                    if (g_motion_set_files[work].set == sets_to_load[i]) {
+                        break;
+                    }
                 }
+                cdrom_StartRead(cdrom_GetFileIndex(CDROM_GROUP_MOTION,
+                                                   work + MOTION_FILE_SETS),
+                                (s32)g_motion_fighter_files[i]);
+                cdrom_WaitIdle();
             }
-            cdrom_StartRead(
-                cdrom_GetFileIndex(CDROM_GROUP_MOTION, work + MOTION_FILE_SETS),
-                (s32)g_motion_fighter_files[i]);
-            cdrom_WaitIdle();
             /* the moves follow the file's rows of per-stance moves */
             g_motion_fighter_sections[i].moves = (u16 *)ADDR(
                 (s32)g_motion_fighter_files[i] + 0x6C +
@@ -221,6 +240,15 @@ void motion_OpenStreams(void) {
 #endif
 }
 
+/* The weapon class whose rules a set's fighter has: the set's own, or on
+ * the port a mod's weapon's base where the set is its own motion file's
+ * (port_weapons.h). */
+#if RB_PORT
+#define MOTION_SET_CLASS(set) port_WeaponMotionClass(set)
+#else
+#define MOTION_SET_CLASS(set) MOTION_SET_WEAPON(set)
+#endif
+
 /* Finds the file the fighter's motion set is in, and which of its three
  * stances are the two-sword and the sheathed one. Either can be used while
  * the fighter has the use of its arm, but not by chanbara's opponents short
@@ -239,7 +267,7 @@ void motion_AttachFighter(s32 fighter_index) {
     }
     fighter->motion_slot = i;
     fighter->borrow_other_motion = 0;
-    if (MOTION_SET_WEAPON(fighter->motion_set) < MOTION_SET_SPECIAL_WEAPONS) {
+    if (MOTION_SET_CLASS(fighter->motion_set) < MOTION_SET_SPECIAL_WEAPONS) {
         for (i = 0; i < STANCE_COUNT; i++) {
             s32 kind = MOTION_SET_STANCE_KIND(fighter->motion_set, i);
 

@@ -1,0 +1,17 @@
+# The kanabo: an iron-studded war club, the example of a mod's own weapon
+# (docs/MODS.md, "A mod's weapon on the select screens"). It is a new slot
+# on the katana: on the weapon select, R1 or L1 on the katana shows it.
+# It fights with the katana's motions, sounds and CPU, and numbers of its
+# own: longer, slower and heavier in a clash.
+format = 2
+name = Kanabo
+base = katana
+replaces = no
+# the striking length: from the collar to the cap, straight
+points = 0 0 1100, 0 0 300
+speed = 0.95
+power = 1.4
+# in the remastered picture, the club's own model (models/kanabo.glb, made
+# by tools/weapon_kanabo.py); the console's picture keeps the katana's
+model = kanabo
+cpu_reach = 200

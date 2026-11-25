@@ -785,6 +785,8 @@ s32 select_Load(
      * stage with an arena versus mode chose */
     port_StageChoiceReset();
     port_PlayReset();
+    /* and no mod's weapon picked (port_weapons.h) */
+    port_WeaponPickReset();
 #endif
 #if RB_PORT
     /* the stage pages' row of music starts from the window's fight_music
@@ -1972,6 +1974,14 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                     snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
                     g_select_weapon_cursors[side]--;
                 }
+#if RB_PORT
+                /* the mods' new weapons on the one under the cursor
+                 * (port_weapons.h): L1 and R1 go round them */
+                port_WeaponPickStep(
+                    side, g_select_weapon_ids[g_select_weapon_cursors[side]],
+                    (g_select_pressed & PAD_OF(PADL1, pad)) != 0,
+                    (g_select_pressed & PAD_OF(PADR1, pad)) != 0);
+#endif
                 g_select_weapon_cursor_rows[side] = side;
                 if (g_select_mode == FIGHT_MODE_CHANBARA) {
                     s32 clan;
@@ -2003,6 +2013,9 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                         MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
                     g_select_picks.rec[side].weapon =
                         g_select_weapon_ids[g_select_weapon_cursors[side]];
+#if RB_PORT
+                    port_WeaponPickTake(side, g_select_picks.rec[side].weapon);
+#endif
                     clan = 1;
                     if (g_select_mode == FIGHT_MODE_PRACTICE &&
                         !(g_select_settings->practice_round) && side == 1) {

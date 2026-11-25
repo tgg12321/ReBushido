@@ -199,6 +199,8 @@ PORT_GL_FIGHTER_FUNCTIONS
 #define MODEL_REMAP 27
 /* The weapon models (enum WeaponModel), whose files are `W00` to `W57`. */
 #define WEAPON_FILES 58
+/* the mods' weapons with models of their own (port_weapons.h) */
+#define MOD_WEAPON_MODELS 32 /* PORT_WEAPONS_MAX */
 /* GL's float texture, for what the game has done to a colour table */
 #define GL_RGBA32F 0x8814
 /* How much nearer the game sorts a cloth's face than it is
@@ -447,6 +449,9 @@ static struct {
     FILE *dump;
     FighterModel model[MODELS_MAX];
     FighterModel weapon_model[WEAPON_FILES];
+    /* the mods' weapons' own models, each by its key's pointer */
+    FighterModel mod_weapon_model[MOD_WEAPON_MODELS];
+    const char *mod_weapon_key[MOD_WEAPON_MODELS];
     FighterModel tiny_model[TINY_FILES];
     /* the tiny model of the frame on show and the frame after it, and
      * whether it is drawn in this picture */
@@ -1045,6 +1050,11 @@ void port_GlFighterSetFolder(const char *folder) {
             g_fighter.model[i].state = MODEL_UNTRIED;
         }
     }
+    for (i = 0; i < MOD_WEAPON_MODELS; i++) {
+        if (g_fighter.mod_weapon_model[i].state == MODEL_MISSING) {
+            g_fighter.mod_weapon_model[i].state = MODEL_UNTRIED;
+        }
+    }
     for (i = 0; i < WEAPON_FILES; i++) {
         if (g_fighter.weapon_model[i].state == MODEL_MISSING) {
             g_fighter.weapon_model[i].state = MODEL_UNTRIED;
@@ -1378,6 +1388,37 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
     }
     snprintf(name, sizeof(name), "W%02d", weapon);
     return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name);
+}
+
+/* The model a weapon as drawn this frame is drawn from: a mod's weapon's
+ * own (`model =`, port_WeaponHeldModel), found by its key, or else the
+ * weapon model's (`W00` to `W57`). A key keeps one place among
+ * MOD_WEAPON_MODELS for the run; its pointer is the weapons' table's,
+ * which does not change. */
+static FighterModel *port_GlFighterWeaponOf(const PortFighterWeapon *weapon) {
+    FighterModel *model;
+    s32 i;
+
+    if (weapon->model_key == NULL) {
+        return port_GlFighterWeaponModel(weapon->weapon);
+    }
+    for (i = 0; i < MOD_WEAPON_MODELS; i++) {
+        if (g_fighter.mod_weapon_key[i] == NULL) {
+            g_fighter.mod_weapon_key[i] = weapon->model_key;
+        }
+        if (g_fighter.mod_weapon_key[i] == weapon->model_key) {
+            break;
+        }
+    }
+    model = i < MOD_WEAPON_MODELS ? &g_fighter.mod_weapon_model[i] : NULL;
+    if (model == NULL || model->state == MODEL_MISSING) {
+        return port_GlFighterWeaponModel(weapon->weapon);
+    }
+    if (model->state == MODEL_LOADED) {
+        return model;
+    }
+    model = port_GlFighterLoad(model, weapon->model_key);
+    return model != NULL ? model : port_GlFighterWeaponModel(weapon->weapon);
 }
 
 /* A tiny model's (g_model_tiny_ids): `T00` to `T26`. */
@@ -2842,8 +2883,7 @@ static s32 port_GlFighterBound(
         }
     }
     for (i = 0; i < weapon_count && has_frame && !box.is_whole; i++) {
-        const FighterModel *model =
-            port_GlFighterWeaponModel(weapons[i].weapon);
+        const FighterModel *model = port_GlFighterWeaponOf(&weapons[i]);
         double screen[2];
 
         if (model == NULL) {
@@ -3043,7 +3083,7 @@ static void port_GlFighterDrawAll(
     }
     for (i = 0; i < weapon_count && has_frame; i++) {
         const PortFighterWeapon *weapon = &weapons[i];
-        const FighterModel *model = port_GlFighterWeaponModel(weapon->weapon);
+        const FighterModel *model = port_GlFighterWeaponOf(weapon);
 
         if (model == NULL) {
             continue;
@@ -3301,7 +3341,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
             s32 i = port_GlFighterWeaponIndexOf(prim, weapons, weapon_count);
 
             if (i >= 0) {
-                model = port_GlFighterWeaponModel(weapons[i].weapon);
+                model = port_GlFighterWeaponOf(&weapons[i]);
                 place = PORT_FIGHTER_SLOTS + weapons[i].weapon;
                 s = weapons[i].weapon;
             }
@@ -3430,8 +3470,7 @@ s32 port_GlFighterCaster(PortAddress object, s32 is_cloth) {
     }
     for (i = 0; i < g_fighter.latest_weapons; i++) {
         if (g_fighter.latest_weapon[i].node == object) {
-            return port_GlFighterWeaponModel(
-                       g_fighter.latest_weapon[i].weapon) != NULL
+            return port_GlFighterWeaponOf(&g_fighter.latest_weapon[i]) != NULL
                        ? PORT_FIGHTER_SLOTS + i
                        : -1;
         }
@@ -3472,7 +3511,7 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
             return FALSE;
         }
         weapon = &g_fighter.latest_weapon[caster - PORT_FIGHTER_SLOTS];
-        model = port_GlFighterWeaponModel(weapon->weapon);
+        model = port_GlFighterWeaponOf(weapon);
         if (model == NULL) {
             return FALSE;
         }

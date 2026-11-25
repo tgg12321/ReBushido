@@ -1104,3 +1104,66 @@ s32 port_DuoTagPixels(
                                                : box->y;
     return TRUE;
 }
+
+/* ---- the mods' weapons on the weapon select (port_weapons.h) ---- */
+
+#define PICK_W 300
+#define PICK_H 16
+#define PICK_Y 182
+#define PICK_X_SIDE 320
+#define PICK_X_FIRST 10
+
+static MatchCanvas g_weapon_picks[PORT_WEAPON_SIDES];
+static s32 g_weapon_pick_now;
+
+void port_WeaponPickChoose(s32 side) { g_weapon_pick_now = side; }
+
+/* A side's line under the weapon row, where the weapon under its cursor
+ * has mods' weapons on it: the mod's weapon it shows (gold), or the
+ * game's own and how many there are to go round with L1 and R1. */
+s32 port_WeaponPickPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
+    s32 side = g_weapon_pick_now;
+    MatchCanvas *canvas;
+    const char *name;
+    char line[96];
+    s32 count;
+    s32 fresh;
+    s32 key;
+
+    if (side < 0 || side >= PORT_WEAPON_SIDES || area_w <= 0 || area_h <= 0) {
+        return FALSE;
+    }
+    name = port_WeaponPickShown(side, &count);
+    if (count == 0) {
+        return FALSE;
+    }
+    /* what it shows: the variant's place, and whether it is picked */
+    key = (s32)g_port_weapon_pick.variant[side] * 256 +
+          (s32)g_port_weapon_pick.picked[side] * 2 +
+          (g_port_weapon_pick.cursor_weapon[side] & 1) + count * 65536;
+    canvas = &g_weapon_picks[side];
+    if (!port_DuoCanvas(canvas, area_w, area_h, key, PICK_W, PICK_H, &fresh)) {
+        return FALSE;
+    }
+    if (fresh) {
+        g_canvas = canvas;
+        port_MatchRect(0, 0, PICK_W, PICK_H, COLOR_STRIP);
+        if (name != NULL) {
+            snprintf(line, sizeof(line), "L1  %s  R1", name);
+        } else {
+            snprintf(line, sizeof(line),
+                     "L1  the game's own (%d of the mods' "
+                     "more)  R1",
+                     (int)count);
+        }
+        port_MatchText(PICK_W / 2, PICK_H - 4, SIZE_LINE, PORT_FACE_BOLD, line,
+                       name != NULL ? COLOR_GOLD : COLOR_DIM, 0);
+        g_canvas = &g_match_page;
+    }
+    *pixels = canvas->pixels;
+    *box = canvas->box;
+    box->x = (PICK_X_FIRST + side * PICK_X_SIDE) * area_w / GAME_W;
+    box->y = PICK_Y * area_h / GAME_H;
+    return TRUE;
+}

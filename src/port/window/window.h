@@ -581,6 +581,12 @@ extern s32 port_DuoBandPixels(
 extern void port_DuoTagChoose(s32 who);
 extern s32 port_DuoTagPixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+/* A side's line under the weapon select's row, the side
+ * port_WeaponPickChoose chose: the mod's weapon its cursor shows, where
+ * the weapon has any (port_weapons.h; match_page.c). */
+extern void port_WeaponPickChoose(s32 side);
+extern s32 port_WeaponPickPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 /* "Single fight", "Stock N", "First to N" or "Crew N" into `out`. */
 extern void port_MatchRuleName(char *out, s32 room, s32 rule, s32 count);
 /* ReBushido's top menu as the window lays it over the game's page

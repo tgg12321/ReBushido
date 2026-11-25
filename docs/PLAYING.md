@@ -956,6 +956,16 @@ writes them all from your disc to begin from. A stage mod can change
 how fights play on it, so both players of a netplay session need the
 same ones. [`MODS.md`](MODS.md), "Music" and "Stages".
 
+A mod's **weapons** (`weapons/`) are new weapons on one of the game's:
+on the weapon select, **L1** and **R1** on a weapon go round it and the
+mods' weapons made on it, a line under the row saying which, and Cross
+picks it. A weapon may have its own model in the remastered picture and
+a motion file of its own. The program ships one to try, a studded war
+club on the katana: set `enabled = yes` in `mods/kanabo/mod.txt`. Both
+players of an online session need the same weapon mods, or the session
+is refused and the page says why. [`MODS.md`](MODS.md), "A mod's weapon
+on the select screens".
+
 ### The first start
 
 The first time the package's `rebushido.exe` starts with a disc, before
