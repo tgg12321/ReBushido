@@ -44,6 +44,11 @@ static const s16 g_pulse_sine[PULSE_FRAMES] = {
  * two fainter above */
 #define RULE_REACH 10
 #define RULE_GAP 3
+/* a line cut to fit (port_LookFit): what ends it, the longest line it
+ * cuts, and how far back it goes to cut at a space rather than a word */
+#define FIT_MORE "..."
+#define FIT_BYTES 256
+#define FIT_WORD 12
 
 static s32 port_LookX(const PortLook *look, s32 x) {
     return x * look->area_w / PORT_LOOK_GAME_W;
@@ -138,6 +143,59 @@ s32 port_LookMeasure(
     style.shadow_px =
         style.size / SHADOW_SHARE > 1 ? style.size / SHADOW_SHARE : 1;
     return port_TextMeasure(text, &style) * PORT_LOOK_GAME_W / look->area_w;
+}
+
+/* `text`'s first `keep` letters, the spaces and commas at their end left
+ * off, and "..." after them, into `out`. */
+static void port_LookCut(const char *text, u32 keep, char *out) {
+    while (keep > 0 && (text[keep - 1] == ' ' || text[keep - 1] == ',')) {
+        keep--;
+    }
+    memcpy(out, text, keep);
+    memcpy(out + keep, FIT_MORE, sizeof(FIT_MORE));
+}
+
+s32 port_LookFit(
+    const PortLook *look, s32 lines, s32 face, char *text, s32 room) {
+    char whole[FIT_BYTES];
+    char cut[FIT_BYTES + sizeof(FIT_MORE)];
+    s32 width = port_LookMeasure(look, lines, face, text);
+    u32 length = (u32)strlen(text);
+    u32 low = 0;
+    u32 high;
+    u32 keep;
+
+    if (width <= room) {
+        return width;
+    }
+    if (length >= FIT_BYTES) {
+        length = FIT_BYTES - 1;
+    }
+    memcpy(whole, text, length);
+    whole[length] = 0;
+    /* the most letters that fit with "..." after them (the width grows
+     * with the letters kept), then back to the word's start if it is near;
+     * never longer than it was, so that it fits where it was */
+    high = length > sizeof(FIT_MORE) - 1 ? length - (sizeof(FIT_MORE) - 1) : 0;
+    while (low < high) {
+        u32 mid = (low + high + 1) / 2;
+
+        port_LookCut(whole, mid, cut);
+        if (port_LookMeasure(look, lines, face, cut) <= room) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    keep = low;
+    while (keep > 0 && low - keep < FIT_WORD && whole[keep] != ' ') {
+        keep--;
+    }
+    if (keep == 0 || whole[keep] != ' ') {
+        keep = low;
+    }
+    port_LookCut(whole, keep, text);
+    return port_LookMeasure(look, lines, face, text);
 }
 
 void port_LookTitle(PortLook *look, const char *title) {

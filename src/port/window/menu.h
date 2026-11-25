@@ -159,6 +159,11 @@ extern s32 port_LookText(PortLook *look, s32 x, s32 y, s32 lines, s32 face,
                          const char *text, u32 color, s32 align);
 extern s32 port_LookMeasure(
     const PortLook *look, s32 lines, s32 face, const char *text);
+/* `text` cut where it is wider than `room` of the game's places, at a
+ * space where one is near, with "..." after it (never longer than it
+ * was): its width then. */
+extern s32 port_LookFit(
+    const PortLook *look, s32 lines, s32 face, char *text, s32 room);
 /* A page's title, centred over the panel, with the game's rule under. */
 extern void port_LookTitle(PortLook *look, const char *title);
 /* The cursor's colour `frames` after it last moved: the game's glow. */
@@ -221,9 +226,12 @@ extern s32 port_MenuWord(const char *word);
 
 /* The replays kept, read again: how many rows there are. */
 extern s32 port_ReplaysItems(void);
-/* A row's label and value (-1: the row that says there are none). */
+/* A row's label and value (-1: the row that says there are none): the
+ * fighters, and how long it is; and the smaller line under them, their
+ * weapons, when it was, the mode and the stage. */
 extern void port_ReplaysDescribe(
     s32 item, char *label, u32 label_room, char *value, u32 value_room);
+extern void port_ReplaysDetail(s32 item, char *out, u32 room);
 extern const char *port_ReplaysHelp(s32 item);
 /* The row's replay played from the game's next frame: TRUE, and the menu
  * closes; FALSE with why in `note`. */

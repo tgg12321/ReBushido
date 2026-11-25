@@ -10014,6 +10014,17 @@ Options row opened in the original:
   is not the one built in in gold (the settings menu's own rule, kept);
 - the help line under the rows in white, notes in grey, the keys under
   the panel in grey;
+- nothing runs into anything else, at any size of the window: a row's
+  value keeps what its name leaves it, its name what the value leaves
+  (the name at least 45 hundredths of the row), each cut with "..." at a
+  space where one is near only where they would meet (`port_MenuFitRow`,
+  `port_LookFit`, measured at the window's own size, as the letters are
+  drawn); a help line too long for the row is two lines of the smaller
+  letters, the second short of the version beside it (a note in its place
+  cuts the first). The Replays page's rows are two lines each, the
+  fighters (and the CPU's) with the replay's length or "cannot be played",
+  and under them in grey their weapons, the date, the mode and the stage,
+  six rows a page;
 - a page comes up with a fade of eight frames (`PORT_LOOK_FADE_FRAMES`):
   the game's own pages change with a cut and a music fade
   (`MENU_PAGE_FADE_TO_MODE`), which a page of rows that change often
@@ -10406,7 +10417,9 @@ runs a rollback's (`g_port_rerun`). `--replay FILE` plays one from the
 first boundary and ends; `--replay-check FILE` plays it quietly, with a
 restart from its middle and a skip to before the first cut on the way
 (as the keys ask for them), and ends with 0 if every hash, each time,
-was the one recorded. Headless runs record nothing
+was the one recorded; its last line says who won the fight by the game's
+state as the playback left it (`the winner by its state 0`: the first
+fighter; 1 the second, -1 nobody), which 	ools/relay/disputes.py reads. Headless runs record nothing
 unless `--replays FOLDER` says where (`--replays-keep N`); the window
 records into `replays/` beside the program unless it is a test's run
 (`--plan`, `--frames`). `replays_keep` and `replays_megabytes` take the
