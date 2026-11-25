@@ -8755,6 +8755,23 @@ fighters):
 | 31 Shainto cemetery: grass, petals, embers, fireflies | 3.83 / 4.78 | 1.31 |
 | 11 Kimigaura coast: the sea, four rocks, the sand's dust | 2.63 / 3.20 | 0.03 |
 | 20 Kabuki stage: embers alone | 2.38 / 3.22 | 0.02 |
+| *the second pass (2026-11-25), the same card, other agents' work beside it:* | | |
+| 8 Outside Meikyokan (`ra1-dressed`), the particles in the ground's depth; main's stored 3.63 / 4.53, 0.80 | 3.68 / 5.63 | 0.79 |
+| 29 Building rooftop (`ra1-rain`): 4,500 streaks of rain and their splashes, puddles ringed by it (at 6,000 streaks) | 4.67 / 6.56 | 1.63 |
+
+The rain is the dressing's dearest: its streaks are lit by the stage's
+light alone (no look into the sun's maps or the lights' list, as the other
+particles), a puddle's second pass, the post's code, skips the rest of
+the shader where there is no foam, and its rings are of the four squares
+nearest a place; it was 2.5 ms at the 95th centile with 9,000 streaks and
+all of that, 1.6 with 6,000 and none of it, and ships with 4,500, within
+`DRESS_BUDGET_MS` and its slack. A shaft of light is a box of twelve
+triangles whose pixels walk eight steps through it: a hall's three cost
+some tenths of a millisecond. The card's whole time of the dressed cases
+moved between runs by a millisecond with the other agents' work on the
+machine, the lighting's passes' 95th centile with it (0.6 to 2.2 ms on
+the Meikyokan's lawn), so the dressing's own pass (`dress`) is the
+measure that holds.
 
 So a stage of water and particles costs nothing measurable; a meadow
 costs what its blades on screen cost, about a millisecond at the 95th

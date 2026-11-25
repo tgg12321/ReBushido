@@ -11,7 +11,7 @@ gusts = 0.5
 [particles rain]
 kind = rain
 area = -14000 -14000 18500 14000
-count = 9000
+count = 4500
 size = 3
 top = 5000
 color = #A8B4C4

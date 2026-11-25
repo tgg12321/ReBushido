@@ -138,7 +138,7 @@ CASES = {
     # and the same with four fighters pushing the grass
     'ra1-dressed': (1, 'on', None),
     'ra1-dressed-stress': (1, 'on', 'fighters=4'),
-    # the building's rooftop in the rain: 9,000 streaks and their
+    # the building's rooftop in the rain: 4,500 streaks and their
     # splashes, puddles that mirror the stage (the post's reflections)
     'ra1-rain': (1, 'on', None),
 }

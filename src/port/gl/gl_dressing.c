@@ -1010,12 +1010,13 @@ static const char g_dress_water_fragment[] =
     "    return s;\n"
     "}\n"
     /* the rain's rings: a drop now and then in each square of 240 units,
-     * stateless, its ring running out and fading */
+     * stateless, its ring running out and fading; the four squares
+     * nearest a place are the rings that reach it */
     "vec2 rain_rings(vec2 at) {\n"
     "    vec2 s = vec2(0.0);\n"
-    "    vec2 cell = floor(at / 240.0);\n"
-    "    for (int i = -1; i <= 1; i++) {\n"
-    "        for (int j = -1; j <= 1; j++) {\n"
+    "    vec2 cell = floor(at / 240.0 - 0.5);\n"
+    "    for (int i = 0; i <= 1; i++) {\n"
+    "        for (int j = 0; j <= 1; j++) {\n"
     "            vec2 c = cell + vec2(float(i), float(j));\n"
     "            float h1 = w_hash(c);\n"
     "            float h2 = w_hash(c + vec2(17.0, 3.0));\n"
@@ -1053,8 +1054,17 @@ static const char g_dress_water_fragment[] =
     "    }\n"
     "    float deep = m.r;\n"
     "    float shore = m.b;\n"
+    /* the post's code wants nothing else where there is no foam: a
+     * puddle's or a still water's second pass is cheap */
+    "    if (u_pass == 1 && u_foam <= 0.0) {\n"
+    "        float shine = u_reflect * mask;\n"
+    "        if (shine < 0.02) { discard; }\n"
+    "        o_color = vec4(0.0, 0.0, 0.0, 0.6 + 0.25 * shine);\n"
+    "        gl_FragDepth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
+    "        return;\n"
+    "    }\n"
     "    vec2 at = v_place.xz - u_flow.xy * u_flow.z * u_clock;\n"
-    "    vec2 s = slope(at, v_place.xz);\n"
+    "    vec2 s = u_waves > 0.0 ? slope(at, v_place.xz) : vec2(0.0);\n"
     "    if (u_rain > 0.0) { s += rain_rings(v_place.xz); }\n"
     /* the flow's own streaks along it, so a stream is seen to run */
     "    if (u_flow.z > 0.0) {\n"
@@ -1066,11 +1076,13 @@ static const char g_dress_water_fragment[] =
     /* far off the waves are smaller than a pixel: their slope evened
      * out, so a sea far away is a sheen and not a ripple of sand */
     /* and broken up by a noise of their own, so they are not a lattice */
-    "    vec2 e = vec2(37.0, 0.0);\n"
-    "    vec2 q = at / 520.0 + vec2(u_clock * 0.09, -u_clock * 0.06);\n"
-    "    s += vec2(w_fbm(q + e.xy / 520.0) - w_fbm(q - e.xy / 520.0),\n"
-    "              w_fbm(q + e.yx / 520.0) - w_fbm(q - e.yx / 520.0))\n"
-    "         * 3.2 * u_waves;\n"
+    "    if (u_waves > 0.0) {\n"
+    "        vec2 e = vec2(37.0, 0.0);\n"
+    "        vec2 q = at / 520.0 + vec2(u_clock * 0.09, -u_clock * 0.06);\n"
+    "        s += vec2(w_fbm(q + e.xy / 520.0) - w_fbm(q - e.xy / 520.0),\n"
+    "                  w_fbm(q + e.yx / 520.0) - w_fbm(q - e.yx / 520.0))\n"
+    "             * 3.2 * u_waves;\n"
+    "    }\n"
     "    s *= 1.0 / (1.0 + v_depth / 9000.0);\n"
     /* up is -y */
     "    vec3 n = normalize(vec3(-s.x, -1.0, -s.y));\n"
@@ -1410,6 +1422,12 @@ static const char g_dress_particles_fragment[] =
     "        color = v_color.rgb * (added * 1.6 + base * 0.22);\n"
     "    } else if (v_glow > 0.5) {\n"
     "        color = v_color.rgb * 255.0 * (1.0 + 1.5 * (1.0 - smoothstep(0.0, 0.3, r)));\n"
+    "    } else if (u_kind == 6 || u_kind == 11) {\n"
+    /* the rain: thousands of thin streaks, lit by the stage's light
+     * alone, with no look into the sun's maps or the lights' list */
+    "        vec3 ir = max(u_light * vec3(0.0, -1.0, 0.0), vec3(0.0)) * 4096.0;\n"
+    "        base = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "        color = dress_shade(v_color.rgb, base, base);\n"
     "    } else {\n"
     "        vec3 lit = dress_light(v_place, normalize(u_eye - v_place), base);\n"
     "        color = dress_shade(v_color.rgb, base, max(lit, base));\n"
