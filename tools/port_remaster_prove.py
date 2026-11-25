@@ -37,8 +37,9 @@ sys.path.insert(0, os.path.join(ROOT, 'tools'))
 PROGRAM = 'build/port-gl/rebushido-gl'
 # The stages a fight can be set on (include/stage.h): 0 to 31. The six
 # after them are a mode's own -- the two team battle courts, chanbara's
-# hall, the two practice floors, and stage 37, which nothing in the code
-# names -- and are not a versus fight's: the menus cannot choose them,
+# hall, the two practice floors, and stage 37, link mode's castle rooftop
+# (select.c, SELECT_STAGE_LINK_TO) -- and are not a versus fight's: the
+# versus menus cannot choose them,
 # and `poke`ing one into a versus fight is what reaches them here
 # (tools/port_stage_prove.py).
 FIGHT_STAGES = 32

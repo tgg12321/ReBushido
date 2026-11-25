@@ -361,9 +361,21 @@ the stage").
     (`tools/port_dressing.py check`, a test) that nothing solid-looking
     stands where the collision grid lets a fighter walk; 27 stages
     dressed by the program's own mod, procedural, nothing downloaded or
-    taken from the disc; the bench's `ra1-dressed`. Left: the halls'
-    dust in the light, rain, the foliage casting into the sun's maps,
-    a piece's mesh shipped (MODS.md, "Not yet dressed").
+    taken from the disc; the bench's `ra1-dressed`. The second pass (the
+    owner, 2026-11-25: "work whatever items you can without my
+    intervention"; PORT.md, "The dressing", "The second pass"): all 38
+    stages dressed -- rain with splashes and puddles that mirror the stage
+    and the fighters (29, 30), candle smoke (2), shafts of light through
+    the halls' doors and windows with motes in them, from the stages' own
+    lights (0, 1, 32, 34; motes on 35, 36), sea spray (21), mist; water
+    with its depth's colour, shore foam, the post's reflections and a
+    stronger Fresnel (5, 11, 22), and the stream under the lost bridge
+    painted across the ground as flowing water (14); the particles drawn
+    in the ground's depth, which they had failed, and larger, with a glow
+    on the embers; three gravestones in the cemetery's pieces' place;
+    stage 37, link mode's castle rooftop, reached by `--fight 37` and
+    dressed; the bench's `ra1-rain`. Left: the foliage casting into the
+    sun's maps, gulls, more pieces' meshes.
 18. **Custom arenas**: a stage authored in Blender as a render mesh and
     a collision mesh with each face's surface (firm, sand, wet,
     barrier), compiled into the game's ground (`MODS.md`, "Stages");

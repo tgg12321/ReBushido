@@ -3868,16 +3868,16 @@ void port_GlDressingDrawMixed(const PortGlDressingView *view) {
 /* The shafts of light, at the picture's end (gl_dressing.h): over the
  * stage's walls and pieces the game painted after the ground, held by the
  * ground's depth. */
-void port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
+s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
     const PortDressSet *set;
 
     if (!g_dress.has_late) {
-        return;
+        return FALSE;
     }
     g_dress.has_late = FALSE;
     set = port_DressNow();
     if (set == NULL || w <= 0 || h <= 0) {
-        return;
+        return FALSE;
     }
     PORT_GPU_BEGIN(PORT_GPU_DRESS);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
@@ -3901,4 +3901,5 @@ void port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_SCISSOR_TEST);
     PORT_GPU_END();
+    return TRUE;
 }

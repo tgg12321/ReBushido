@@ -4240,9 +4240,10 @@ void port_GlFinishFrame(void) {
         PortGlPicture picture;
 
         port_GlGetPicture(&picture);
-        port_GlDressingDrawLate(
-            picture.framebuffer, picture.target_w, picture.target_h);
-        g_gl.has_state = FALSE;
+        if (port_GlDressingDrawLate(
+                picture.framebuffer, picture.target_w, picture.target_h)) {
+            g_gl.has_state = FALSE;
+        }
     }
     /* the lighting's passes after the scene (gl_post.h), over the picture
      * averaged down: with them, it is averaged down into a buffer of its

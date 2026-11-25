@@ -2953,7 +2953,8 @@ are the same picture either way and say nothing about the ground.
 **The six the menus cannot choose.** Stages 32 to 37 are the modes' own
 -- the two team battle courts, chanbara's hall, the two practice floors
 (35 is the dojo with the game's logo painted on the boards) and 37, which
-nothing in the code names. A versus fight cannot be set on them, so they
+no card names: the castle rooftop as link mode fights on it (`select.c`,
+`SELECT_STAGE_LINK_TO`; `--fight 37`). A versus fight cannot be set on them, so they
 had never been measured. They are reached the same way the other 32 are:
 a `poke` line of the plan holds both the stage the menus chose and the
 fight's own at that number from the character select to the end of the
@@ -8614,7 +8615,7 @@ stage dressed with what nobody touches -- foliage drawn by instancing and
 stirred by the wind, the fighters and the slashes; water; dust, leaves,
 embers, snow and petals; scenery meshes -- built on item 14's lights and
 item 20's time of day. The files are a mod kind of their own
-([`MODS.md`](MODS.md), "Dressing"); the program ships 27 stages' of them
+([`MODS.md`](MODS.md), "Dressing"); the program ships all 38 stages' of them
 (`src/port/mods/dressing/`). The window's `dressing` (on) turns it on and
 off; the prover's `--dressing` is off unless said, so every prover's
 picture is the stage as it was.
@@ -8766,15 +8767,99 @@ frame's pushers and dust, a few microseconds. With no dressing to draw
 (`dressing off`, a Classic stage, a stage with no file, every case of the
 bench but the dressed two) nothing of it is asked of the card.
 
+**The second pass** (the owner, 2026-11-25: "work whatever items you can
+without my intervention"): the weather, smoke and light, water that reads
+as water, particles that are seen, scenery meshes in pieces' places, and
+stage 37.
+
+- **What mixes is tested in the ground's depth.** The water wrote its
+  depth as the mesh does (the world's units over the mesh's range,
+  `gl_FragDepth`), but the particles left the card's own, another scale:
+  every particle in front of the ground failed the test, and only those
+  against the sky were drawn. That, not their size, is why the leaves,
+  the embers and the dust were hard to spot. They now write the mesh's
+  depth too; and the leaves, embers and petals of the shipped files are
+  half again as many and a fifth to two fifths larger, the dust a little
+  thicker, the embers and the fireflies a hot core with a glow about it
+  three times its size (their bloom: the post's own is of the lights'
+  list alone).
+- **The pictures' colours.** `tools/port_dressing.py shots` read the
+  window's pixels (`port_GlReadWindow`: ARGB words, blue first in
+  memory) as red first, so every picture of the first pass (its
+  `tmp/stages17/`) has red and blue swapped: a blue sea looked brown, a
+  beige beach blue. It reads them as they are now.
+- **The weather.** `rain` particles are streaks along their fall,
+  stretched across the line of sight, slanted by the wind, from `top` to
+  the mean height of the ground under the area, worked out from their
+  number and the clock; a third as many splashes, each a crown of a fifth
+  of a second at the ground. A water block's `puddles` lays the ground's
+  own faces of its colour 3 units up and keeps a patch of them where a
+  noise of the place passes a height (how much, `puddles`), darkening the
+  ground about each; `rain` rings them, a drop now and then in each square
+  of 240 units, stateless. `mist` is banks of soft quads, flattened,
+  drifting with the wind and wrapping within the area, fading near the
+  camera and at the area's edges; `spray` bursts of 24 thrown up along an
+  area and falling back; `smoke` rises from the game's flames (or the
+  ground), growing and thinning over five to eight seconds.
+- **Motes and shafts.** `motes` are lit by the frame's lights
+  (`lights_add_wrapped`, the stage's spots and their shadow maps, so they
+  are seen where a door's or a window's light falls) and a little by the
+  stage's light; added. A `shafts` block makes a box of air for each light
+  it names (a `DressBeam`: the opening across the light's way, along it to
+  the floor or the light's reach), drawn at the picture's end
+  (`port_GlDressingDrawLate`, from `port_GlFinishFrame` after the
+  shadows), over the walls and pieces the game paints after the ground and
+  held by the ground's depth: each pixel of its first face seen gathers
+  the light along the line of sight through the box, eight steps, clipped
+  at the floor's plane, soft at the box's sides, in blades across the
+  opening, fading along the light, stirred by a slow noise; added, at most
+  nine tenths of the light's colour. Its motes are particles inside the
+  box, brightest by the opening. A shaft is shown at the times its light
+  is, by the light's gain (`port_GlTimeLightGain`).
+- **The water.** Each water block grows a map, a texel of each place over
+  its areas and as far again as the foam reaches (256 a side; a stream's
+  512): how deep the ground lies under it (the stage's own water at its
+  height counts as deep), where a stream is (the texel under the place of
+  `on`'s colour, smoothed), and how near the shore is (a chamfer of the
+  distance from the ground standing above it). The fragment colours it
+  deep or shallow by it, lit by the light's brightness and not its hue (an
+  orange dusk leaves the sea a sea's colour), mirrors the sky tinted by
+  the water's own (never more than 0.62 of it, so the water's colour shows
+  even far off), with a Fresnel of the fourth power; foam laps along the
+  shore and caps rough water; the waves are broken by a noise and evened
+  out with distance. A second pass writes, into the alpha alone, the
+  post's code of a floor that reflects `reflect` (gl_post.h), so the
+  post's reflections -- the mirror of the floor's plane, or the
+  reflection on the screen -- show the stage's pieces and the fighters in
+  it (with `reflections` on). A stream (`on`) is laid on all the ground's
+  faces in its areas and kept by the map to its painted course, texel by
+  texel, its ripples carried by `flow`.
+- **Meshes in a piece's place.** A piece's box was the box of its faces
+  that look up, which leaves out a gravestone's sides under its top: it is
+  now of all its faces (`port_GlDressingNoteGround`). The cemetery's three
+  bare gravestones (pieces 3, 6 and 8) are stepped stones with chamfered
+  edges made by `tools/port_dressing.py meshes`.
+- **Stage 37** is the castle rooftop as link mode fights on it
+  (`select.c`, `SELECT_STAGE_LINK_TO`); `--fight 37` (`castle rooftop
+  link`) reaches it, and it is dressed.
+
+The state is still the picture's alone: `tools/port_dressing.py hashes
+--stages 8,11,31,29,0,14` (the rain, the shafts and the stream with the
+first pass's three) gives the same state at every blank with the dressing
+on and off, and each replay made with it on plays back with it off to the
+same hashes.
+
 **What is left.** The foliage takes the sun's shadows and does not cast
 any (the meshes cast into the sun's maps and the lights' cubes,
-`port_GlDressingDrawSunCasters`); no stage ships a mesh standing in for a
-piece; the water reflects the sky and the lights but not the stage or the
-fighters (the reflections on the screen are the floors' plane's,
-c of the lighting overhaul); a stream drawn on the ground's own faces
-follows them by whole faces, so a stream painted across them in its
-texture is better left alone (the stage under the lost bridge's); the
-halls want dust in the light; rain and puddles want a weather kind.
+`port_GlDressingDrawSunCasters`). The water's reflections are the
+post's, so they are only as good as the picture's own (`reflections`
+on; where the post's ray meets nothing, the sky the picture shows). A
+shaft is drawn over a fighter standing in front of it (a fighter writes
+no depth of his own). The `mist` kind is there, but no shipped stage's
+open water lies where the fight camera looks. Gulls over the ship. Only
+the cemetery's three plainest gravestones stand in for pieces: a mesh in
+a piece's place keeps the piece's box's proportions within a quarter, so
+each piece wants a model of its own.
 
 ## Every stage in every mode, and every unlock
 

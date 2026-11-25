@@ -82,8 +82,8 @@ extern void port_GlDressingDrawMixed(const PortGlDressingView *view);
  * drawn here, at the picture's end (gl_draw.c, port_GlFinishFrame), into
  * `framebuffer` of `w` by `h`: over the walls and pieces the game painted
  * after the ground, held by the ground's depth. Nothing where the last
- * ground drew none. */
-extern void port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h);
+ * ground drew none; TRUE where it drew, the card's state then changed. */
+extern s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h);
 
 /* The meshes as the sun or a light sees them, through `matrix` (a column
  * after a column), into the depth map bound now (gl_sun.h, gl_lights.h):
