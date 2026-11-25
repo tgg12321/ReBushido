@@ -62,8 +62,11 @@
  * state; a Crew match's end goes back to the top menu, which ends a
  * session of two (port_match.h). 13: the host's teams (port_duo.h) in
  * the welcome's match word, two on two's four fighters in the state, the
- * partners the CPU's (a session's input has two pads). */
-#define SESSION_PROTOCOL 13
+ * partners the CPU's (a session's input has two pads). 14: the music
+ * word's high half the sum of each machine's stage pieces (MODS.md,
+ * "Music"), a mod weapon's pick in the state, the weapon's model
+ * among the gameplay mods checked. */
+#define SESSION_PROTOCOL 14
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
