@@ -523,8 +523,14 @@ the stage").
     menu's Replays page plays one with pause, a frame, slower and faster,
     from the start and to the kill; `--replay`, `--replay-check`; every
     hash held, and `tools/port_replay.py` and `tools/port_net.py session`
-    play every recorded fight back the same. Left: a replay's export (a
-    film of it), and replays across builds (inputs from a pristine boot
+    play every recorded fight back the same. A replay's film (2026-11-25;
+    [`PORT.md`](PORT.md), "A replay as a film"): Square on the Replays
+    page, or `--replay FILE --export OUT`, plays it again in another run
+    with no window shown and writes the fight as an .mp4 (Windows' own
+    H.264 and AAC encoders) or an .avi (the port's own Motion JPEG, on
+    Linux), a frame a blank, the sound the fight's own; `tools/
+    port_film.py` holds its frames to `--tap-window` and its sound to
+    `--wav`. Left: replays across builds (inputs from a pristine boot
     state, which a fight's start does not need).
 24. **2v2** (longer term): four fighters in one fight, two teams; a
     button retargets to the other enemy; online with four players

@@ -63,7 +63,7 @@
  * (a footstep) had always just ended when the next was asked for, and
  * took its voice, where the console gives the next another voice: the
  * emulator said so (tests/play/port_sound.toml). */
-#define BLANK_HEAD_FRAMES 32
+#define BLANK_HEAD_FRAMES PORT_SPU_HEAD_FRAMES
 
 /* The DMA controller moves 64 bytes at a time: a transfer is rounded up
  * to that. */

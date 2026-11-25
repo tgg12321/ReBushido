@@ -669,6 +669,8 @@ static void port_RunMenu(u32 blank) {
             break;
         }
         port_MenuTick();
+        /* a film being made by another run, followed (sdl_export.c) */
+        port_ExportTick();
         port_ShowPage(
             blank, is_shot ? port_MenuShotPath(path, sizeof(path)) : NULL);
         if (!g_port_window_options.is_fast) {

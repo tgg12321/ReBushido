@@ -71,8 +71,89 @@ const char *port_ReplaysHelp(s32 item) {
                  g_rows[item].why);
         return g_help;
     }
-    return "Enter / Cross: watch it. Then Space pauses, Right a frame, Up "
-           "and Down the speed, R from the start, K to the kill, Escape back";
+    return "Enter / Cross: watch it.   Square / Delete: make a film of it "
+           "(films/)";
+}
+
+/* ---- a replay as a film (sdl_export.c) ---- */
+
+const char * const g_port_replays_film_settings[2] = {
+    "film_size", "film_picture"};
+
+s32 port_ReplaysExport(s32 item, char *note, u32 room) {
+    char why[PORT_REPLAY_WHY_BYTES];
+
+    if (item < 0 || item >= g_row_count) {
+        return FALSE;
+    }
+    if (!g_rows[item].playable) {
+        snprintf(note, room, "No film: %s", g_rows[item].why);
+        return FALSE;
+    }
+    if (!port_ExportBegin(
+            g_rows[item].path, g_rows[item].name, why, sizeof(why))) {
+        snprintf(note, room, "No film: %s", why);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+s32 port_ReplaysFilmShown(void) {
+    PortExportView view;
+
+    port_ExportGetView(&view);
+    return view.state != PORT_EXPORT_IDLE;
+}
+
+void port_ReplaysFilmDescribe(
+    char *label, u32 label_room, char *value, u32 value_room) {
+    PortExportView view;
+
+    port_ExportGetView(&view);
+    value[0] = 0;
+    switch (view.state) {
+    case PORT_EXPORT_RUNNING:
+        snprintf(label, label_room, "Making a film of %.40s", view.name);
+        snprintf(value, value_room, "%u%%   %u:%02u", view.permille / 10,
+                 view.seconds / SECONDS_PER_MINUTE,
+                 view.seconds % SECONDS_PER_MINUTE);
+        break;
+    case PORT_EXPORT_DONE:
+        snprintf(label, label_room, "Film made: %s", view.words);
+        break;
+    case PORT_EXPORT_FAILED:
+        snprintf(label, label_room, "No film: %s", view.words);
+        break;
+    default:
+        snprintf(label, label_room, "The film was stopped");
+        break;
+    }
+}
+
+const char *port_ReplaysFilmHelp(void) {
+    PortExportView view;
+
+    port_ExportGetView(&view);
+    if (view.state == PORT_EXPORT_RUNNING) {
+        return "Made by another run of the program, the game here as it "
+               "was. Enter / Cross: stop it";
+    }
+    if (view.state == PORT_EXPORT_DONE) {
+        return "In films/ beside the program: Windows, browsers and Discord "
+               "play an .mp4 as it is.  Enter / Cross: put this line away";
+    }
+    return "Enter / Cross: put this line away";
+}
+
+void port_ReplaysFilmAccept(void) {
+    PortExportView view;
+
+    port_ExportGetView(&view);
+    if (view.state == PORT_EXPORT_RUNNING) {
+        port_ExportStop();
+    } else {
+        port_ExportForget();
+    }
 }
 
 s32 port_ReplaysAccept(s32 item, char *note, u32 room) {

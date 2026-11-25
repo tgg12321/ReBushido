@@ -41,6 +41,7 @@
 #endif
 
 #include "port_host.h"
+#include "film.h"
 #include "port_mods.h"
 #include "port_net.h"
 #include "port_online.h"
@@ -157,6 +158,13 @@ static const char g_port_window_usage[] =
     "settings and what the PC is, in a folder report-... beside the log.\n"
     "--fight STAGE FIGHTER FIGHTER starts straight in a fight (below).\n"
     "\n"
+    "A replay as a film: --replay FILE --export OUT.mp4 plays it with no\n"
+    "window shown, as fast as the PC goes, and writes the fight as a film\n"
+    "with its sound: an .mp4 (H.264 and AAC, by Windows' own encoders) or\n"
+    "an .avi (Motion JPEG and the sound as it is, on any system). It is\n"
+    "1920 by 1080 unless --window WxH says, the picture as --graphics or\n"
+    "the settings say (docs/PLAYING.md, \"Replays\").\n"
+    "\n"
     "Online: the settings menu's Play online page, or --host ADDRESS:PORT\n"
     "(0.0.0.0:7845 to be found from other PCs) and --join ADDRESS:PORT\n"
     "on the other PC, with --net-delay N on the host's (docs/PLAYING.md,\n"
@@ -194,7 +202,9 @@ static const char g_port_window_usage_end[] =
     "--shot-at N[,P] (what F12 does, at blank N, keeping the Pth\n"
     "picture of it: 0 is the game's own frame and -1 the last shown),\n"
     "--window WxH (a window, not the full screen, that size as it opens), --tap-audio FILE\n"
-    "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
+    "(the samples as they are queued), --film-read FILM FOLDER --film-at\n"
+    "N[,N...] (a film read back: those frames, as --tap-window's files,\n"
+    "and its sound), --fault-at N and --fault-in-sound N\n"
     "(touch memory that is not there at vertical blank N, on the game's\n"
     "stack or on the sound card's thread: what a crash leaves in the\n"
     "log), --menu-at N[,N...] (what F1 does, at those blanks),\n"
@@ -495,6 +505,22 @@ static void port_DiscModsKey(const char *image, char *key, size_t room) {
 static s32 g_port_main_argc;
 static char **g_port_main_argv;
 static char *g_port_main_path;
+static const char *g_port_image_path;
+
+const char *port_GetProgramPath(void) { return g_port_main_path; }
+
+const char *port_GetImagePath(void) { return g_port_image_path; }
+
+const char *port_GetCommandWord(const char *option) {
+    s32 i;
+
+    for (i = 1; i + 1 < g_port_main_argc; i++) {
+        if (strcmp(g_port_main_argv[i], option) == 0) {
+            return g_port_main_argv[i + 1];
+        }
+    }
+    return NULL;
+}
 
 /* What a start as a session leaves out of the command line it was
  * started with: the network's options, which it gives anew, and the
@@ -895,6 +921,11 @@ int main(int argc, char **argv) {
     s32 shadows = -1;
     PortRemasterView view;
     s32 is_session = 0; /* started into a session of online play */
+    /* a replay's film made (--export), or one read back for a test */
+    const char *export_path = NULL;
+    const char *film_read = NULL;
+    const char *film_folder = NULL;
+    const char *film_at = NULL;
     s32 code;
     s32 i;
 
@@ -1001,6 +1032,13 @@ int main(int argc, char **argv) {
             options->fault_at = atoi(argv[++i]);
         } else if (strcmp(word, "--fault-in-sound") == 0 && has_value) {
             options->fault_in_sound = atoi(argv[++i]);
+        } else if (strcmp(word, "--export") == 0 && has_value) {
+            export_path = argv[++i];
+        } else if (strcmp(word, "--film-read") == 0 && i + 2 < argc) {
+            film_read = argv[++i];
+            film_folder = argv[++i];
+        } else if (strcmp(word, "--film-at") == 0 && has_value) {
+            film_at = argv[++i];
         } else if (strcmp(word, "--fast") == 0) {
             options->is_fast = 1;
         } else if (strcmp(word, "--quick-loading") == 0 && has_value) {
@@ -1163,6 +1201,45 @@ int main(int argc, char **argv) {
             passed[count++] = argv[i];
         }
     }
+    if (film_read != NULL) {
+        /* a film read back, for a test (film.h), and nothing else */
+        char why[PORT_FILM_WHY_BYTES];
+
+        if (!port_FilmRead(film_read, film_folder,
+                           film_at != NULL ? film_at : "0", why, sizeof(why))) {
+            fprintf(stderr, "rebushido: --film-read: %s\n", why);
+            return PORT_EXIT_FAILED;
+        }
+        return PORT_EXIT_OK;
+    }
+    if (export_path != NULL) {
+        /* a replay's film (sdl_export.c): a window never shown, of the
+         * film's size, as fast as the PC goes, with the game's own
+         * picture a blank and nothing over it */
+        char why[PORT_FILM_WHY_BYTES];
+
+        if (port_GetCommandWord("--replay") == NULL) {
+            port_Complain("--export makes a film of a replay: --replay FILE "
+                          "says which",
+                          "");
+        }
+        if (options->window_w == 0) {
+            options->window_w = PORT_FILM_WIDTH;
+            options->window_h = PORT_FILM_HEIGHT;
+        }
+        if (!port_ExportSetUp(export_path, options->window_w, options->window_h,
+                              why, sizeof(why))) {
+            port_Complain("--export: ", why);
+        }
+        options->is_fast = 1;
+        options->is_hidden = 1;
+        no_fps = 1;
+        no_vsync = 1;
+        fullscreen = 0;
+        run_ahead = 0;
+        frame_rate = PORT_FRAME_RATE_ORIGINAL;
+        has_frame_rate = 1;
+    }
     if (!no_log) {
         port_OpenLog(log, beside);
     }
@@ -1193,9 +1270,10 @@ int main(int argc, char **argv) {
                       "for its tests: not a release's",
                       "");
     }
-    port_UpdateSetUp(beside, options->update_url, options->update_key,
-                     !is_session && !options->prepare_only &&
-                         (!has_end || options->update_url != NULL));
+    port_UpdateSetUp(
+        beside, options->update_url, options->update_key,
+        !is_session && !options->prepare_only && export_path == NULL &&
+            (!has_end || options->update_url != NULL));
     if (options->update_rolled_back != NULL) {
         port_UpdateRolledBack(options->update_rolled_back);
     }
@@ -1324,7 +1402,7 @@ int main(int argc, char **argv) {
     /* every fight kept in replays/ beside the program, in a player's run;
      * a test's keeps none unless its --replays, which comes after, says
      * where (docs/PLAYING.md, "Replays") */
-    port_StartReplayWindow(beside, has_end);
+    port_StartReplayWindow(beside, has_end || export_path != NULL);
     port_WindowGameSwitches();
     passed[count] = NULL;
     {
@@ -1339,6 +1417,7 @@ int main(int argc, char **argv) {
         port_Note("command line:%s", line);
     }
     if (image != NULL) {
+        g_port_image_path = image;
         port_NoteImage(image);
     }
     if (options->update_started) {

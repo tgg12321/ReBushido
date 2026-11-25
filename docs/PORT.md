@@ -10365,6 +10365,101 @@ run twice). A spectator puts it in as a playback puts its file's start
 in (`port_ReplayLoadServed`: this run's own kept, the hash held to the
 host's) and runs the match on from there (netplay.c, `port_RunWatch`).
 
+### A replay as a film
+
+ROADMAP 23's export. How a player makes one: [`PLAYING.md`](PLAYING.md),
+"Replays". The code: `src/port/window/sdl_export.c` (the run that makes
+one and the run that asks for one), `film.c` (what a film is, the AVI,
+and a film read back), `film_jpeg.c` (the AVI's pictures) and
+`film_mf.c` (the MP4), all of the window's build and none of the state.
+
+**Another run makes it.** `--replay FILE --export OUT` is the window's
+program on a window never shown, of the film's size (`--window`, 1920 by
+1080 unless it says), as fast as the PC goes (`--fast`), with nothing over
+the picture (no counter, no replay's line: a hidden window draws none),
+one picture a blank (`frame_rate original`) and no frame run ahead. Every
+blank from the first whose screen is the fight (`port_IsFightScreen`) to
+the replay's end is a frame: the window's own pixels read as the blank's
+picture is drawn, before anything is laid over it (`port_ExportTake`,
+where `--tap-window` reads them too), and the samples the window is given
+(`port_QueueSound`) from that blank's moment on. The settings menu's
+Replays page starts that run (`port_ExportBegin`: the program's own path,
+its disc image, the settings file and mods it runs with, `film_size`,
+`film_picture`) and follows its lines (`film: frame F of N`, then where
+the film went or why there is none) through a pipe; Cross stops it (the
+run ended, its file taken away), and ending the program ends it (a
+Windows job, Linux's parent-death signal). So the game that asked is
+never touched: its state, its window, its sound and its pace are its
+own, and the film's run reads the replay as `--replay` does.
+
+**Why a frame a blank.** The game steps at the console's vertical blank,
+4,500,000 / 75,218 a second (59.826: 263 lines of an NTSC frame at 4.5
+MHz / 286), and the sound chip's 44,100 samples a second are counted
+against it (`sound.c`, 737 and 341/2500 samples a blank). A film at that
+rate is the console's own picture blank for blank, and its sound is the
+samples of each blank's time: the two cannot drift. 60 frames a second
+would show a blank twice every 9 seconds or stretch the sound; 30, the
+fight's own frames, would lose the menus' and the effects' blanks that
+change between two. Players take 59.826 as they take 59.94. A blank's
+picture is shown from its moment, and the samples made after the moment
+(`PORT_SPU_HEAD_FRAMES`, made with the blank's tick) are its first, so
+the film's sound begins at the sample of its first frame's moment; the
+last blank's sound, made at the blank after it, which the replay does not
+reach, is silence.
+
+**The two kinds**, chosen by the file's ending:
+
+- **MP4** (Windows): H.264 High and AAC-LC at 192 kb/s, by Media
+  Foundation's sink writer, which every Windows 10 and 11 has (not an N
+  edition without its media pack). Its two libraries (`mfplat.dll`,
+  `mfreadwrite.dll`) are looked up as a film is made, not linked, so a
+  Windows without them still runs the program. The graphics card's encoder
+  where it takes the film, Windows' own where not. The pictures are made
+  NV12 here (BT.709, 16 to 235, each two by two's chroma averaged) so that
+  no converter of the system's chooses the colours, at 5 bits a pixel a
+  second (10.4 Mb/s at 1920 by 1080). Media Foundation writes the film's
+  index (`moov`) after its media; it is moved before it as the film
+  closes (`port_MfMoovFirst`, ffmpeg's `faststart`), so a browser plays it
+  as it arrives. Windows' Media Player, every browser and Discord play
+  it as it is. No encoder is in the program and no licence of one is the
+  project's: they are the system's (and Microsoft's H.264 and AAC licences
+  with it).
+- **AVI** (Linux, or Windows without Media Foundation): RIFF's AVI 1.0
+  with its index, Motion JPEG and the samples as they are (PCM). The JPEG
+  is the port's own (`film_jpeg.c`: baseline, 4:2:0, Annex K's tables at
+  quality 90, the IJG's floating-point DCT); a picture the same as the
+  blank before (the fight's frame is two blanks) is its JPEG again. VLC,
+  mpv and ffmpeg play it; browsers do not, and it is large (430 MB for a
+  fight of 16 seconds at 1920 by 1080, 171 MB at 1280 by 720).
+  It ends short of 2 GB, which AVI 1.0's readers take at the most.
+  No encoder of another's is compiled in and nothing is fetched as the
+  program runs: the AVI is all the port's own, the MP4 all the system's.
+
+**Measured** (the owner's PC, its card, Windows): a fight of two CPUs of
+16.13 seconds (965 frames) at 1920 by 1080, the owner's picture
+settings: an MP4 of 21.2 MB made in 9.8 seconds (remastered) and 21.3 MB
+in 8.1 (original); at 1280 by 720, 9.6 MB in 6.0 seconds; the AVI at
+1920 by 1080, 427 MB in 17.7 seconds. From the settings menu, with the
+game running beside it, 19.4 seconds at 1920 by 1080. In WSL on llvmpipe
+at 640 by 360, 55 MB of AVI in 38 seconds (the picture drawn in
+software).
+
+**Proved** by `tools/port_film.py` (BUILD.md has no step of it: it needs
+the disc): the window's program records a fight of two CPUs, makes its
+film, plays the replay again with `--tap-window` (every 50 blanks) and
+`--wav`, and reads the film back with `--film-read` (the program's own
+AVI reader and stb_image; Media Foundation's source reader for an MP4):
+every frame at its blank's time (an MP4's within a millisecond: its own
+time scale), as many samples as frames, frames at six places the picture
+`--tap-window` took at that blank (a channel's mean difference 1.9 to
+2.4 of 255 for the AVI's JPEG, 2.7 to 3.4 for the MP4; 6 to 12 to the
+game's frames either side) and nearer it than
+the game's frames two blanks either side, and the sound `--wav`'s from
+the film's first sample: an AVI's sample for sample, an MP4's AAC at a
+lag of 0 and alike 0.9997. Linux: `python3 tools/port_film.py`, offscreen
+on llvmpipe, an .avi; Windows: `python tools/port_film.py`, on the card,
+an .mp4 and an .avi.
+
 ## Rooms of several
 
 ROADMAP 22; how they work on the network, NETPLAY.md, section 16; how a

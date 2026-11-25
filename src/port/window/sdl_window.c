@@ -643,6 +643,8 @@ static s32 port_HurriesBlank(void) {
 static void port_QueueSound(const s16 *samples, u32 frames) {
     u32 slot = g_port_queued_count % QUEUED_HISTORY;
 
+    /* a replay's film, where this run makes one (sdl_export.c) */
+    port_ExportSound(samples, frames);
     if (g_port_audio_tap != NULL) {
         fwrite(samples, 2 * sizeof(s16), frames, g_port_audio_tap);
     }
@@ -1602,6 +1604,25 @@ static void port_TapWindow(u32 blank) {
     fwrite(g_port_window_pixels, sizeof(u32),
            (size_t)window_w * (size_t)window_h, file);
     fclose(file);
+}
+
+/* A replay's film, where this run makes one (sdl_export.c): the blank's
+ * picture as the window shows it, the game's alone (the counter, the
+ * lines and the pages are drawn after it); `is_shown` FALSE for a blank
+ * that shows none, a load's hurried through. */
+static void port_ExportTake(u32 blank, s32 is_shown) {
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    if (!port_ExportWants()) {
+        return;
+    }
+    port_WindowSize(&window_w, &window_h);
+    if (!is_shown || !port_ReadWindowPixels(window_w, window_h)) {
+        port_ExportPicture(blank, NULL, 0, 0);
+        return;
+    }
+    port_ExportPicture(blank, g_port_window_pixels, window_w, window_h);
 }
 
 /* Whether a picture after this one is still wanted for a shot: a test
@@ -4826,7 +4847,11 @@ static void port_ShowBlank(u32 blank) {
         port_GlFighterPreload();
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
     }
+    /* a film's being made by another run of this program, which this
+     * one follows (sdl_export.c) */
+    port_ExportTick();
     if (is_hurried) {
+        port_ExportTake(blank, FALSE);
         port_HurryBlank(blank);
         return;
     }
@@ -4895,6 +4920,7 @@ static void port_ShowBlank(u32 blank) {
     port_ProfileSwitch(PORT_PROFILE_PICTURE);
     g_port_picture_began = port_Micros();
     port_DrawPicture(blank, TRUE);
+    port_ExportTake(blank, TRUE);
     port_ProfileSwitch(PORT_PROFILE_WINDOW);
     g_port_profile_phase = -1;
     port_WatchGame(blank);
@@ -4992,7 +5018,7 @@ static void port_StopPairing(void);
 
 static void port_StopStepper(void);
 
-static void port_CloseWindow(s32 code) {
+static void port_CloseWindowWith(s32 code) {
     port_StopStepper();
     if (g_port_steps_beside != 0) {
         const PortGlRecordCounts *records = port_GlRecordCounts();
@@ -5126,6 +5152,21 @@ static void port_CloseWindow(s32 code) {
     port_EndSession(code);
     SDL_Quit();
     g_port_is_open = 0;
+}
+
+/* The program ends: a film this run makes finished first, and one that
+ * it asked another run for stopped (sdl_export.c); a film not made ends
+ * the program with a failure. */
+static void port_CloseWindow(s32 code) {
+    s32 film_code = port_ExportEnd(code);
+
+    port_ExportStop();
+    port_CloseWindowWith(film_code);
+    if (film_code != code) {
+        fflush(stdout);
+        fflush(stderr);
+        exit(film_code);
+    }
 }
 
 /* ---- the software GPU's painters (port_paint.h) ---- */

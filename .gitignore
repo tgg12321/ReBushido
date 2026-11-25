@@ -31,6 +31,10 @@ tmp/
 /prepare/
 /prepare-work/
 
+# The films the PC program makes of replays beside itself (docs/PLAYING.md,
+# "Replays"): a player's, never committed
+/films/
+
 # Claude Code: only the shared settings are tracked
 .claude/*
 !.claude/settings.json

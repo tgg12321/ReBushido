@@ -889,6 +889,36 @@ PORT_SETTING(replays_megabytes,
     .choices = {"100", "250", "500", "1000", "5000", "0"},
     .shown = {"100 MB", "250 MB", "500 MB", "1 GB", "5 GB", "No limit"})
 
+/* A replay as a film (docs/PLAYING.md, "Replays"; sdl_export.c): the
+ * Replays page makes one in films/ beside the program, of this size, an
+ * .mp4 on Windows and an .avi elsewhere */
+PORT_SETTING(film_size,
+    .name = "film_size", .value = "1920x1080",
+    .note = "the size of a replay's film, made on the\n"
+            "Replays page: 1920x1080, 1280x720, 2560x1440\n"
+            "or 3840x2160",
+    .read = PORT_READ_WORDS,
+    .words = {"1920x1080", "1280x720", "2560x1440", "3840x2160"},
+    .is = "1920x1080, 1280x720, 2560x1440 or 3840x2160",
+    .menu = PORT_MENU_GAME, .rank = 130, .takes = PORT_TAKES_NOW,
+    .label = "Film size",
+    .help = "The size of a replay's film, made on the Replays page",
+    .shown = {"1920 x 1080", "1280 x 720", "2560 x 1440", "3840 x 2160"})
+
+/* ... and its picture: the remastered one, as the settings draw it, or
+ * the console's own */
+PORT_SETTING(film_picture,
+    .name = "film_picture", .value = "remastered",
+    .note = "the picture of a replay's film: remastered\n"
+            "(as the picture settings draw it) or original",
+    .read = PORT_READ_WORDS, .words = {"remastered", "original"},
+    .is = "remastered or original",
+    .menu = PORT_MENU_GAME, .rank = 140, .takes = PORT_TAKES_NOW,
+    .label = "Film picture",
+    .help = "A replay's film in the remastered picture, as your picture "
+            "settings draw it, or the console's own",
+    .shown = {"Remastered", "Original"})
+
 /* ---- playing online ---- */
 
 PORT_SETTINGS_HEADING(
