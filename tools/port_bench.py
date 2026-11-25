@@ -661,13 +661,13 @@ def display_rate(log):
     return 60
 
 
-def measure(folder, paced=False):
+def measure(folder, paced=False, case=None):
     """The case's numbers over its fight (the module's doc)."""
     first, last = fight_blanks(os.path.join(folder, 'log.txt'))
     if first is None:
         sys.exit('port-bench: %s never reached the fight (%s)' % (folder, os.path.join(folder, 'log.txt')))
     if last is None:
-        last = FRAMES
+        last = frames_of(case)
     parts, gpu_parts, rows, gpu = [], [], {}, {}
     # the step's own thread, where it ran beside the window's: its parts
     # at each blank that took them (docs/PORT.md, "The step on a thread of
@@ -1061,7 +1061,7 @@ def main():
             folder, seconds = run(case, image, dressed_mods if case in DRESSED_CASES else mods,
                                   plans.get(case, plan), [tuple(s.split("=", 1)) for s in args.set])
             load = {'others': seen, 'busy': busy_since(before)}
-        results[case] = measure(folder, PACED or case in PACED_CASES)
+        results[case] = measure(folder, PACED or case in PACED_CASES, case)
         report('%s (%.0f s)' % (case, seconds), results[case])
         if load is not None:
             results[case]['load'] = load

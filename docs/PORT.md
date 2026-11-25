@@ -9829,6 +9829,16 @@ host's pixels have textures of their own now, none written again for
 three pictures (`port_GlShowPixels`, gl_draw.c: the card 7.45 ms
 median before, 3.10 after).
 
+With four characters (2026-11-25, the RTX 3090's PC at 5% load; the
+bench's 2v2 cases pick them at the second grid, `TEAM_CASES`): `ra1-2v2`
+the window's processor 2.62 ms median and 4.77 at 95% (ra1 1.50 and
+2.68), the card 4.20 and 5.10 (ra1 4.29 and 5.18), the step's own thread
+3.60, 0.7% of the fight's blanks over 6.94 ms; `--rollback` with other
+agents' work beside it: a rollback of the whole window 12.8 ms
+(`rollback-2v2`) and 14.9 (`rollback-4p`) against 5.7 one on one, the
+worst frames (70 ms) those of the fight's load, which reads the
+partners' files.
+
 **How it is proved.** `tools/port_duo.py` (`make port-stage-select`),
 both sizes, the traces the same line for line:
 
