@@ -1108,11 +1108,11 @@ s32 port_DuoTagPixels(
 
 /* ---- the mods' weapons on the weapon select (port_weapons.h) ---- */
 
-#define PICK_W 300
+#define PICK_W 170
 #define PICK_H 16
-#define PICK_Y 182
-#define PICK_X_SIDE 320
-#define PICK_X_FIRST 10
+#define PICK_Y 214
+#define PICK_X_SIDE 180
+#define PICK_X_FIRST 145
 
 static MatchCanvas g_weapon_picks[PORT_WEAPON_SIDES];
 static s32 g_weapon_pick_now;
@@ -1121,7 +1121,7 @@ void port_WeaponPickChoose(s32 side) { g_weapon_pick_now = side; }
 
 /* A side's line under the weapon row, where the weapon under its cursor
  * has mods' weapons on it: the mod's weapon it shows (gold), or the
- * game's own and how many there are to go round with L1 and R1. */
+ * number of the mods' weapons there are to go round with L1 and R1. */
 s32 port_WeaponPickPixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
     s32 side = g_weapon_pick_now;
@@ -1153,10 +1153,8 @@ s32 port_WeaponPickPixels(
         if (name != NULL) {
             snprintf(line, sizeof(line), "L1  %s  R1", name);
         } else {
-            snprintf(line, sizeof(line),
-                     "L1  the game's own (%d of the mods' "
-                     "more)  R1",
-                     (int)count);
+            snprintf(line, sizeof(line), "L1 R1: %d more weapon%s", (int)count,
+                     count == 1 ? "" : "s");
         }
         port_MatchText(PICK_W / 2, PICK_H - 4, SIZE_LINE, PORT_FACE_BOLD, line,
                        name != NULL ? COLOR_GOLD : COLOR_DIM, 0);

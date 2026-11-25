@@ -2059,8 +2059,8 @@ session is refused (Netplay, below).
 `models/KEY.glb`, which the remastered picture draws in the fighter's
 hand in place of the weapon model, in the format of the game's own
 weapon models (PORT.md, "The fighters' own models", "The weapons"). The
-fighter is told by the hand whose bone the game gave the weapon's
-matrix (`weapon_Queue`, `port_FighterHeldModel`). The console's picture,
+fighter is the one whose hand `weapon_Queue` put the weapon in
+(`port_FighterHeldModel`). The console's picture,
 Graphics: Original, draws `models =`'s numbers, the base's if it does not
 say; so does a weapon lying loose after a fight, and two on two. A model
 that no mod has is said in the log, and the base's is drawn.
@@ -2157,6 +2157,27 @@ away with the reason on the online page.
   with every hit's first frame three later (67 moves): the trace is the
   plain run's until the fighter's first blow (frame 1,612), and the
   fight is lost.
+- **The kanabo on the weapon select** (port_game's plan with player
+  one's R1 on the weapon row before he picks; the mod copied with
+  `enabled = yes`), both sizes, each size's two traces the same: with no
+  mod R1 does nothing (the plain run's trace), and with the mod not
+  picked neither; picked (the log: `picks kanabo`), the fight is the
+  plain run's to its 56th frame and then goes otherwise, to a kill. Its
+  own motions as a copy of the disc's U123.BBM (the file of the set the
+  log names): the same fight line for line, but the load 26 frames
+  shorter (the file is read from the mod, not through the drive); as
+  S123.BBM, the long sword's: another fight from its 55th line, to a kill.
+  Each fight's replay plays back with every hash the one recorded, and
+  is refused without the mod ("recorded with other gameplay mods"). The
+  rollback self-test passes with it picked (111 rounds, 888 frames, both
+  sizes). A session of `tools/port_net.py`'s check with the host's R1:
+  both machines say the first fighter picks the kanabo and fights with
+  it, 78 state hashes the same, both sizes, and both machines' replays
+  play back with the mod; a guest without the mod is turned away before
+  the game, and the online page says why ("The other player's gameplay
+  mods (weapons, motions, stages, arenas) are not the same as yours").
+  The window's own pixels of the weapon row's line and the club in the
+  hand: `tmp/mods10/` of the work.
 - `tests/port/weapons.c`: a weapon's file read, every line that can be
   wrong refused with its reason, the factors, a folder of mods with a
   new slot, one that replaces and one left out, every answer to the

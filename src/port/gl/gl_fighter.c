@@ -1226,7 +1226,8 @@ static void port_GlFighterCastBox(
 
 /* A model's file, `name`.glb, read and made ready for the card the first
  * time it is asked for. */
-static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
+static FighterModel *port_GlFighterLoad(
+    FighterModel *model, const char *name, s32 is_mod_key) {
     PortFighterFile file;
     const PortFighterVertex *one = NULL;
     const char *why;
@@ -1240,7 +1241,16 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
         return NULL;
     }
     model->state = MODEL_MISSING;
-    if (g_fighter.folder[0] != 0) {
+    if (is_mod_key) {
+        /* a mod's weapon's own model: always the mods' models/, by its
+         * whole key */
+        const char *found = port_ModFind(PORT_MOD_MODELS, name);
+
+        if (found == NULL) {
+            return NULL;
+        }
+        snprintf(path, sizeof(path), "%s", found);
+    } else if (g_fighter.folder[0] != 0) {
         snprintf(path, sizeof(path), "%s/%s.glb", g_fighter.folder, name);
     } else {
         /* a mod's models/ folder: the key is the file's name in small
@@ -1370,7 +1380,7 @@ static FighterModel *port_GlFighterModel(s32 model_id) {
     if (model_id < 0 || model_id >= MODELS_MAX || name == NULL) {
         return NULL;
     }
-    return port_GlFighterLoad(&g_fighter.model[model_id], name);
+    return port_GlFighterLoad(&g_fighter.model[model_id], name, FALSE);
 }
 
 /* A weapon model's (enum WeaponModel): `W00` to `W57`. */
@@ -1387,7 +1397,7 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
         return NULL;
     }
     snprintf(name, sizeof(name), "W%02d", weapon);
-    return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name);
+    return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name, FALSE);
 }
 
 /* The model a weapon as drawn this frame is drawn from: a mod's weapon's
@@ -1417,7 +1427,7 @@ static FighterModel *port_GlFighterWeaponOf(const PortFighterWeapon *weapon) {
     if (model->state == MODEL_LOADED) {
         return model;
     }
-    model = port_GlFighterLoad(model, weapon->model_key);
+    model = port_GlFighterLoad(model, weapon->model_key, TRUE);
     return model != NULL ? model : port_GlFighterWeaponModel(weapon->weapon);
 }
 
@@ -1435,7 +1445,7 @@ static FighterModel *port_GlFighterTinyModel(s32 tiny) {
         return NULL;
     }
     snprintf(name, sizeof(name), "T%02d", tiny);
-    return port_GlFighterLoad(&g_fighter.tiny_model[tiny], name);
+    return port_GlFighterLoad(&g_fighter.tiny_model[tiny], name, FALSE);
 }
 
 /* ---- a frame ---- */

@@ -210,10 +210,23 @@ the stage").
     the eight or a new slot on one (`--weapon 1=NAME`), a mod's motion
     file in place of the disc's, and the session's set-up holding both
     players to the same gameplay mods (`MODS.md`, "Weapons and
-    motions"). Left: the scene's textures by whole page, music by stage,
-    the stage editor's next steps (`MODS.md`, "Stages"), and new weapons
-    on the select screens with motions of their own ("Weapons and
-    motions", "What is not done yet").
+    motions"). Then (2026-11-25): **music by stage** (`music/stage07.ogg`,
+    stage 7's own, under the stage select's row of music, heard online
+    only where both machines have the same: "A stage's own piece"); **a
+    fighter's textures by whole page** as the stage's are ("A fighter's
+    pages"); the stage editor's next steps (arena textures up to 128 and
+    20 of them, repeating; the arenas' page turned past five; an arena
+    held to the stage prover by its own verdict: "What a stage editor
+    needs next"); and **new weapons on the weapon select** (L1 and R1 on
+    a weapon go round the mods' weapons made on it), each with a model of
+    its own in the remastered picture and a motion file of its own, the
+    pick in the game's state, the session refused where the mods differ,
+    and the kanabo shipped as the example, its model made by a script
+    ("A mod's weapon on the select screens"). Left: a weapon's place of
+    its own in the grid with its picture and its own `weapon_id`, a move
+    joined to another file's motion, a weapon's sounds and dropped object;
+    larger arenas and pieces; the weapons' pages ("What is not done
+    yet", "What a stage editor needs next", "What is next").
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.

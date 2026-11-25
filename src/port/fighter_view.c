@@ -216,42 +216,36 @@ static Model *port_FighterViewModel(s32 slot) {
     return slot < MODEL_SLOT_COUNT ? model_Get(slot) : NULL;
 }
 
-/* Whether two of the GTE's matrices are the same, element by element. */
-static s32 port_FighterSameMatrix(const MATRIX *first, const MATRIX *second) {
-    s32 i;
-    s32 j;
+/* The nodes weapon_Queue last put in each model slot's first hand
+ * (port_RemasterNoteHeldWeapon), in each of the two buffers a frame is
+ * built in by turns: a weapon's node is made afresh in each frame's
+ * buffer, and a frame may be drawn after the next one is built. */
+#define HELD_BUFFERS 2
+static PortAddress g_held_nodes[MODEL_SLOT_COUNT][HELD_BUFFERS];
+static s32 g_held_next[MODEL_SLOT_COUNT];
 
-    for (i = 0; i < 3; i++) {
-        if (first->t[i] != second->t[i]) {
-            return FALSE;
-        }
-        for (j = 0; j < 3; j++) {
-            if (first->m[i][j] != second->m[i][j]) {
-                return FALSE;
-            }
-        }
+void port_RemasterNoteHeldWeapon(const void *node, s32 slot) {
+    if (slot >= 0 && slot < MODEL_SLOT_COUNT) {
+        g_held_nodes[slot][g_held_next[slot]] = (PortAddress)node;
+        g_held_next[slot] = (g_held_next[slot] + 1) % HELD_BUFFERS;
     }
-    return TRUE;
 }
 
 /* The model of a mod's weapon (port_WeaponHeldModel) where the weapon
- * node is in a fighter's first hand: weapon_Queue writes the weapon's
- * matrix back to that hand's bone, so the fighter is the one whose bone
- * has it. NULL otherwise (two on two keeps the game's models). */
-static const char *port_FighterHeldModel(
-    const SceneNode *node, s32 weapon_model) {
+ * node is in a fighter's first hand, or NULL (two on two keeps the game's
+ * models). */
+static const char *port_FighterHeldModel(PortAddress at, s32 weapon_model) {
     s32 slot;
+    s32 i;
 
     if (port_DuoIsOn()) {
         return NULL;
     }
     for (slot = 0; slot < MODEL_SLOT_COUNT; slot++) {
-        Model *model = port_FighterViewModel(slot);
-
-        if (model != NULL &&
-            port_FighterSameMatrix(
-                &model->bones[MODEL_HAND_BONE].node.world, &node->world)) {
-            return port_WeaponHeldModel(slot, weapon_model);
+        for (i = 0; i < HELD_BUFFERS; i++) {
+            if (g_held_nodes[slot][i] == at) {
+                return port_WeaponHeldModel(slot, weapon_model);
+            }
         }
     }
     return NULL;
@@ -321,7 +315,7 @@ void port_FighterNoteNode(PortAddress at) {
 
         weapon->node = at;
         weapon->weapon = port_FighterWeaponModel(node->mesh / 2);
-        weapon->model_key = port_FighterHeldModel(node, weapon->weapon);
+        weapon->model_key = port_FighterHeldModel(at, weapon->weapon);
         weapon->serial = g_serial;
         port_FighterCopyMatrix(&weapon->world, &node->world);
         port_FighterCopyLights(weapon->light, weapon->color, weapon->back,

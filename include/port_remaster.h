@@ -751,6 +751,10 @@ extern void port_RemasterBeginStageTextures(void);
 /* One of them: the TIM at `tim`, its picture loaded at (x, y) and its
  * colour table at (clut_x, clut_y), as tex_LoadTim was told, the faces
  * naming that table at (clut_x, named_y). */
+/* weapon_Queue put a weapon's node, `node`, in the first hand of the
+ * model in slot `slot` (src/port/fighter_view.c): the picture draws a
+ * mod's weapon's own model there (port_weapons.h). None of the state. */
+extern void port_RemasterNoteHeldWeapon(const void *node, s32 slot);
 extern void port_RemasterNoteStageTexture(
     const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y);
 /* The game is drawing a picture it will then keep on show without drawing

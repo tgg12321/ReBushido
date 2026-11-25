@@ -7159,10 +7159,13 @@ the model that weapon is by its place among the loaded ones
 fighter's bones are. A mod's weapon with a model of its own (`model =
 KEY`, MODS.md, "A mod's weapon on the select screens") is drawn from
 `models/KEY.glb`, in the same format, in place of the weapon model in
-its fighter's first hand: the fighter is the one whose hand bone has the
-weapon node's matrix, which `weapon_Queue` copies there
-(`port_FighterHeldModel`, `fighter_view.c`; `port_GlFighterWeaponOf`,
-`gl_fighter.c`, keeps a place for each key).
+its fighter's first hand: `weapon_Queue` says which model slot's hand it
+put each node in (`port_RemasterNoteHeldWeapon`, under
+`RB_REMASTER_VIEW`), the last two of each slot kept since a frame may be
+drawn after the next is built (`port_FighterHeldModel`, `fighter_view.c`,
+outside the state); `port_GlFighterWeaponOf` (`gl_fighter.c`) keeps a
+place for each key and finds the file in the mods' `models/` whatever
+`fighter_models` names.
 
 **The tiny model.** In the first-person view the fighter looked through
 is drawn again as a small figure in the top left corner (`model_tiny.c`):
