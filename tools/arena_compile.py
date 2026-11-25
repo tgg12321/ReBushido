@@ -82,13 +82,19 @@ ONE_GRID = 0x4000        # the collision grid's 1
 ONE_MESH = 4096          # a mesh's normal's 1
 PROJECTION_MAX = 8000    # what the GTE's projection on a face reaches
 
-# the textures: 64 by 64 in a quarter of a page, four to a page, three
-# pages (video memory's 640 to 831 across, 256 down: the disc's stages'
-# own); the colour tables in row 480 (480 + 1 when loaded: the fog's)
-TEXTURE_SIZE = 64
+# the textures: three pages (video memory's 640 to 831 across, 256 down:
+# the disc's stages' own), each texture in the quarter of a page at its
+# bottom right (128 to 255 each way), whose half and quarter (the smaller
+# copies the renderer reads far off: GROUND.md) are free for its copies.
+# A texture is 128 by 128 (the whole quarter), 64 (a quarter of it, the
+# disc's commonest) or 32 (a sixteenth), each placed in the first room
+# free, the larger first; the colour tables in row 480 (480 + 1 when
+# loaded: the fog's), which has room for 20 of 16 colours
+TEXTURE_SIZE = 64        # what a picture is made if nothing says
+TEXTURE_SIZES = (32, 64, 128)
 TEXTURE_PAGES = (10, 11, 12)
-TEXTURE_SLOTS = [(128, 128), (192, 128), (128, 192), (192, 192)]
-TEXTURES_MAX = len(TEXTURE_PAGES) * len(TEXTURE_SLOTS)
+TEXTURE_CORNER = 128     # the quarter's corner in its page, each way
+TEXTURES_MAX = 20        # the fog's row (arena_validate.py, CLUTS_MAX)
 CLUT_ROW = 480
 COLORS = 16
 TPAGE_BLEND = 1 << 5     # the disc's stages' (unused: no face is see-through)
@@ -858,9 +864,126 @@ def render_preview(polygons, textures):
     return write_png(PREVIEW_W, PREVIEW_H, out)
 
 
+# ---- the textures' sizes and places ----
+
+def texture_size_of(material, picture, asked):
+    """The size a material's texture is made: `texture_size NAME = N` of
+    arena.txt, or the largest of TEXTURE_SIZES no larger than the picture's
+    longer side (32 for a smaller one)."""
+    if material in asked:
+        return asked[material]
+    longer = max(picture[0], picture[1])
+    fits = [s for s in TEXTURE_SIZES if s <= longer]
+    return fits[-1] if fits else TEXTURE_SIZES[0]
+
+
+def morton_places(across):
+    """The places of an `across` by `across` grid in the order a quarter
+    is cut into four, each quarter again: (0, 0), (1, 0), (0, 1), (1, 1),
+    then the next quarter's. So four textures of 64 fill a page as the
+    disc's stages and the first compiler fill one."""
+    def code(x, y):
+        out = 0
+        for bit in range(8):
+            out |= ((x >> bit) & 1) << (2 * bit) | ((y >> bit) & 1) << (2 * bit + 1)
+        return out
+    return sorted(((x, y) for y in range(across) for x in range(across)), key=lambda p: code(*p))
+
+
+def place_textures(wanted):
+    """Each texture's page and corner in it, (page, u, v): `wanted` is
+    (material, size) in the scene's order; the larger are placed first,
+    each in the first room of its size free, page by page. A texture is
+    held in the bottom right quarter of its page, so that its copies at
+    half and a quarter of its place are free (GROUND.md)."""
+    small = TEXTURE_SIZES[0]
+    across = TEXTURE_CORNER // small
+    free = {page: [[True] * across for _ in range(across)] for page in TEXTURE_PAGES}
+    places = {}
+    for material, size in sorted(wanted, key=lambda one: -one[1]):
+        cells = size // small
+        found = None
+        for page in TEXTURE_PAGES:
+            for x, y in morton_places(across // cells):
+                x0, y0 = x * cells, y * cells
+                if all(free[page][y0 + j][x0 + i] for j in range(cells) for i in range(cells)):
+                    found = (page, x0, y0)
+                    break
+            if found:
+                break
+        if found is None:
+            raise ArenaError('the textures do not fit: three pages hold three of 128, twelve of '
+                             '64 or more of 32 (%s is %d)' % (material, size))
+        page, x0, y0 = found
+        for j in range(cells):
+            for i in range(cells):
+                free[page][y0 + j][x0 + i] = False
+        places[material] = (page, TEXTURE_CORNER + x0 * small, TEXTURE_CORNER + y0 * small)
+    return places
+
+
+def add_to_cells(by_cell, mat, piece, piece_uv, n):
+    """A drawn face cut at the cells' edges (and TILE_OVERLAP over them),
+    each part into its cell's list."""
+    for cx, cz in cells_crossed(piece, TILE_OVERLAP):
+        x0 = cx * CELL - HALF
+        z0 = cz * CELL - HALF
+        cp, ca = clip_to_square(piece, piece_uv, x0 - TILE_OVERLAP, x0 + CELL + TILE_OVERLAP,
+                                z0 - TILE_OVERLAP, z0 + CELL + TILE_OVERLAP)
+        if len(cp) < 3 or area(cp, n) < 1.0:
+            continue
+        by_cell.setdefault(cz * CELLS + cx, []).append((mat, cp, ca, n))
+
+
+def cut_at_repeats(points, uvs):
+    """A face whose texture points span its texture more than once, cut at
+    every whole u and v into pieces that each span it once at most, each
+    piece's points moved back to the first repeat: the game's faces read
+    no texture window, so a repeat is a face of its own."""
+    pieces = [(points, uvs)]
+    for axis in (0, 1):
+        out = []
+        for p, a in pieces:
+            low = math.floor(min(t[axis] for t in a) + 1e-6)
+            high = max(low + 1, math.ceil(max(t[axis] for t in a) - 1e-6))
+            for k in range(low, high):
+                q, b = clip_uv(p, a, axis, k, True)
+                if len(q) >= 3:
+                    q, b = clip_uv(q, b, axis, k + 1, False)
+                if len(q) >= 3:
+                    out.append((q, b))
+        pieces = out
+    moved = []
+    for p, a in pieces:
+        mu = math.floor(min(t[0] for t in a) + 1e-6)
+        mv = math.floor(min(t[1] for t in a) + 1e-6)
+        moved.append((p, [[min(1.0, max(0.0, t[0] - mu)), min(1.0, max(0.0, t[1] - mv))] for t in a]))
+    return moved
+
+
+def clip_uv(points, uvs, axis, value, keep_above):
+    """Sutherland-Hodgman against the line of texture points `axis` =
+    value, the points carried along."""
+    out_p, out_a = [], []
+    count = len(points)
+    for i in range(count):
+        p, q = points[i], points[(i + 1) % count]
+        a, b = uvs[i], uvs[(i + 1) % count]
+        ain = a[axis] >= value if keep_above else a[axis] <= value
+        bin_ = b[axis] >= value if keep_above else b[axis] <= value
+        if ain:
+            out_p.append(p)
+            out_a.append(a)
+        if ain != bin_:
+            t = (value - a[axis]) / (b[axis] - a[axis])
+            out_p.append([p[k] + (q[k] - p[k]) * t for k in range(3)])
+            out_a.append([a[k] + (b[k] - a[k]) * t for k in range(2)])
+    return out_p, out_a
+
+
 def read_source(folder):
     path = os.path.join(folder, 'arena.txt')
-    settings = {'texture': {}, 'lines': []}
+    settings = {'texture': {}, 'texture_size': {}, 'lines': []}
     with open(path, encoding='utf-8') as f:
         for number, line in enumerate(f, 1):
             line = line.split('#', 1)[0].strip()
@@ -870,7 +993,12 @@ def read_source(folder):
                 raise ArenaError('arena.txt line %d: no =' % number)
             name, value = (s.strip() for s in line.split('=', 1))
             key = name.lower().replace('-', '_')
-            if key.startswith('texture '):
+            if key.startswith('texture_size '):
+                if value not in [str(s) for s in TEXTURE_SIZES]:
+                    raise ArenaError('arena.txt line %d: a texture\'s size is %s'
+                                     % (number, ', '.join(str(s) for s in TEXTURE_SIZES)))
+                settings['texture_size'][name.split(None, 1)[1].strip()] = int(value)
+            elif key.startswith('texture '):
                 settings['texture'][name.split(None, 1)[1].strip()] = value
             elif key in ('scene', 'scale', 'preview'):
                 settings[key] = value
@@ -879,7 +1007,7 @@ def read_source(folder):
             else:
                 raise ArenaError('arena.txt line %d: %s is not a name of an arena (%s)'
                                  % (number, name, ', '.join(TABLE_NAMES + ('scene', 'scale', 'preview',
-                                                                          'texture NAME'))))
+                                                                          'texture NAME', 'texture_size NAME'))))
     if 'scene' not in settings:
         raise ArenaError('arena.txt names no scene')
     return settings
@@ -921,23 +1049,29 @@ def compile_arena(folder, report=print):
     if len(materials) > TEXTURES_MAX:
         raise ArenaError('%d materials drawn; the stage has room for %d textures'
                          % (len(materials), TEXTURES_MAX))
+    pictures = {}
+    sizes = {}
+    for mat in materials:
+        if mat not in scene.textures:
+            raise ArenaError('the material %r has no picture (a texture in the scene, '
+                             'or `texture %s = FILE.png` in arena.txt)' % (mat, mat))
+        pictures[mat] = read_png(scene.textures[mat])
+        sizes[mat] = texture_size_of(mat, pictures[mat], settings['texture_size'])
+    places = place_textures([(mat, sizes[mat]) for mat in materials])
     tims = []
     records = []
     slots = {}
     for i, mat in enumerate(materials):
-        if mat not in scene.textures:
-            raise ArenaError('the material %r has no picture (a texture in the scene, '
-                             'or `texture %s = FILE.png` in arena.txt)' % (mat, mat))
-        w, h, pixels = read_png(scene.textures[mat])
-        page = TEXTURE_PAGES[i // len(TEXTURE_SLOTS)]
-        su, sv = TEXTURE_SLOTS[i % len(TEXTURE_SLOTS)]
-        full = resize(w, h, pixels, TEXTURE_SIZE)
+        w, h, pixels = pictures[mat]
+        texture_size = sizes[mat]
+        page, su, sv = places[mat]
+        full = resize(w, h, pixels, texture_size)
         palette = median_cut(full, COLORS)
         clut = [color15(c) for c in palette]
-        slots[mat] = (page, i, su, sv)
+        slots[mat] = (page, i, su, sv, texture_size)
         for level in range(3):
-            size = TEXTURE_SIZE >> level
-            picture = full if level == 0 else resize(TEXTURE_SIZE, TEXTURE_SIZE, full, size)
+            size = texture_size >> level
+            picture = full if level == 0 else resize(texture_size, texture_size, full, size)
             indices = [nearest(palette, p) for p in picture]
             u, v = su >> level, sv >> level
             image_xy = ((page * 64) + u // 4, 256 + v)
@@ -946,28 +1080,20 @@ def compile_arena(folder, report=print):
 
     # ---- the tiles ----
     by_cell = {}
+    repeats = 0
     for obj, mat, pts, uvs in render:
-        for piece, piece_uv, n in convex_pieces(pts, uvs):
-            # each face's texture points moved to the first repeat
-            if piece_uv[0] is not None:
-                mu = math.floor(min(t[0] for t in piece_uv) + 1e-6)
-                mv = math.floor(min(t[1] for t in piece_uv) + 1e-6)
-                piece_uv = [[t[0] - mu, t[1] - mv] for t in piece_uv]
-                if max(max(t[0], t[1]) for t in piece_uv) > 1.0001:
-                    report('arena_compile: a face of %s (%s) spans more than its texture once; '
-                           'squeezed into one' % (obj, mat))
-                    top = max(max(t[0], t[1]) for t in piece_uv)
-                    piece_uv = [[t[0] / top, t[1] / top] for t in piece_uv]
+        for whole, whole_uv, n in convex_pieces(pts, uvs):
+            # a face that repeats its texture is cut at each repeat, each
+            # piece's texture points moved to the first
+            if whole_uv[0] is not None:
+                cut = cut_at_repeats(whole, whole_uv)
+                repeats += len(cut) - 1
             else:
-                piece_uv = [[0.0, 0.0]] * len(piece)
-            for cx, cz in cells_crossed(piece, TILE_OVERLAP):
-                x0 = cx * CELL - HALF
-                z0 = cz * CELL - HALF
-                cp, ca = clip_to_square(piece, piece_uv, x0 - TILE_OVERLAP, x0 + CELL + TILE_OVERLAP,
-                                        z0 - TILE_OVERLAP, z0 + CELL + TILE_OVERLAP)
-                if len(cp) < 3 or area(cp, n) < 1.0:
-                    continue
-                by_cell.setdefault(cz * CELLS + cx, []).append((mat, cp, ca, n))
+                cut = [(whole, [[0.0, 0.0]] * len(whole))]
+            for piece, piece_uv in cut:
+                add_to_cells(by_cell, mat, piece, piece_uv, n)
+    if repeats:
+        report('arena_compile: faces that repeat their textures cut into %d more' % repeats)
 
     meshes = []
     tiles = []
@@ -984,12 +1110,13 @@ def compile_arena(folder, report=print):
         current = new_mesh()
         mesh_list = [current]
         for mat, cp, ca, n in by_cell[cell]:
-            page, slot_index, su, sv = slots[mat]
+            page, slot_index, su, sv, texture_size = slots[mat]
             local = [[int(round(c)) for c in sub(p, corner)] for p in cp]
             for p in local:
                 if any(abs(c) > 32767 for c in p):
                     raise ArenaError('a face is beyond a halfword of its cell (%d, %d)' % (cx, cz))
-            texel = [(min(su + 63, su + int(round(t[0] * 63))), min(sv + 63, sv + int(round(t[1] * 63))))
+            last = texture_size - 1
+            texel = [(min(su + last, su + int(round(t[0] * last))), min(sv + last, sv + int(round(t[1] * last))))
                      for t in ca]
             normal = [int(round(c * ONE_MESH)) for c in n]
             # a fan of quads and a last triangle

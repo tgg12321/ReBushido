@@ -1547,12 +1547,27 @@ author's own, `sand_yard`); `start1a`, `start1b` ... `start4b` are where
 the fighters of each of four pairs start (empties; the compiler stands
 each on the floor under it); `obstacle...` is a post a blade stops at
 (its middle and its top); everything else is drawn, each material's
-picture made 64 by 64 in 16 colours. The scene is Y up in metres as
+picture made 128, 64 or 32 texels square in 16 colours (below). The scene is Y up in metres as
 glTF and Blender write it (`scale = 1000` makes a metre 1,000 of the
 game's units: the fighters are about 1,700 tall). A face is drawn and met
 from its front only. What is drawn and what is met are two meshes on
 purpose: steps drawn as steps are met as a ramp (the sample's), a wall
 of a barrier may be met where nothing is drawn.
+
+**Textures.** The stage's room is the bottom right quarter of video
+memory's pages 10 to 12 (their halves and quarters hold the smaller
+copies the renderer reads far off: formats/GROUND.md) and the fog's row
+of 20 colour tables. Each material is a texture of **128** by 128 (a whole
+quarter), **64** (a quarter of one, the disc's commonest) or **32** (a
+sixteenth): the largest of those no larger than its picture's longer
+side, or what `texture_size NAME = 32|64|128` of `arena.txt` says. The
+larger are placed first, each in the first room of its size free, so the
+three pages hold three of 128, twelve of 64, forty-eight of 32 or a mix
+(one of 128, four of 64 and fifteen of 32 is twenty), and **20 textures**
+at most. A face whose texture points run past its texture **repeats it**:
+it is cut at every whole u and v into faces that each span it once (the
+game's faces read no texture window), and the compiler says how many
+pieces that made.
 
 `arena.txt` has the scene's name and the program's tables, every line
 optional but the scene:
@@ -1579,6 +1594,8 @@ lights = courtyard-noon         # the remastered light's key (lights/)
 chain = ring 6 37 -500 -500 500 -500 500 500 -500 500
                                 # the CPU's obstacles (cpu.h, NavChain):
                                 # ring or open, a kind, a margin, corners
+texture_size flagstone = 128   # its texture's size: 32, 64 or 128; if
+                                # not given, the picture's (Textures, above)
 texture flagstone = flagstone.png   # a material's picture, if the scene
                                     # does not carry it
 preview = preview.png           # the stage select's picture of it; if not
@@ -1668,7 +1685,9 @@ an arena a fight cannot be fought on, saying where:
    500 tiles, 1,000 entries of the cells' lists, 256 corners a tile, a
    collision grid of 65,534 bytes; every collision face convex, on its
    plane, within the 8,000 units of its middle the GTE's projection
-   reaches; 20 colour tables in the fog's row;
+   reaches; 20 colour tables in the fog's row; every picture, a texture
+   or one of its smaller copies, in the stage's pages 10 to 13 and over no
+   other;
 3. **the floor**: from every start, every point a fighter can get to is
    walked 250 units at a time with the game's own cast in Python
    (`tools/ground_cast.py`, `collision.c` number for number): a wall
@@ -1714,7 +1733,22 @@ such a hole failing.
   the cast on a grid made by hand (a face met from the front only, the
   next cell's, none past the grid), the sample compiled twice the same
   and read back whole, the validator passing it and failing it with the
-  floor taken from under the first start.
+  floor taken from under the first start; the textures' places (four of
+  64 a page in the first compiler's order, the larger first, 48 of 32 and
+  no more), their sizes, a face cut at its repeats into pieces that cover
+  it; the **gallery** (`tools/arenas/gallery/make_gallery.py`, made at
+  test time: a floor of one face repeating a 128 four times each way,
+  brick walls repeating a 64, eighteen panels of 64 and 32, every picture
+  worked out by the script) compiled to twenty textures and passed by the
+  validator, none of its 60 pictures over another; and the stage prover's
+  verdict on the sample held to the sample as compiled now. The sample
+  compiles to the same bytes as before textures had sizes.
+- The gallery fought: `arena_validate.py --fight` passes it, both sizes
+  printing the same 329 lines, the second fighter the winner.
+- `tools/port_stage_prove.py --arena` on the sample and the gallery: both
+  keep the mesh (PORT.md, "The ground as one mesh"), the gallery's floor
+  repeating its flagstones and their hairlines and every panel its own
+  picture, with the tiles and with the mesh.
 - `tests/port/arenas.c`: an arena's file read and every line that can be
   wrong refused with its reason, its picture found, the mods' arenas with
   one in play and one left out, every answer to the game for the host,
@@ -1724,7 +1758,9 @@ such a hole failing.
 - `tools/port_stage_select.py` (`make port-stage-select`, a step of the
   gate): the stage select's page driven to a fight on the sample and then
   to its host from the disc, on both sizes (PORT.md, "The stage select's
-  kinds of stage").
+  kinds of stage"); and seven arenas (`many_arenas`): R1 to the second
+  page, down, R1 round to the first, L1 back, Cross on the seventh, which
+  is fought.
 - `tools/arena_validate.py --fight` on the sample, above; `make
   port-net`'s session check refusing a guest without the host's arena;
   the play tests (`same_as_original` and the port's) and port-rollback
@@ -1732,9 +1768,29 @@ such a hole failing.
 
 ### What a stage editor needs next
 
-- **The stage select (ROADMAP 16)**: done, above. Left: more than five
-  arenas are scrolled through five rows; a page of pages, or the
-  arenas' pictures as a grid like the stages', when there are many.
+Done since the first arena:
+
+- **More than five arenas**: L1 and R1 turn the arenas' page a page of
+  five at a time, round from the last to the first, and the page says
+  which of how many (PLAYING.md, "Kinds of stage").
+- **Textures** of 128, 64 and 32, up to 20 of them, and a face that
+  repeats its texture ("Textures", above).
+- **The ground as one mesh held to the prover on an arena**:
+  `tools/port_stage_prove.py --arena FILE.arena`, and the arena's own
+  verdict in `g_arena_proved` (PORT.md, "The ground as one mesh"); the
+  sample keeps the mesh by it.
+- **An arena's pages from a mod's pictures**, as the disc's stages' are
+  ("The scene's textures by page"): it needed nothing new, the arena's
+  TIMs being loaded by `tex_LoadStageGroup` as a stage's are. Proved on the
+  gallery: `--dump-textures` writes its 20 pages and tables, and a mod of
+  a picture for each (a checkerboard of 512 by 512) draws them on the floor,
+  walls and panels, the fog's colours over them; the trace is the plain
+  run's, and the pictures are the same up to the fight.
+
+Left:
+
+- **A grid of the arenas' pictures**, like the stages', when there are
+  many; and more than 32 (`PORT_ARENAS_MAX`).
 - **Larger arenas**: a ground longer than its host's needs NDATA.INF
   given its new length and room in the arena block (`ARENA_STAGE`); and
   past the grid's 32 by 32 cells, the game's collision and its cells'
@@ -1742,15 +1798,14 @@ such a hole failing.
 - **Pieces**: the compiler writes tiles alone; a piece (a mesh of its own
   placed and turned, `stage_ReadCells`) would let a repeated thing be one
   mesh drawn many times, and could be opened up when it hides a fighter.
-- **Textures** larger than 64 by 64, repeating across a face (a texture
-  window), and more than 12 of them; the stage's pages from a mod's
-  pictures in the remastered picture as the disc's are
-  ("The stages' pages made larger").
-- **The remastered picture's ground as one mesh** is proved stage by
-  stage on the disc's grounds (`g_stage_proved`); an arena stands on its
-  host's number, so `stage_mesh` takes the host's verdict; an arena
-  should be held to it as the disc's grounds are
-  (`tools/port_stage_prove.py`), and was not yet.
+  The validator already counts them (60 at most).
+- **More than 20 textures, or larger than 128**: the fog's row holds 20
+  colour tables, and the stage's pages are the three the disc's stages
+  use; a fourth page (13), or textures sharing a table, would be more.
+- **A texture window** in place of cutting a face at its repeats: the
+  game's tile records name none, so it would be a record of the renderer's
+  own; cutting costs primitives (the gallery's floor and walls are 27
+  pieces more), which the frame's room bounds as it bounds cut quads.
 
 ## Weapons and motions
 

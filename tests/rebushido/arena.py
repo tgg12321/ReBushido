@@ -11,6 +11,7 @@ import contextlib
 import io
 import os
 import shutil
+import sys
 
 import arena_compile
 import arena_validate
@@ -80,6 +81,16 @@ def run(checks):
     checks.equal('two posts a blade stops at', len(stage_ground.section(ground, 'obstacles')['records']), 2)
     textures = stage_ground.section(ground, 'textures')
     checks.equal('five textures, each with two smaller copies', len(textures['tims']), 15)
+    # the stage prover's verdict on the sample (src/port/gl/gl_stage.c,
+    # g_arena_proved) is of these bytes: a change to the sample or the
+    # compiler is to be measured again (tools/port_stage_prove.py --arena)
+    value = 0xCBF29CE484222325
+    for byte in data:
+        value = ((value ^ byte) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    with open(os.path.join(ROOT, 'src', 'port', 'gl', 'gl_stage.c'), encoding='utf-8') as f:
+        proved = f.read()
+    checks.true('the mesh\'s verdict on the sample is of the sample as compiled now (0x%016X)' % value,
+                '{"courtyard", 0x%016XULL}' % value in proved)
 
     # ---- the validator ----
     # a folder of its own, removed after (tempfile is not to be had here:
@@ -88,8 +99,63 @@ def run(checks):
     os.makedirs(folder, exist_ok=True)
     try:
         validator(checks, folder, data, ground_bytes, ground)
+        textures_of_sizes(checks, folder)
     finally:
         shutil.rmtree(folder)
+
+
+def textures_of_sizes(checks, folder):
+    """The compiler's textures: their places, a face cut at its repeats,
+    and the gallery (tools/arenas/gallery/), twenty textures of 128, 64 and
+    32 with a floor and walls that repeat theirs, compiled and passed."""
+    places = arena_compile.place_textures([('a', 64), ('b', 64), ('c', 64), ('d', 64), ('e', 64)])
+    checks.equal('four of 64 fill a page as the first compiler did, the fifth the next page',
+                 [places[m] for m in 'abcde'],
+                 [(10, 128, 128), (10, 192, 128), (10, 128, 192), (10, 192, 192), (11, 128, 128)])
+    places = arena_compile.place_textures([('small', 32), ('big', 128), ('mid', 64)])
+    checks.equal('the larger placed first: a 128 takes a page, a 64 and a 32 the next',
+                 (places['big'], places['mid'], places['small']),
+                 ((10, 128, 128), (11, 128, 128), (11, 192, 128)))
+    full = [('t%d' % i, 32) for i in range(48)]
+    checks.equal('three pages hold 48 of 32', len(arena_compile.place_textures(full)), 48)
+    try:
+        arena_compile.place_textures(full + [('one more', 32)])
+        checks.true('a 49th of 32 is refused', False)
+    except arena_compile.ArenaError as e:
+        checks.true('a 49th of 32 is refused', 'do not fit' in str(e))
+    checks.equal('a picture of 200 is made 128, of 64 64, of 40 32, of 16 32',
+                 [arena_compile.texture_size_of('m', (s, s, None), {}) for s in (200, 64, 40, 16)],
+                 [128, 64, 32, 32])
+    checks.equal('texture_size of arena.txt is taken', arena_compile.texture_size_of('m', (200, 200, None), {'m': 32}),
+                 32)
+    square = [[0, 0, 0], [3000, 0, 0], [3000, 0, 2000], [0, 0, 2000]]
+    pieces = arena_compile.cut_at_repeats(square, [[0, 0], [3, 0], [3, 2], [0, 2]])
+    checks.equal('a face repeating its texture three times by two is six pieces', len(pieces), 6)
+    checks.true('each piece within its texture once',
+                all(0 <= t[k] <= 1 for _, uv in pieces for t in uv for k in (0, 1)))
+    checks.equal('and the pieces cover the face (their areas)',
+                 round(abs(sum(arena_compile.area(p, [0.0, 1.0, 0.0]) for p, _ in pieces))), 6000000)
+    once = arena_compile.cut_at_repeats(square, [[2, 1], [3, 1], [3, 2], [2, 2]])
+    checks.equal('a face that spans its texture once is one, moved to the first repeat',
+                 (len(once), once[0][1]), (1, [[0, 0], [1, 0], [1, 1], [0, 1]]))
+
+    sys.path.insert(0, os.path.join(ROOT, 'tools', 'arenas', 'gallery'))
+    import make_gallery
+    source = make_gallery.make(os.path.join(folder, 'gallery'))
+    said = []
+    data = arena_compile.compile_arena(source, report=said.append)
+    checks.true('the gallery\'s faces were cut at their repeats', any('repeat' in s for s in said))
+    _, ground_bytes = arena_compile.read_arena(data)
+    textures = stage_ground.section(stage_ground.read(ground_bytes), 'textures')
+    checks.equal('twenty textures, each with two smaller copies', len(textures['tims']), 60)
+    path = os.path.join(folder, 'gallery.arena')
+    with open(path, 'wb') as f:
+        f.write(data)
+    code, text = validate(path)
+    checks.equal('the validator passes the gallery', code, 0)
+    if code:
+        checks.true(text, False)
+    checks.true('its pictures over none of each other', '60 pictures' in text and '0 outside, 0 over' in text)
 
 
 def validator(checks, folder, data, ground_bytes, ground):

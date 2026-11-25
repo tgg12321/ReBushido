@@ -77,6 +77,13 @@ PIECES_MAX = 60
 RUN_ENTRIES_MAX = 1000
 GRID_BYTES_MAX = 0xFFFE
 CLUTS_MAX = 20
+# the disc's stages' pages, 10 to 13 at y 256 (GROUND.md), in pixels of
+# video memory: a page is 64 of them across, 256 down
+PAGE_PIXELS = 64
+PAGE_SIDE = 256
+TEXTURE_X_LOW = 10 * PAGE_PIXELS
+TEXTURE_X_HIGH = 14 * PAGE_PIXELS
+TEXTURE_Y = 256
 PROJECTION_MAX = 8000
 FLAT_NORMAL_Y = -4000          # a level floor's normal (of 4096)
 CLIMB = 1100                   # how far up past a wall a fighter may climb
@@ -176,6 +183,24 @@ def check_limits(lines, ground_bytes, ground, report):
     cluts = {tuple(r['clut']) for r in records}
     in_row = all(c[1] == 480 and 0 <= c[0] < 320 and c[0] % 16 == 0 for c in cluts)
     report.check(len(cluts) <= CLUTS_MAX and in_row, '%d colour tables, in the fog\'s row' % len(cluts))
+    # each picture, a texture or a smaller copy of one, in the stage's
+    # pages and over no other (the compiler's places: arena_compile.py,
+    # place_textures)
+    tims = stage_ground.section(ground, 'textures')['tims']
+    boxes = []
+    for r in records:
+        tim = tims[r['tim']]
+        at = 8 + (struct_u32(tim, 8) if struct_u32(tim, 4) & 8 else 0)
+        w = int.from_bytes(tim[at + 8:at + 10], 'little')
+        h = int.from_bytes(tim[at + 10:at + 12], 'little')
+        boxes.append((r['image'][0], r['image'][1], w, h))
+    outside = [b for b in boxes if b[0] < TEXTURE_X_LOW or b[0] + b[2] > TEXTURE_X_HIGH or b[1] < TEXTURE_Y
+               or b[1] + b[3] > TEXTURE_Y + PAGE_SIDE or b[0] // PAGE_PIXELS != (b[0] + b[2] - 1) // PAGE_PIXELS]
+    over = sum(1 for i in range(len(boxes)) for j in range(i)
+               if boxes[i][0] < boxes[j][0] + boxes[j][2] and boxes[j][0] < boxes[i][0] + boxes[i][2]
+               and boxes[i][1] < boxes[j][1] + boxes[j][3] and boxes[j][1] < boxes[i][1] + boxes[i][3])
+    report.check(not outside and not over, '%d pictures (textures and their smaller copies) in pages 10 to 13, '
+                 'none over another (%d outside, %d over)' % (len(boxes), len(outside), over))
     return host
 
 

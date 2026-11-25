@@ -18,7 +18,9 @@ loaded and started (the stream used to loop on and the load wait for
 ever; docs/PORT.md, "A fight's music"); and again on the Castle Rooftop,
 Tony Umeda against Kannuki and then Utsusemi on the stage kept in memory
 (the port stopped there: the rooftop's backdrop was moved by whatever a
-register held; docs/PORT.md, "An argument that was not passed"). Both sizes
+register held; docs/PORT.md, "An argument that was not passed"). And
+seven arenas, more than the arenas' page's five rows: L1 and R1 turn its
+pages and the seventh is fought. Both sizes
 of the port (build/port/, build/port32/) must print the same trace of
 each plan, line for line, and each checkpoint's values must be what the
 presses chose.
@@ -460,6 +462,74 @@ after = 120
 expect = ["screen == SCREEN_FIGHT_UPDATE", "stage == %(rooftop)d"]
 '''
 
+# More arenas than the page's five rows (MANY_ARENAS of them, the sample
+# under other names, each a mod of its own): versus mode's stage pages,
+# Select opens the arenas' page, R1 turns to its second page (the cursor
+# on its first row, the sixth arena), Down to the seventh, R1 round to the
+# first page (its second row), L1 back to the second page's second row,
+# and Cross fights on the seventh arena.
+MANY_ARENAS = 7
+TOML_MANY = 'about = "The arenas\' page of more than five (tools/port_stage_select.py)"\n' + \
+    HEAD + '''input = [%(opening)s,
+    "menu+30 DOWN", "menu+60 DOWN", "menu+90 DOWN", "menu+150 CROSS",
+    "select+280 CROSS", "select+320 P2 CROSS",
+    "select+500 CROSS", "select+540 P2 CROSS",
+    "stages+20 SELECT",
+    "open+10 R1", "turned+10 DOWN", "down+10 R1", "round+10 L1", "back+10 CROSS",
+]
+''' % {'opening': ', '.join(OPENING)} + \
+    'compare = ["screen", "stage", "config_stage", "port_arena", "port_page", "port_page_cursor", ' \
+    '"port_page_top"]\n' + START + '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+expect = ["port_page == 0"]
+
+[[checkpoint]]
+name = "open"
+after = 30
+expect = ["port_page == 1", "port_page_cursor == 0", "port_page_top == 0"]
+
+[[checkpoint]]
+name = "turned"
+after = 20
+expect = ["port_page == 1", "port_page_cursor == 5", "port_page_top == 5"]
+
+[[checkpoint]]
+name = "down"
+after = 20
+expect = ["port_page_cursor == 6", "port_page_top == 5"]
+
+[[checkpoint]]
+name = "round"
+after = 20
+expect = ["port_page_cursor == 1", "port_page_top == 0"]
+
+[[checkpoint]]
+name = "back"
+after = 20
+expect = ["port_page_cursor == 6", "port_page_top == 5"]
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 3000
+expect = ["stage == %(host)d", "port_arena == 6", "port_page == 0"]
+
+[[checkpoint]]
+name = "walk"
+frames = 40
+expect = ["stage == %(host)d", "port_arena == 6"]
+'''
+
 # every unlock the save can hold (PORT_PLAY_ALL_UNLOCKS), and an empty
 # save's (SAVE_DEFAULT_UNLOCKS)
 ALL_UNLOCKS = 0x053FF3FF
@@ -489,12 +559,26 @@ def make_mods(folder):
     return mods
 
 
+def make_many_mods(folder):
+    """MANY_ARENAS arenas, each the sample under a name of its own
+    (`Arena 1` ...), each a mod of its own in the order of their folders."""
+    mods = os.path.join(folder, 'many-mods')
+    data = arena_compile.compile_arena(os.path.join(REPO, ARENA_SOURCE), report=lambda text: None)
+    for n in range(1, MANY_ARENAS + 1):
+        dest = os.path.join(mods, 'arena-%d' % n, 'arenas')
+        os.makedirs(dest, exist_ok=True)
+        with open(os.path.join(dest, 'a%d.arena' % n), 'wb') as f:
+            f.write(data.replace(b'\nname = Stone courtyard\n', b'\nname = Arena %d\n' % n, 1))
+    return mods
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'stage-select'))
     parser.add_argument('--shots', default=None)
     parser.add_argument('--only', nargs='*',
-                        help='the plans to run (stage_select, vscpu, practice, vs_unlocked, vscpu_next, vscpu_rooftop)')
+                        help='the plans to run (stage_select, vscpu, practice, vs_unlocked, vscpu_next, vscpu_rooftop, '
+                             'many_arenas)')
     args = parser.parse_args(argv[1:])
     import playtest
     report = Report()
@@ -513,6 +597,7 @@ def main(argv):
          ['--mods', 'off', '--stage-select', '--unlock-all', '--fight-music', 'stage']),
         ('vscpu_rooftop', TOML_VSCPU_ROOFTOP,
          ['--mods', 'off', '--stage-select', '--unlock-all', '--fight-music', 'stage'], ROOFTOP_POKES),
+        ('many_arenas', TOML_MANY, ['--mods', make_many_mods(out)]),
     ]
     if args.only:
         plans = [plan for plan in plans if plan[0] in args.only]

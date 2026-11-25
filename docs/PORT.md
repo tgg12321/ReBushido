@@ -3010,6 +3010,21 @@ log. (The bar is not slack: the fog mixed from one band's edge to the
 next instead of about the band's middle put the abandoned shipyard at
 5.08% and it fell out, which is how that was found.)
 
+**A custom arena** stands on its host's number but is a ground of its own,
+so it is held to the prover by itself: `--arena FILE.arena` puts the file
+alone in a folder of mods, runs the tour on its host with `--arena`, and
+writes the line of `g_arena_proved` (`gl_stage.c`) it comes to: the
+arena's key and the FNV-1a of its whole file, so that the verdict is of
+the arena as measured and of no other. While an arena is in play the mesh
+takes its verdict, not the host's; an arena not in the table (a mod's
+own, or one changed since) keeps the game's own tiles unless
+`stage_mesh = every`, and the log says so. The sample, `courtyard`, keeps
+the mesh (trace the same, areas 0.620%, the largest 10,752 pixels, black
+0.001%), and so does the compiler's test arena, the gallery (0.651%,
+4,352, 0.001%), which is not shipped and so not in the table;
+`tests/rebushido/arena.py` fails when the sample as compiled is no longer
+the file the table names.
+
 **What the differences are**, looked at picture by picture and not only
 counted: the ground is in both, in the same place, with the same things
 standing on it, and nothing of a fighter, a shadow or a dropped weapon is
@@ -8388,7 +8403,8 @@ The game's hooks, all under `RB_PORT`:
 - `select_StageStep` (`select.c`), before the grid reads its presses:
   `port_StagePageStep` with the stage under the cursor. Square switches
   that stage's kind; Select opens the arenas' page, which then has every
-  press: up and down, Cross to fight on the arena (the grid's stage index
+  press: up and down, L1 and R1 a page of five back or on (round from
+  the last to the first), Cross to fight on the arena (the grid's stage index
   set to its host, the page confirmed as the grid's own Cross does),
   Triangle or Select back. The grid's own Cross calls `port_StageChosen`:
   the fight's kind is that stage's, and the arena is the run's own
@@ -8431,7 +8447,8 @@ colour): **Kind** ("Remastered" in gold, "Classic" in white; Square),
 (Select); one size of letters for the values, one for the buttons'
 words, a value too long for its column made smaller. The arenas' page
 covers the map and the
-scroll: the arenas by their names (five rows, scrolled), the picture of
+scroll: the arenas by their names (five rows, scrolled; past five, which
+page of how many under them, and L1 and R1 among the keys), the picture of
 the one under the cursor (the PNG its file carries, or a card of its
 name), and the same keys for what Cross, and Triangle or Select, do.
 It reads the state and the

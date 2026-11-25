@@ -453,8 +453,10 @@ and R2) and, when a mod brings any, **Arenas** (Select).
 **Square** switches the stage under the cursor between Classic and
 Remastered Classic, and it stays so for as long as the program runs.
 **Select** opens the page of the **custom arenas**: up and down choose
-one, its picture beside the list; **Cross** fights on it; **Triangle**
-or Select goes back to the stages. **L1** and **R1** turn the stage's
+one, its picture beside the list; with more than five, **L1** and
+**R1** turn a page of five, round from the last to the first; **Cross**
+fights on it; **Triangle** or Select goes back to the stages. On the
+stages' grid **L1** and **R1** turn the stage's
 time of day ("The time of day", below), **L2** and **R2** choose the
 fight's music ("Music on the stage select", below). On the keyboard
 Square is A, Select is Right Shift, L1 and R1 are Q and W and L2 and R2
