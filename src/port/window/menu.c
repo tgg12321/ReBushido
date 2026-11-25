@@ -59,6 +59,7 @@ enum {
     ROW_UPDATE_NOTE,  /* a line of its notes: `index`, -1 their heading */
     ROW_REPLAYS,      /* the Replays page */
     ROW_REPLAY,       /* a replay of it: `index` its row (menu_replays.c) */
+    ROW_FILM,         /* the film being made of one, or the last one's end */
 };
 
 typedef struct {
@@ -107,6 +108,8 @@ static struct {
     s32 font_ok;
     /* the updater's view the Updates page was built for */
     s32 update_generation;
+    /* whether the Replays page was built with its row of the film */
+    s32 film_shown;
     /* frames since the cursor last moved (its glow), and of the page's
      * fade in */
     s32 pulse;
@@ -117,6 +120,21 @@ static struct {
 static void port_MenuClose(void);
 
 /* ---- the pages ---- */
+
+static void port_MenuBuild(s32 page, s32 cursor);
+
+/* The Replays page built again where its row of the film comes or goes,
+ * the cursor kept on the row it was on. */
+static void port_MenuFollowFilm(void) {
+    s32 shown = port_ReplaysFilmShown();
+
+    if (g_menu.page != PAGE_REPLAYS || shown == g_menu.film_shown) {
+        return;
+    }
+    port_MenuBuild(PAGE_REPLAYS, g_menu.cursor + (shown               ? 1
+                                                  : g_menu.cursor > 0 ? -1
+                                                                      : 0));
+}
 
 static void port_MenuAddRow(s32 kind, s32 index) {
     if (g_menu.row_count < ROWS_MAX) {
@@ -204,12 +222,27 @@ static void port_MenuBuild(s32 page, s32 cursor) {
         port_MenuAddRow(ROW_BACK, 0);
     } else if (page == PAGE_REPLAYS) {
         s32 count = port_ReplaysItems();
+        s32 setting;
 
-        for (i = 0; i < count && i < ROWS_MAX - 1; i++) {
+        /* the film being made, above the replays; its two settings below
+         * them */
+        g_menu.film_shown = port_ReplaysFilmShown();
+        if (g_menu.film_shown) {
+            port_MenuAddRow(ROW_FILM, 0);
+        }
+        for (i = 0; i < count && i < ROWS_MAX - 4; i++) {
             port_MenuAddRow(ROW_REPLAY, i);
         }
         if (count == 0) {
             port_MenuAddRow(ROW_REPLAY, -1);
+        }
+        for (setting = 0; setting < 2; setting++) {
+            for (i = 0; i < port_CountChoices(); i++) {
+                if (strcmp(port_FindChoice(i)->name,
+                           g_port_replays_film_settings[setting]) == 0) {
+                    port_MenuAddRow(ROW_CHOICE, i);
+                }
+            }
         }
         port_MenuAddRow(ROW_BACK, 0);
     } else {
@@ -496,6 +529,9 @@ static void port_MenuDescribe(
         port_ReplaysDescribe(
             row->index, label, LABEL_BYTES, value, VALUE_BYTES);
         break;
+    case ROW_FILM:
+        port_ReplaysFilmDescribe(label, LABEL_BYTES, value, VALUE_BYTES);
+        break;
     case ROW_NET_ITEM:
         port_OnlineDescribe(
             row->index,
@@ -564,6 +600,8 @@ static const char *port_MenuHelp(void) {
         return "The fights kept as replays: watch one again";
     case ROW_REPLAY:
         return port_ReplaysHelp(row->index);
+    case ROW_FILM:
+        return port_ReplaysFilmHelp();
     case ROW_QUIT:
         return "The program ends (closing the window does too); the "
                "settings are kept";
@@ -720,6 +758,9 @@ static void port_MenuAccept(void) {
             port_MenuClose();
         }
         break;
+    case ROW_FILM:
+        port_ReplaysFilmAccept();
+        break;
     case ROW_NET_ITEM: {
         s32 page_cursor = g_menu.cursor;
         s32 what =
@@ -829,7 +870,18 @@ void port_MenuPress(s32 what) {
         port_MenuClose();
         break;
     case PORT_MENU_CLEAR:
-        if (row->kind == ROW_BUTTON && g_menu.text != NULL) {
+        if (row->kind == ROW_REPLAY) {
+            /* a film of it, made beside the game by another run
+             * (sdl_export.c), which reads the settings as they are now */
+            port_MenuWriteFile();
+            if (port_ReplaysExport(
+                    row->index, g_menu.note, sizeof(g_menu.note))) {
+                port_PageSound(PORT_PAGE_SOUND_CONFIRM);
+                port_MenuFollowFilm();
+            } else {
+                port_PageSound(PORT_PAGE_SOUND_CANCEL);
+            }
+        } else if (row->kind == ROW_BUTTON && g_menu.text != NULL) {
             char name[32];
 
             port_MenuButtonName(name, sizeof(name));
@@ -999,6 +1051,9 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
     s32 i;
     s32 y;
 
+    if (g_menu.page == PAGE_REPLAYS) {
+        port_MenuFollowFilm();
+    }
     if (g_menu.page == PAGE_UPDATE) {
         PortUpdateView view;
 

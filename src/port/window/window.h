@@ -663,6 +663,9 @@ extern s32 port_LoadKind(void);
  * between two matches (enum LoadingScreen); 0 for any other, and in a
  * fight. */
 extern s32 port_ReadScreen(void);
+/* Whether the game's screen is the fight (SCREEN_FIGHT_UPDATE): a
+ * replay's film begins with it (sdl_export.c). */
+extern s32 port_IsFightScreen(void);
 /* The game's own Bug fixes setting (g_rb_settings.bugfixes), read, and
  * set by the settings menu while the game is stopped. */
 extern s32 port_GetBugfixes(void);

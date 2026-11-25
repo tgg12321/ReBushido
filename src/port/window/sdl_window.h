@@ -226,6 +226,67 @@ extern s32 port_ReplayWindowEvent(const union SDL_Event *event);
  * `out` ("" for none), and their colour. */
 extern u32 port_ReplayWords(char *out, u32 room);
 
+/* ---- a replay as a film (sdl_export.c; film.h) ---- */
+
+/* The run that makes one (--replay FILE --export OUT): the film's file,
+ * its kind by its ending, and its size. FALSE, with the reason, where it
+ * cannot be made. */
+extern s32 port_ExportSetUp(
+    const char *path, s32 w, s32 h, char *why, u32 room);
+extern s32 port_ExportIsOn(void);
+/* Whether this blank is the film's: the replay at its fight. */
+extern s32 port_ExportWants(void);
+/* The blank's picture, `w` by `h` pixels 0xFFRRGGBB from the top, as the
+ * window shows it; NULL for a blank that shows none (the last again). */
+extern void port_ExportPicture(u32 blank, const u32 *pixels, s32 w, s32 h);
+/* The samples the window is given, as they are made. */
+extern void port_ExportSound(const s16 *samples, u32 frames);
+/* The replay ended on a problem: the film is not made. */
+extern void port_ExportReplayEnded(const char *trouble);
+/* The program ends with `code`: the film finished, or taken away. The
+ * code the program ends with: `code`, or PORT_EXIT_FAILED where the film
+ * was not made. */
+extern s32 port_ExportEnd(s32 code);
+
+/* The program that asks for one (the settings menu's Replays page). */
+enum {
+    PORT_EXPORT_IDLE = 0,
+    PORT_EXPORT_RUNNING = 1,
+    PORT_EXPORT_DONE = 2,
+    PORT_EXPORT_FAILED = 3,
+    PORT_EXPORT_STOPPED = 4,
+};
+
+typedef struct {
+    s32 state; /* PORT_EXPORT_... */
+    u32 permille;
+    u32 generation;  /* new at each change */
+    u32 seconds;     /* since it began, while it runs */
+    char name[96];   /* the replay's file */
+    char words[512]; /* where it went, or why there is none */
+} PortExportView;
+
+/* A film of the replay at `replay` (its file's name `name`) begun by
+ * another run of this program, into films/ beside it, with the size and
+ * the picture the settings say (film_size, film_picture): FALSE, with
+ * the reason, where it cannot be. */
+extern s32 port_ExportBegin(
+    const char *replay, const char *name, char *why, u32 room);
+/* ... stopped, its file taken away */
+extern void port_ExportStop(void);
+/* ... and the last one's words no longer shown */
+extern void port_ExportForget(void);
+/* Each blank, and each turn of a page: the run's lines read, its end
+ * seen. */
+extern void port_ExportTick(void);
+extern void port_ExportGetView(PortExportView *view);
+
+/* The program's own path, the disc image it runs, and the word after
+ * `option` on its command line, or NULL (sdl_main.c). */
+extern const char *port_GetProgramPath(void);
+extern const char *port_GetImagePath(void);
+extern const char *port_GetCommandWord(const char *option);
+
 /* The settings menu's Play online page: the program starts again as a
  * session's (sdl_main.c), with the network's options of its command line
  * given anew. */

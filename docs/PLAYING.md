@@ -1356,6 +1356,38 @@ are known; one the other player left in the middle of is not kept. A
 fight in which the settings menu's Bug fixes was changed is not kept:
 that changes the game without a press.
 
+**A film of a replay, to share**: on the Replays page, Square (or Delete)
+on a replay. The program plays it again by itself, with no window shown
+and as fast as your PC goes, and writes the fight, picture and sound, as
+a film into `films/` beside the program, named as the replay is. A row
+at the top of the page says how far it is (and so does the line over the
+picture once the menu is closed); Cross on that row stops it. The game
+you were playing goes on meanwhile, untouched. Two rows under the
+replays choose the film:
+
+| Row | Setting | What it does |
+|---|---|---|
+| Film size | `film_size` | 1920 x 1080 (built in), 1280 x 720, 2560 x 1440 or 3840 x 2160 |
+| Film picture | `film_picture` | Remastered, as your picture settings draw it (built in), or Original, the console's own |
+
+On Windows the film is an **.mp4** (H.264 and AAC, made by Windows' own
+encoders): it plays as it is in Windows' Media Player, in every browser
+and in Discord. A fight of 16 seconds at 1920 x 1080 is about 20 MB, made
+in about ten seconds. Elsewhere (Linux, or a Windows N edition without
+its media pack) it is an **.avi** (Motion JPEG and the sound as it is),
+which VLC and mpv play; it is large (about 430 MB for those 16 seconds at
+1920 x 1080), and `ffmpeg -i film.avi -c:v libx264 -crf 20 -c:a aac
+film.mp4` makes it an .mp4 to share.
+
+The film is the fight: from its first frame to the end of the replay,
+without the load before it and without the line of keys. Each frame is
+one of the console's vertical blanks (59.83 a second, the rate the game
+and its sound keep), so its sound is the fight's own, frame for frame.
+
+From the command line: `rebushido --replay FILE --export OUT.mp4` (or
+`.avi`), with `--window 1280x720` for another size and `--graphics
+original` for the console's picture.
+
 ## Where the saves are
 
 ReBushido saves what the game saves, in the same way: **memory card

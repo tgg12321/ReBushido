@@ -21,6 +21,9 @@
 #define PORT_SPU_VOICES 24
 /* Samples a second, each a left and a right of 16 bits. */
 #define PORT_SPU_RATE 44100
+/* Of a blank's samples, those made after the sound library's tick at the
+ * blank, with it (sound.c): the rest are made before it, up to it. */
+#define PORT_SPU_HEAD_FRAMES 32
 
 /* The registers, by halfword. A voice has eight, voice n's from n * 8. */
 enum {

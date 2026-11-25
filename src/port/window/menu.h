@@ -228,6 +228,20 @@ extern const char *port_ReplaysHelp(s32 item);
 /* The row's replay played from the game's next frame: TRUE, and the menu
  * closes; FALSE with why in `note`. */
 extern s32 port_ReplaysAccept(s32 item, char *note, u32 room);
+/* The row's replay made a film of (Square or Delete), by another run of
+ * the program (sdl_export.c): TRUE where it was begun, FALSE with why in
+ * `note`. */
+extern s32 port_ReplaysExport(s32 item, char *note, u32 room);
+/* The page's row of the film: whether it is up (one is being made, or
+ * the last one's end is still said), its label, value and help, and what
+ * Cross does on it (stops the film, or puts the row away). */
+extern s32 port_ReplaysFilmShown(void);
+extern void port_ReplaysFilmDescribe(
+    char *label, u32 label_room, char *value, u32 value_room);
+extern const char *port_ReplaysFilmHelp(void);
+extern void port_ReplaysFilmAccept(void);
+/* The settings of a film shown on the page as well, by name. */
+extern const char * const g_port_replays_film_settings[2];
 
 /* ---- the settings menu's Play online page (menu_online.c) ---- */
 

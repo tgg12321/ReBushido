@@ -299,6 +299,8 @@ s32 port_ReadScreen(void) {
                : 0;
 }
 
+s32 port_IsFightScreen(void) { return g_sys_screen == SCREEN_FIGHT_UPDATE; }
+
 s32 port_LoadKind(void) {
     if (g_port_load_wait <= 0) {
         return PORT_LOAD_NONE;

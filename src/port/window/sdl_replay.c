@@ -61,6 +61,7 @@ static void port_ReplayWait(void) {
 }
 
 static void port_ReplayEnded(const char *trouble) {
+    port_ExportReplayEnded(trouble);
     g_replay.ended_at = SDL_GetTicks();
     g_replay.ended_badly = trouble != NULL;
     snprintf(g_replay.ended, sizeof(g_replay.ended), "%s",
@@ -176,12 +177,53 @@ s32 port_ReplayWindowEvent(const union SDL_Event *event) {
 
 /* ---- the line ---- */
 
+/* A film being made by another run (sdl_export.c), how far it is; or for
+ * a moment after, where it went. FALSE where there is none to say. */
+static s32 port_FilmWords(char *out, u32 room, u32 *color) {
+    static u32 g_seen_generation;
+    static u32 g_seen_at;
+    PortExportView view;
+
+    port_ExportGetView(&view);
+    if (view.state == PORT_EXPORT_RUNNING) {
+        snprintf(out, room,
+                 "Making a film of the replay: %u%%   |   the settings "
+                 "menu's Replays page stops it",
+                 view.permille / 10);
+        *color = COLOR_TEXT;
+        return TRUE;
+    }
+    if (view.generation != g_seen_generation) {
+        g_seen_generation = view.generation;
+        g_seen_at = SDL_GetTicks();
+    }
+    if ((view.state == PORT_EXPORT_DONE || view.state == PORT_EXPORT_FAILED) &&
+        SDL_GetTicks() - g_seen_at < ENDED_SHOWN_MS) {
+        snprintf(out, room, "%s: %s",
+                 view.state == PORT_EXPORT_DONE ? "Film made" : "No film",
+                 view.words);
+        *color = view.state == PORT_EXPORT_DONE ? COLOR_TEXT : COLOR_TROUBLE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
 u32 port_ReplayWords(char *out, u32 room) {
     PortReplayStatus status;
     char speed[32];
+    u32 color;
 
     out[0] = 0;
     port_GetReplayStatus(&status);
+    if (status.is_playing &&
+        (g_port_window_options.is_hidden || port_ExportIsOn())) {
+        /* a window never shown has no line over its picture: no one reads
+         * it, and a film and a test take the picture alone */
+        return COLOR_TEXT;
+    }
+    if (!status.is_playing && port_FilmWords(out, room, &color)) {
+        return color;
+    }
     if (!status.is_playing) {
         if (g_replay.ended[0] != 0 &&
             SDL_GetTicks() - g_replay.ended_at < ENDED_SHOWN_MS) {
