@@ -860,7 +860,7 @@ static s32 port_HostHere(void) {
     s32 here = g_session.pads / g_session.pcs;
     s32 i;
 
-    for (i = 0; i < g_session.guests; i++) {
+    for (i = 0; i < g_session.guests && i < SESSION_GUESTS; i++) {
         here += g_session.guest[i].met ? g_session.pads / g_session.pcs : 0;
     }
     return here;
@@ -870,7 +870,7 @@ static u32 port_HostWider(void) {
     s32 i;
 
     g_session.wider = g_session.shape;
-    for (i = 0; i < g_session.guests; i++) {
+    for (i = 0; i < g_session.guests && i < SESSION_GUESTS; i++) {
         if (g_session.guest[i].met) {
             port_TakeShape(g_session.guest[i].shape);
         }
@@ -973,7 +973,7 @@ void port_SessionKeepOthers(void) {
     if (g_session.role != PORT_SESSION_HOST || g_session.guests < 2) {
         return;
     }
-    for (i = 0; i < g_session.guests; i++) {
+    for (i = 0; i < g_session.guests && i < SESSION_GUESTS; i++) {
         if (i != link && g_session.guest[i].met) {
             port_HostKeep(i, 0, 0, note, sizeof(note));
         }
@@ -994,7 +994,7 @@ static void port_HostStranger(
     if (port_NetReadHeader(bytes, count, &detail, &number) != KIND_HELLO) {
         return;
     }
-    for (next = 0; next < g_session.guests; next++) {
+    for (next = 0; next < g_session.guests && next < SESSION_GUESTS; next++) {
         PortNetAddress bound;
         s32 waits;
 
@@ -1253,7 +1253,8 @@ static s32 port_HostLobby(char *note, u32 room) {
 
         port_RoomTick();
         if (g_session.canceled || ready == PORT_SESSION_LEAVE) {
-            for (link = 0; link < g_session.guests; link++) {
+            for (link = 0; link < g_session.guests && link < SESSION_GUESTS;
+                 link++) {
                 port_NetSelectLink(link);
                 port_SendLeave();
             }
@@ -1265,7 +1266,8 @@ static s32 port_HostLobby(char *note, u32 room) {
             return 0;
         }
         g_session.phase = PORT_SESSION_PHASE_READY;
-        for (link = 0; link < g_session.guests; link++) {
+        for (link = 0; link < g_session.guests && link < SESSION_GUESTS;
+             link++) {
             if (!port_HostKeep(link, ready == PORT_SESSION_READY,
                                link == 0 ? POLL_MS : 0, note, room)) {
                 port_NetSelectLink(0);
@@ -1276,7 +1278,8 @@ static s32 port_HostLobby(char *note, u32 room) {
         g_session.peer_ready = all;
         if (all && ready == PORT_SESSION_READY) {
             /* the session's shape once more with go, for all */
-            for (link = 0; link < g_session.guests; link++) {
+            for (link = 0; link < g_session.guests && link < SESSION_GUESTS;
+                 link++) {
                 port_NetSelectLink(link);
                 port_SendLobby(1);
                 port_SendShort(KIND_GO, 0, port_HostWider());
@@ -1310,7 +1313,7 @@ static s32 port_HostLobby(char *note, u32 room) {
 static void port_HostLetAllGo(void) {
     s32 link;
 
-    for (link = 0; link < g_session.guests; link++) {
+    for (link = 0; link < g_session.guests && link < SESSION_GUESTS; link++) {
         if (g_session.guest[link].met) {
             port_NetSelectLink(link);
             port_SendLeave();
@@ -1337,7 +1340,7 @@ static s32 port_HostAll(void) {
     }
     /* the other guests' links: their sockets, at the ports after the
      * first's where it has one */
-    for (link = 1; link < g_session.guests; link++) {
+    for (link = 1; link < g_session.guests && link < SESSION_GUESTS; link++) {
         PortNetAddress at = g_session.address;
 
         if (at.port != 0) {
