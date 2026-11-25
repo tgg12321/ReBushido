@@ -188,6 +188,9 @@ static const char g_usage[] =
     "                 a fighter veils him (on with the mesh)\n"
     "  --fighter-models F  the fighters drawn from models of their own,\n"
     "                 the .glb files in folder F (gl_fighter.h); off\n"
+    "  --joints W     blended, rigid: the models' joints bent as one skin\n"
+    "                 or their parts rigid as the game's (gl_joints.h);\n"
+    "                 rigid unless asked\n"
     "  --smooth-light W  on, off: the game's own lighting worked out\n"
     "                 at each pixel on the ground's mesh and the\n"
     "                 fighters' models (docs/PORT.md, \"Lighting\")\n"
@@ -1433,6 +1436,10 @@ int main(int argc, char **argv) {
             snprintf(g_run.motion_folder, sizeof(g_run.motion_folder), "%.*s",
                      comma != NULL ? (int)(comma - where) : (int)strlen(where),
                      where);
+        } else if (!strcmp(word, "--joints")) {
+            /* rigid unless asked, so that the provers hold the picture
+             * they always held (gl_joints.h) */
+            options.is_joints_blended = strcmp(argv[++i], "blended") == 0;
         } else if (!strcmp(word, "--smooth-light")) {
             options.is_smooth_light = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--lights")) {

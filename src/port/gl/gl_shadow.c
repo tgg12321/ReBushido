@@ -126,6 +126,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUseProgram, (GLuint))                                           \
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
     GL(void, glUniform1i, (GLint, GLint))                                      \
+    GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
     GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
@@ -291,6 +292,9 @@ static struct {
     GLint cast_at_kind;
     GLint cast_at_world_one;
     GLint cast_at_world_two;
+    GLint cast_at_dual_one;
+    GLint cast_at_dual_two;
+    GLint cast_at_joints;
     GLint cast_at_flat_one;
     GLint cast_at_flat_two;
     GLint cast_at_sun_mode;
@@ -380,6 +384,12 @@ static const char g_shadow_cast_vertex_text[] =
     "uniform int u_kind;\n"
     "uniform mat4 u_world_one[21];\n"
     "uniform mat4 u_world_two[21];\n"
+    /* the joints blended (gl_joints.h): a model's vertex's band, each
+     * frame's dual quaternions, and its bind place (a_one) */
+    "layout(location = 15) in vec4 a_band;\n"
+    "uniform vec4 u_dual_one[42];\n"
+    "uniform vec4 u_dual_two[42];\n"
+    "uniform int u_joints;\n" PORT_GL_JOINTS_GLSL
     /* the ground, the sun's two slopes, and whether the ground is the
      * body's lowest point */
     "uniform vec4 u_flat_one;\n"
@@ -404,6 +414,13 @@ static const char g_shadow_cast_vertex_text[] =
     "    return vec3(p.x + above * flat_by.y, ground, p.z + above * flat_by.z);\n"
     "}\n"
     "vec3 skin_one() {\n"
+    "    if (u_joints != 0 && a_band.w == 0.0) {\n"
+    "        vec3 turned = vec3(0.0);\n"
+    "        int a = int(a_band.x) * 2;\n"
+    "        int b = int(a_band.y) * 2;\n"
+    "        return joint_place(u_dual_one[a], u_dual_one[a + 1], u_dual_one[b],\n"
+    "                           u_dual_one[b + 1], a_band.z, a_one, turned);\n"
+    "    }\n"
     "    return (u_world_one[a_term_joint.x] * a_term[0]\n"
     "          + u_world_one[a_term_joint.y] * a_term[1]\n"
     "          + u_world_one[a_term_joint.z] * a_term[2]\n"
@@ -414,6 +431,13 @@ static const char g_shadow_cast_vertex_text[] =
     "          + u_world_one[a_term_joint1.w] * a_term[7]).xyz;\n"
     "}\n"
     "vec3 skin_two() {\n"
+    "    if (u_joints != 0 && a_band.w == 0.0) {\n"
+    "        vec3 turned = vec3(0.0);\n"
+    "        int a = int(a_band.x) * 2;\n"
+    "        int b = int(a_band.y) * 2;\n"
+    "        return joint_place(u_dual_two[a], u_dual_two[a + 1], u_dual_two[b],\n"
+    "                           u_dual_two[b + 1], a_band.z, a_one, turned);\n"
+    "    }\n"
     "    return (u_world_two[a_term_joint.x] * a_term[0]\n"
     "          + u_world_two[a_term_joint.y] * a_term[1]\n"
     "          + u_world_two[a_term_joint.z] * a_term[2]\n"
@@ -701,6 +725,12 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
         glGetUniformLocation(g_shadow.cast_program, "u_world_one");
     g_shadow.cast_at_world_two =
         glGetUniformLocation(g_shadow.cast_program, "u_world_two");
+    g_shadow.cast_at_dual_one =
+        glGetUniformLocation(g_shadow.cast_program, "u_dual_one");
+    g_shadow.cast_at_dual_two =
+        glGetUniformLocation(g_shadow.cast_program, "u_dual_two");
+    g_shadow.cast_at_joints =
+        glGetUniformLocation(g_shadow.cast_program, "u_joints");
     g_shadow.cast_at_flat_one =
         glGetUniformLocation(g_shadow.cast_program, "u_flat_one");
     g_shadow.cast_at_flat_two =
@@ -1274,6 +1304,15 @@ static void port_GlShadowDrawModels(void) {
                            GL_FALSE, a->cast.world[0]);
         glUniformMatrix4fv(g_shadow.cast_at_world_two, PORT_FIGHTER_BONES,
                            GL_FALSE, b->cast.world[0]);
+        /* the joints blended as the fighters' layer blends them */
+        glUniform1i(
+            g_shadow.cast_at_joints, a->cast.is_blended && b->cast.is_blended);
+        if (a->cast.is_blended && b->cast.is_blended) {
+            glUniform4fv(g_shadow.cast_at_dual_one, PORT_GL_JOINT_DUALS,
+                         a->cast.dual[0]);
+            glUniform4fv(g_shadow.cast_at_dual_two, PORT_GL_JOINT_DUALS,
+                         b->cast.dual[0]);
+        }
         port_GlShadowFlat(g_shadow.cast_at_flat_one, a);
         port_GlShadowFlat(g_shadow.cast_at_flat_two, b);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, a->cast.feet);

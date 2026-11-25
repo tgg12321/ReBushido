@@ -35,6 +35,7 @@
 #include "gl_cloth.h"
 #include "gl_fighter_card.h"
 #include "gl_fighter_file.h"
+#include "gl_joints.h"
 #include "port_fighter.h"
 
 typedef unsigned int GLenum;
@@ -77,6 +78,7 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUseProgram, (GLuint))                                           \
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
     GL(void, glUniform1i, (GLint, GLint))                                      \
+    GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform3fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLint, const GLfloat *))     \
@@ -155,6 +157,8 @@ static struct {
     GLuint vertices;
     GLint skin_at_world;
     GLint skin_at_turn;
+    GLint skin_at_dual;
+    GLint skin_at_joints;
     GLint skin_at_count;
     GLint scatter_at_count;
     GLint gather_at_count;
@@ -195,6 +199,11 @@ static const char g_skin_text[] = CARD_VERSION
     "uniform mat4 u_world[21];\n"
     "uniform mat3 u_turn[21];\n"
     "uniform int u_count;\n"
+    /* the joints blended (gl_joints.h): each vertex's band, and the pose's
+     * dual quaternions */
+    "layout(std430, binding = 4) readonly buffer Band { vec4 band[]; };\n"
+    "uniform vec4 u_dual[42];\n"
+    "uniform int u_joints;\n" PORT_GL_JOINTS_GLSL
     "float f(uint i) { return uintBitsToFloat(m[i]); }\n"
     "uint byte_of(uint word, uint k) { return (word >> (8u * k)) & 255u; }\n"
     "int cell(float x) { return int(floor(x / 64.0)); }\n"
@@ -216,6 +225,14 @@ static const char g_skin_text[] = CARD_VERSION
     "        float w = f(b + 8u + k);\n"
     "        if (w == 0.0) { continue; }\n"
     "        normal += w * (u_turn[byte_of(m[b + 44u], k) % 21u] * n);\n"
+    "    }\n"
+    "    if (u_joints != 0 && band[i].w == 0.0) {\n"
+    "        int ja = int(band[i].x) * 2;\n"
+    "        int jb = int(band[i].y) * 2;\n"
+    "        normal = n;\n"
+    "        place = joint_place(u_dual[ja], u_dual[ja + 1], u_dual[jb],\n"
+    "                            u_dual[jb + 1], band[i].z,\n"
+    "                            vec3(f(b), f(b + 1u), f(b + 2u)), normal);\n"
     "    }\n"
     "    posed[i * 2u] = vec4(place, 0.0);\n"
     "    posed[i * 2u + 1u] = vec4(normal, 0.0);\n"
@@ -658,6 +675,8 @@ const char *port_GlFighterCardStart(void *(*getproc)(const char *)) {
     g_card.member = glGetUniformLocation(g_card.program, name)
     AT(skin_at_world, skin, "u_world");
     AT(skin_at_turn, skin, "u_turn");
+    AT(skin_at_dual, skin, "u_dual");
+    AT(skin_at_joints, skin, "u_joints");
     AT(skin_at_count, skin, "u_count");
     AT(scatter_at_count, scatter, "u_count");
     AT(gather_at_count, gather, "u_count");
@@ -815,6 +834,14 @@ void port_GlFighterCardPoses(PortGlCardPoseAsk *asks, s32 count) {
         glUniformMatrix3fv(g_card.skin_at_turn, PORT_FIGHTER_FILE_JOINTS,
                            GL_TRUE, ask->turn[0]);
         glUniform1i(g_card.skin_at_count, ask->vertex_count);
+        if (ask->band_buffer != 0 && ask->dual != NULL) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ask->band_buffer);
+            glUniform4fv(
+                g_card.skin_at_dual, PORT_GL_JOINT_DUALS, ask->dual[0]);
+            glUniform1i(g_card.skin_at_joints, 1);
+        } else {
+            glUniform1i(g_card.skin_at_joints, 0);
+        }
         glDispatchCompute(
             port_GlFighterCardGroups(ask->vertex_count, GROUP), 1, 1);
     }
@@ -876,6 +903,8 @@ s32 port_GlFighterCardPose(
     ask.vertex_count = vertex_count;
     ask.world = world;
     ask.turn = turn;
+    ask.band_buffer = 0;
+    ask.dual = NULL;
     port_GlFighterCardPoses(&ask, 1);
     return ask.pose;
 }

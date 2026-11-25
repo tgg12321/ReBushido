@@ -990,6 +990,7 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
      * own black polygons (src/port/gl/gl_shadow.h) */
     options->shadows = g_port_settings.shadows;
     options->is_smooth_light = g_port_settings.smooth_light;
+    options->is_joints_blended = g_port_settings.joints_blended;
     options->is_lights = g_port_settings.lights;
     /* the lighting's finish (gl_post.h) */
     options->is_reflections = g_port_settings.reflections;
@@ -3120,8 +3121,9 @@ void port_WindowApplyChoice(s32 choice) {
         (strcmp(name, "stage_mesh") == 0 ||
          strcmp(name, "stage_props_mesh") == 0 ||
          strcmp(name, "shadows") == 0 || strcmp(name, "smooth_light") == 0 ||
-         strcmp(name, "lights") == 0 || strcmp(name, "effects") == 0 ||
-         strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
+         strcmp(name, "joints") == 0 || strcmp(name, "lights") == 0 ||
+         strcmp(name, "effects") == 0 || strcmp(name, "sky") == 0 ||
+         strcmp(name, "see_through") == 0 ||
          strcmp(name, "stage_lights") == 0 || strcmp(name, "dressing") == 0 ||
          strcmp(name, "effect_lights") == 0 ||
          strcmp(name, "reflections") == 0 ||
