@@ -1108,7 +1108,7 @@ def check_four(label, program, args, base, case):
             problems.append('four: %s: %s ended with %s (%s/side%d.err)' % (label, who, code, folder, side))
         out_text = read(os.path.join(folder, 'side%d.out' % side))
         printed = [name for name in FOUR_ORDER if 'cp %s ' % name in out_text]
-        wanted = 'fight' if leaver is not None and (side == leaver or not cpu) else 'after_fight' if cpu else 'kill'
+        wanted = 'fight' if leaver is not None and (side == leaver or not cpu) else 'kill'
         if wanted not in printed and not any(FOUR_ORDER.index(n) > FOUR_ORDER.index(wanted) for n in printed):
             problems.append('four: %s: %s printed no checkpoint from `%s` on (%s)' % (label, who, wanted,
                                                                                    ' '.join(printed) or 'none'))

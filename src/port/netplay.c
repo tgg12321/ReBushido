@@ -690,6 +690,10 @@ static void port_NetplayTake(s32 link, const u8 *in, s32 bytes) {
     s32 pad;
 
     if (kind == KIND_BYE) {
+        if (from->taken) {
+            /* (the rest of a goodbye already taken: the CPU plays on) */
+            return;
+        }
         from->left = 1;
         from->left_pad =
             (detail & BYE_PAD_MASK) != 0 ? (detail & BYE_PAD_MASK) - 1 : -1;
@@ -1067,7 +1071,7 @@ static void port_NetplayKeepLocal(void) {
 
 /* Whether the host gives the pads of link `link`, whose player has left
  * or gone silent, to the CPU and plays on (docs/NETPLAY.md, section 19):
- * a host of four PCs, in a fight of four or its match, another guest
+ * a host of four PCs, in the middle of a fight of four, another guest
  * still in, the leave no desync's. Otherwise the session ends for all, as
  * it did. */
 static s32 port_NetplayMayTakeOver(s32 link) {
@@ -1075,7 +1079,8 @@ static s32 port_NetplayMayTakeOver(s32 link) {
     s32 i;
 
     if (g_np_links < 2 || g_np_watch || g_np_link[link].desync ||
-        g_np_link[link].taken || !port_DuoIsOn() || port_SessionResult() != 0) {
+        g_np_link[link].taken || !port_DuoIsOn() ||
+        g_sys_screen != SCREEN_FIGHT_UPDATE || port_SessionResult() != 0) {
         return FALSE;
     }
     for (i = 0; i < g_np_links; i++) {
@@ -1551,6 +1556,11 @@ s32 port_RunNetplay(void) {
         }
         if (g_np_ended) {
             return g_np_ended;
+        }
+        /* never past the window: a wait cut short by a goodbye goes
+         * round again (the end above, or the CPU taking over) */
+        if (!port_NetplayInWindow()) {
+            continue;
         }
         port_NetplayKeepTime();
         port_NetplayRunFrame();

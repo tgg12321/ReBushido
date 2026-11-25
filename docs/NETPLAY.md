@@ -2236,7 +2236,8 @@ host's rule, its match and its stage page hold as in a session of two.
 close, F1 twice, the plan's end) or stops answering gives his fighter to
 the CPU, and the others play on (protocol 16, section 19). Otherwise a
 player who leaves ends the session for all: the host's player, a guest
-before the fight, the last guest but one, either PC of two on each of
+outside the fight itself (before it, between fights, after it), the last
+guest but one, either PC of two on each of
 two. The host, told by that guest's goodbye (which says the pad), runs
 to the last frame it has of every pad and ends, telling each other guest
 who left; each runs to its own last and ends. In a room's match the
@@ -2331,7 +2332,11 @@ input that differ in whose the pad is roll back, whatever the frame's
 input depended on); the host runs its own frames from it again the same
 way. A guess is never more than 8 frames ahead of what is known, and the
 frame is no earlier than the last known, so the rollback is one of the
-window's. In practice the frame is the leaver's own last: his goodbye
+window's. The rest of the leaver's goodbyes (five are sent) are let be
+once his pad is the CPU's, and no frame is run past the window whatever
+cut a wait short (the first gate's run found a leave after the fight
+whose later goodbyes kept cutting the host's waits short, and its frames
+ran past the window). In practice the frame is the leaver's own last: his goodbye
 follows his last inputs, and the host had all of them (`four-leave`: he
 left after frame 1,799, the CPU's from 1,799; `rooms-four`: at 1,900 with
 a delay of 2, the CPU's from 1,903).
@@ -2361,8 +2366,10 @@ makes the fighter the CPU's at the frame its players did
 every hash held (`--replay-check`); one of before has none of them set.
 
 **When the session still ends for all.** The host's own player leaving
-(nobody else hears everyone), a leave before the fight of four or after
-its match is decided (the select screen needs its players), the last
+(nobody else hears everyone), a leave outside the fight itself (the
+host's game not in a fight's step: before it, at the menu after it or
+between a match's fights; the select screen and the menus need their
+players), the last
 guest of all leaving (nobody would be left to play with), a goodbye that
 says a desync, two on each of two PCs (either leaving leaves one PC: the
 window plays on alone as before), and a session of two with the CPU's
@@ -2395,14 +2402,15 @@ on*.
 
 | Case | Programs | What runs | Result |
 | --- | --- | --- | --- |
-| `port_net.py four`: `four-leave` | four headless, each size | as `four` (section 18), the fourth player's program ending 400 frames into the fight; 100 ms each way and 5% lost | 64-bit: each of the three told `player 4 has left the session: the CPU plays his fighter from frame 1799 on`; the fight played to a team out and the match decided at frame 5,474, where the session ended on all three; 182 hashes the same on the three, 123 of them after the CPU took over, the last `9A3285E775C3B4BE` at frame 5,460 (the same in two runs); the fight's replay the same on the three machines and played back by each with every hash the same; 773 rollbacks on the host, 459 and 453 on the guests |
-| `four-host-leave` | four headless, each size | the host's player leaving 400 frames into the fight | the session ended on all, each told `(player 1)` |
-| `port_net_lobby.py`: `rooms-four` | five headless | section 18's: Dai leaves the second match at its frame 1,900, in the fight | match 2: the CPU played Dai's fighter from frame 1,903 on Bunta, Chie, Ayame and Sora alike; the match to its end at frame 5,465, the second team's win (Chie and Ayame) told to the room by those who stayed, Dai's program telling nothing; 186 hashes the same on all four (Dai's before the CPU's frame), Sora holding 140; 165 s |
-| `tests/port/netplay.c` | netplay alone | the host given a guest's goodbye: with no fight of four on, the session's end as before; in one, the pad the CPU's from the first frame the host lacked, the frames past it run again, `INPUT_CPU` passed on; a guest told so from a frame it ran on a guess, rolled back where the frame's input depended on no button | 112 checks, both sizes |
+| `port_net.py four`: `four-leave` | four headless, each size | as `four` (section 18), the fourth player's program ending 400 frames into the fight; 100 ms each way and 5% lost | 64-bit: each of the three told `player 4 has left the session: the CPU plays his fighter from frame 1799 on`; the fight played to a team out and the match decided at frame 5,474, where the session ended on all three; 182 hashes the same on the three, 123 of them after the CPU took over, the last `9A3285E775C3B4BE` at frame 5,460 (the same in three runs); the fight's replay the same on the three machines and played back by each with every hash the same; 783 rollbacks on the host, 462 and 442 on the guests. 32-bit: the same frames, 182 hashes the same on the three, the last `FD80F749253F7CE2`, its replays the same and played back |
+| `four-host-leave` | four headless, each size | the host's player leaving 400 frames into the fight | as before protocol 16: each guest told `the other program ended after frame 1,789` (or 1,791) `(player 1)`, all ending well; 59 hashes the same on all four, each size |
+| `port_net_lobby.py`: `rooms-four`, `rooms-four-win` | five headless, Linux and Windows | section 18's: Dai leaves the second match at its frame 1,900, in the fight | match 2: the CPU played Dai's fighter from frame 1,903 on Bunta, Chie, Ayame and Sora alike; the match to its end at frame 5,465, the second team's win (Chie and Ayame) told to the room by those who stayed, Dai's program telling nothing; 186 hashes the same on all four (Dai's before the CPU's frame), Sora holding 140; 165 s, on Windows the same, 174 s |
+| `four-punch`, `four-relay` | four headless | section 18's, again with protocol 16 | 183 hashes the same on all four, as before |
+| `tests/port/netplay.c` | netplay alone | the host given a guest's goodbye: with no fight of four on, the session's end as before; in one, the pad the CPU's from the first frame the host lacked, the frames past it run again, `INPUT_CPU` passed on; a guest told so from a frame it ran on a guess, rolled back where the frame's input depended on no button; the rest of a taken guest's goodbyes changing nothing | 113 checks, both sizes |
 
 **What is left.** A guest who stops answering is given to the CPU after
 15 seconds; no case of the tests kills a program to see it. A match of
-several fights with a leaver is not run by a test (the tests' are of
-one): the next fight's first step makes the fighter the CPU's again, but
-whether the game's menu between fights waits on the second pad, where its
-player has left, is not seen. Four real PCs.
+several fights with a leaver in its first is not run by a test (the
+tests' are of one): the next fight's first step makes the fighter the
+CPU's again, but whether the game's menu between fights waits on the
+second pad, where its player has left, is not seen. Four real PCs.

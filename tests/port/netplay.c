@@ -92,6 +92,9 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
 
 s32 port_DuoIsOn(void) { return g_test_duo_on; }
 
+/* the game's screen: a fight's (the CPU takes a pad over only there) */
+s16 g_sys_screen = SCREEN_FIGHT_UPDATE;
+
 s32 port_GetSessionRole(void) { return PORT_SESSION_NONE; }
 
 /* no room of several, no feed and no spectator here (src/port/room.c,
@@ -479,6 +482,15 @@ static void test_HostOfFour(void) {
     CHECK_EQ(port_NetplayLeftPad(), -1);
     CHECK(!port_NetplayPeerGone());
     CHECK(!g_np_peer_left);
+    /* the rest of his goodbyes change nothing (a wait cut short by each
+     * would run past the window) */
+    {
+        u8 bye[PORT_NET_HEADER_BYTES];
+
+        port_NetHeader(bye, KIND_BYE, 3 + 1, 0);
+        port_NetplayTake(2, bye, sizeof(bye));
+        CHECK(!g_np_peer_left);
+    }
     CHECK_EQ(g_np_count[3], g_np_local_count);
     CHECK_EQ(g_np_inputs[3][first & NETPLAY_INPUT_MASK], INPUT_CPU);
     CHECK(g_np_is_wrong);
