@@ -25,6 +25,17 @@ static void select_MoveFighterCursors(MenuDrawCtx *ctx);
 static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw);
 static void select_StageStep(
     MenuDrawCtx *ctx, SpriteSheetSlot *sheets, s32 page);
+
+/* The arenas' page is up over the stage pages (port_stage_choice.h): the
+ * window draws the arenas where the map, its marks, the stages' names and
+ * the map's number are, so the page leaves those out and draws the rest
+ * (the title, the frame, the scroll and its picture) as it is. */
+#if RB_PORT
+#define SELECT_STAGE_COVERED() port_StagePageCovers()
+#else
+#define SELECT_STAGE_COVERED() FALSE
+#endif
+
 static VECTOR g_sprite_rotation_scale;
 
 /* ---- select ---- */
@@ -2414,7 +2425,8 @@ static void select_StageStep(
     ctx->prims.offset++;
 
     /* the stages' names: the one under the cursor, then the others */
-    if ((g_select_door & SELECT_DOOR_STATE) == SELECT_DOOR_OPEN) {
+    if ((g_select_door & SELECT_DOOR_STATE) == SELECT_DOOR_OPEN &&
+        !SELECT_STAGE_COVERED()) {
         draw.x = SELECT_STAGE_NAMES_X;
         draw.y = SELECT_STAGE_NAMES_Y;
         cursor_sheets = PTR(g_select_file->cursor_sheets);
@@ -2456,8 +2468,10 @@ static void select_StageStep(
     draw.header = PTR(sheets[SELECT_STAGE_SHEET_UNDER]);
     cells = draw.header->cells;
     draw.table = cells;
-    draw.sprt_out = ctx->prims.sprt;
-    ctx->prims.sprt = sprite_Draw(&draw);
+    if (!SELECT_STAGE_COVERED()) {
+        draw.sprt_out = ctx->prims.sprt;
+        ctx->prims.sprt = sprite_Draw(&draw);
+    }
     g_select_work->draw_offset[0] =
         g_select_db->draw.ofs[0] - g_select_stage_scrolls[page][0];
     g_select_work->draw_offset[1] =
@@ -2652,7 +2666,7 @@ static void select_StageStep(
      * behaviour). */
     menu_DrawTitleRule((MenuCtx *)ctx, rule, SELECT_LAYER_TOP);
     draw.ot_index = SELECT_LAYER_NAMES;
-    for (i = 0; i < SELECT_STAGE_SHEET_ROWS; i++) {
+    for (i = 0; i < SELECT_STAGE_SHEET_ROWS && !SELECT_STAGE_COVERED(); i++) {
         for (col = 0; col < SELECT_STAGE_PAGE_COLS; col++) {
             if (i == g_select_stage_row && col == g_select_stage_col &&
                 (g_select_door & SELECT_DOOR_STATE) == SELECT_DOOR_OPEN) {
@@ -2678,8 +2692,10 @@ static void select_StageStep(
     draw.header = PTR(sheets[SELECT_STAGE_SHEET_REST]);
     cells = draw.header->cells;
     draw.table = cells;
-    draw.ft4_out = ctx->prims.ft4;
-    ctx->prims.ft4 = sprite_DrawScaled(&draw, SPRITE_QUAD_NORMAL);
+    if (!SELECT_STAGE_COVERED()) {
+        draw.ft4_out = ctx->prims.ft4;
+        ctx->prims.ft4 = sprite_DrawScaled(&draw, SPRITE_QUAD_NORMAL);
+    }
 
     if (g_select_door == SELECT_DOOR_OPEN) {
         for (i = 0; i < g_select_extra_players + 1; i++) {

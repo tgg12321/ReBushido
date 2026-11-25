@@ -454,10 +454,17 @@ that changes it: **Style** (Square), **Time** (L1 and R1), **Music** (L2
 and R2) and, when a mod brings any, **Arenas** (Select).
 **Square** switches the stage under the cursor between Classic and
 Remastered Classic, and it stays so for as long as the program runs.
-**Select** opens the page of the **custom arenas**: up and down choose
-one, its picture beside the list; with more than five, **L1** and
-**R1** turn a page of five, round from the last to the first; **Cross**
-fights on it; **Triangle** or Select goes back to the stages. On the
+**Select** opens the page of the **custom arenas**, a page of the stage
+select like the others: the arenas' names on the scroll, three rows of
+two as the stages' are, the one under the cursor in white and its
+picture where the map is, and the page's number under them (`( Arenas
+)`). The d-pad moves among them as on the stages; with more than six,
+**L1** and **R1**, or Left and Right past the page's side (the arrows
+on the scroll), turn a page of six, round from the last to the first;
+**Cross** fights on the one under the cursor; **Triangle** or Select
+goes back to the stages. The panel under the scroll says the arena
+chosen and what the buttons do; every press has the game's own sound,
+and the select screen's music plays on. On the
 stages' grid **L1** and **R1** turn the stage's
 time of day ("The time of day", below), **L2** and **R2** choose the
 fight's music ("Music on the stage select", below). On the keyboard

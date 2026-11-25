@@ -1686,11 +1686,17 @@ rebushido --image GAME.cue --fight courtyard kannuki mikado   # straight into a 
 ```
 
 **On the stage select** every arena of the mods is on a page of its
-own: Select on a stage page opens it, Cross on one fights on it in place
-of its host, which the player is never shown (PLAYING.md, "Kinds of
-stage"; PORT.md, "The stage select's kinds of stage"). The page shows
-the arena's `name` and its picture: the file's preview (`preview =` of
-`arena.txt`, a PNG), or one the compiler draws of the scene. The choice
+own, in the stage pages' look: Select on a stage page opens it, Cross on
+one fights on it in place of its host, which the player is never shown
+(PLAYING.md, "Kinds of stage"; PORT.md, "The stage select's kinds of
+stage"). The page shows the arenas' `name`s on the scroll, six to a
+page, and the picture of the one under the cursor in the map's frame:
+the file's preview (`preview =` of `arena.txt`, a PNG), or one the
+compiler draws of the scene. The frame is about 2.4 times as wide as it
+is high: a picture of another shape is shown filling it, its middle
+kept (a 4:3 one loses a little of its top and bottom), so the arena is
+best in the middle of its preview; with no picture the frame is a card
+of the arena's name. The choice
 is the game's state: rolled back with it, the same on both machines of
 a session, and changed from one fight to the next (another arena, or
 the host itself from the grid, is loaded again).
@@ -1939,9 +1945,17 @@ such a hole failing.
 
 Done since the first arena:
 
-- **More than five arenas**: L1 and R1 turn the arenas' page a page of
-  five at a time, round from the last to the first, and the page says
-  which of how many (PLAYING.md, "Kinds of stage").
+- **More than six arenas**: L1 and R1, or the d-pad past the page's
+  side, turn the arenas' page a page of six at a time, round from the
+  last to the first, and the page says which of how many (PLAYING.md,
+  "Kinds of stage").
+- **The stage select's page for the arenas** in the stage pages' own
+  look (2026-11-25): the game's page goes on drawing its title, frame
+  and scroll and leaves out its map and the stages' names, and the
+  arenas are where those were, six names in three rows of two and the
+  picture in the map's frame; in versus, link, versus the CPU and
+  training, online (where a guest without the host's arenas is told so)
+  and in replays (PORT.md, "The stage select's kinds of stage").
 - **Textures** of 128, 64 and 32, up to 20 of them, and a face that
   repeats its texture ("Textures", above).
 - **The ground as one mesh held to the prover on an arena**:
@@ -1958,8 +1972,8 @@ Done since the first arena:
 
 Left:
 
-- **A grid of the arenas' pictures**, like the stages', when there are
-  many; and more than 32 (`PORT_ARENAS_MAX`).
+- **More than 32 arenas** (`PORT_ARENAS_MAX`); a picture of each on its
+  place, beside the names.
 - **Larger arenas**: a ground longer than its host's needs NDATA.INF
   given its new length and room in the arena block (`ARENA_STAGE`); and
   past the grid's 32 by 32 cells, the game's collision and its cells'

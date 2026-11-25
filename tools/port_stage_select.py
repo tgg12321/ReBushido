@@ -19,14 +19,16 @@ ever; docs/PORT.md, "A fight's music"); and again on the Castle Rooftop,
 Tony Umeda against Kannuki and then Utsusemi on the stage kept in memory
 (the port stopped there: the rooftop's backdrop was moved by whatever a
 register held; docs/PORT.md, "An argument that was not passed"). And
-seven arenas, more than the arenas' page's five rows: L1 and R1 turn its
-pages and the seventh is fought. Both sizes
+seven arenas, more than the arenas' page's six (three rows of two, as a
+stage page's): the d-pad, past the page's sides, and L1 and R1 turn its
+pages and the seventh is fought. And the arenas' page in the one-player
+modes: versus the CPU and training, each to a fight on the sample arena. Both sizes
 of the port (build/port/, build/port32/) must print the same trace of
 each plan, line for line, and each checkpoint's values must be what the
 presses chose.
 
     python3 tools/port_stage_select.py [--out FOLDER] [--shots FOLDER]
-                                       [--only PLAN...]
+                                       [--only PLAN...] [--window FOLDER]
 
 In WSL, with the programs `make port` builds and the player's disc (as
 tools/arena_validate.py --fight finds them). The sample arena
@@ -34,6 +36,16 @@ tools/arena_validate.py --fight finds them). The sample arena
 its own. With --shots the checkpoints' pictures are copied there (the
 select screen, the switch, the arenas' page, the stage pages of versus
 the CPU and of training), each plan's under its own name.
+
+With --window FOLDER the window's program (build/port-sdl/linux/, make
+port-sdl) runs the plans of one arena and of seven again, with no window
+shown (SDL's offscreen driver, software OpenGL), and the window's own
+pictures at each checkpoint of the stage pages go to FOLDER: the
+remastered picture of both, and the original (F2) of the first. The
+arenas' page is drawn there alone, over the game's page with its map and
+names left out (docs/PORT.md, "The stage select's kinds of stage"): each
+picture of the page must differ from the stage page's before it where the
+map and the names are. Where there is no window's program it says so.
 
 Exit 0 if every check passes, 1 if one fails."""
 import argparse
@@ -299,6 +311,39 @@ after = 40
 expect = ["stage == 24", "mode == 2"]
 '''
 
+# The arenas' page in the one-player modes' stage pages: versus the CPU
+# (as TOML_VSCPU to the stage pages) and training (as TOML_PRACTICE), each
+# with the sample arena as a mod: Select opens the page, Cross fights on
+# the courtyard, over its host stage, the game's own page under the
+# window's (port_StagePageCovers).
+ARENA_PAGE_PRESSES = '"stages+20 SELECT", "stages+60 CROSS"'
+ARENA_PAGE_CHECKPOINT = '''[[checkpoint]]
+name = "arenas"
+after = 40
+expect = ["port_on_stages == 1", "port_page == 1", "port_page_cursor == 0"]
+'''
+TOML_VSCPU_ARENA = TOML_VSCPU.replace(
+    'Versus the CPU through the stage pages, every unlock', 'Versus the CPU on an arena from the stage pages').replace(
+    '"stages+20 DOWN", "stages+40 RIGHT", "stages+60 SQUARE", "stages+100 CROSS"', ARENA_PAGE_PRESSES).replace(
+    '''[[checkpoint]]
+name = "classic"
+after = 80
+expect = ["port_cursor_tier == 0", "port_on_stages == 1"]
+''', ARENA_PAGE_CHECKPOINT).replace(
+    '"p2_cpu == 1", "port_tier == 0", "port_arena == -1"', '"p2_cpu == 1", "port_tier == 1", "port_arena == 0"')
+TOML_PRACTICE_ARENA = TOML_PRACTICE.replace(
+    'Training through the stage pages', 'Training on an arena from the stage pages').replace(
+    '"stages+20 RIGHT", "stages+60 CROSS"', ARENA_PAGE_PRESSES).replace(
+    '''[[checkpoint]]
+name = "cursor"
+after = 40
+expect = ["port_on_stages == 1", "port_cursor_tier == 1"]
+''', ARENA_PAGE_CHECKPOINT).replace(
+    '"mode == 2", "stage == 24", "config_stage == 24", "p1_character == 0",\n          "port_tier == 1", '
+    '"port_arena == -1"',
+    '"mode == 2", "stage == 25", "config_stage == 25", "p1_character == 0",\n          "port_tier == 1", '
+    '"port_arena == 0"').replace('expect = ["stage == 24", "mode == 2"]', 'expect = ["stage == 25", "mode == 2"]')
+
 # Versus mode with --unlock-all: the first pad left from Kannuki to the
 # Narukagami's crest, their last fighter, which only a chanbara run without
 # a continue wins; the second pad right to Utamaru, whom an empty save has
@@ -462,20 +507,24 @@ after = 120
 expect = ["screen == SCREEN_FIGHT_UPDATE", "stage == %(rooftop)d"]
 '''
 
-# More arenas than the page's five rows (MANY_ARENAS of them, the sample
-# under other names, each a mod of its own): versus mode's stage pages,
-# Select opens the arenas' page, R1 turns to its second page (the cursor
-# on its first row, the sixth arena), Down to the seventh, R1 round to the
-# first page (its second row), L1 back to the second page's second row,
-# and Cross fights on the seventh arena.
+# More arenas than a page's six (MANY_ARENAS of them, the sample under
+# other names, each a mod of its own): versus mode's stage pages, Select
+# opens the arenas' page (three rows of two), R1 turns to its second page
+# (the seventh arena, alone there), Down stays on it, R1 round to the
+# first page, Right to the second arena, Down to the fourth, Right past
+# the page's side to the next page (its place the second row's first,
+# which it has not: its last, the seventh), Left past the side back to
+# the first page's first row's right (the second), L1 round to the second
+# page again (the seventh), and Cross fights on the seventh arena.
 MANY_ARENAS = 7
-TOML_MANY = 'about = "The arenas\' page of more than five (tools/port_stage_select.py)"\n' + \
+TOML_MANY = 'about = "The arenas\' page of more than six (tools/port_stage_select.py)"\n' + \
     HEAD + '''input = [%(opening)s,
     "menu+30 DOWN", "menu+60 DOWN", "menu+90 DOWN", "menu+150 CROSS",
     "select+280 CROSS", "select+320 P2 CROSS",
     "select+500 CROSS", "select+540 P2 CROSS",
     "stages+20 SELECT",
-    "open+10 R1", "turned+10 DOWN", "down+10 R1", "round+10 L1", "back+10 CROSS",
+    "open+10 R1", "turned+10 DOWN", "down+10 R1", "round+10 RIGHT", "right+10 DOWN",
+    "lower+10 RIGHT", "past+10 LEFT", "left+10 L1", "back+10 CROSS",
 ]
 ''' % {'opening': ', '.join(OPENING)} + \
     'compare = ["screen", "stage", "config_stage", "port_arena", "port_page", "port_page_cursor", ' \
@@ -500,22 +549,42 @@ expect = ["port_page == 1", "port_page_cursor == 0", "port_page_top == 0"]
 [[checkpoint]]
 name = "turned"
 after = 20
-expect = ["port_page == 1", "port_page_cursor == 5", "port_page_top == 5"]
+expect = ["port_page == 1", "port_page_cursor == 6", "port_page_top == 6"]
 
 [[checkpoint]]
 name = "down"
 after = 20
-expect = ["port_page_cursor == 6", "port_page_top == 5"]
+expect = ["port_page_cursor == 6", "port_page_top == 6"]
 
 [[checkpoint]]
 name = "round"
+after = 20
+expect = ["port_page_cursor == 0", "port_page_top == 0"]
+
+[[checkpoint]]
+name = "right"
+after = 20
+expect = ["port_page_cursor == 1", "port_page_top == 0"]
+
+[[checkpoint]]
+name = "lower"
+after = 20
+expect = ["port_page_cursor == 3", "port_page_top == 0"]
+
+[[checkpoint]]
+name = "past"
+after = 20
+expect = ["port_page_cursor == 6", "port_page_top == 6"]
+
+[[checkpoint]]
+name = "left"
 after = 20
 expect = ["port_page_cursor == 1", "port_page_top == 0"]
 
 [[checkpoint]]
 name = "back"
 after = 20
-expect = ["port_page_cursor == 6", "port_page_top == 5"]
+expect = ["port_page == 1", "port_page_cursor == 6", "port_page_top == 6"]
 
 [[checkpoint]]
 name = "fight"
@@ -576,9 +645,12 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'stage-select'))
     parser.add_argument('--shots', default=None)
+    parser.add_argument('--window', default=None, metavar='FOLDER',
+                        help="the window's pictures of the stage pages and the arenas' page, into FOLDER")
+    parser.add_argument('--window-size', default=WINDOW_SIZE, help='their size (%s)' % WINDOW_SIZE)
     parser.add_argument('--only', nargs='*',
                         help='the plans to run (stage_select, vscpu, practice, vs_unlocked, vscpu_next, vscpu_rooftop, '
-                             'many_arenas)')
+                             'many_arenas, vscpu_arena, practice_arena)')
     args = parser.parse_args(argv[1:])
     import playtest
     report = Report()
@@ -598,13 +670,169 @@ def main(argv):
         ('vscpu_rooftop', TOML_VSCPU_ROOFTOP,
          ['--mods', 'off', '--stage-select', '--unlock-all', '--fight-music', 'stage'], ROOFTOP_POKES),
         ('many_arenas', TOML_MANY, ['--mods', make_many_mods(out)]),
+        ('vscpu_arena', TOML_VSCPU_ARENA, ['--mods', mods, '--stage-select', '--unlock-all']),
+        ('practice_arena', TOML_PRACTICE_ARENA, ['--mods', mods, '--stage-select']),
     ]
     if args.only:
         plans = [plan for plan in plans if plan[0] in args.only]
     for name, text, extra, *pokes in plans:
-        if run_plan(playtest, report, out, name, text % values, extra, args.shots, *pokes) is None:
+        traces = run_plan(playtest, report, out, name, text % values, extra, args.shots, *pokes)
+        if traces is None:
             return 1
+        if args.window and name in WINDOW_PLANS and 64 in traces:
+            window_pictures(playtest, report, out, name, text % values, extra, traces[64], args.window,
+                            args.window_size)
     return 1 if report.failed else 0
+
+
+# The window's pictures (--window): its program, the size of its window,
+# each plan's pictures (remastered, and original where said), the stage
+# page's checkpoint before the arenas' page and the arenas' page's, and
+# how many blanks after a checkpoint its picture is taken (the press
+# before it has been drawn).
+WINDOW_PROGRAM = 'build/port-sdl/linux/rebushido'
+WINDOW_SIZE = '1440x1080'
+WINDOW_PLANS = {
+    'stage_select': (('remastered', 'original'), 'second', ['arenas']),
+    'many_arenas': (('remastered',), 'stages', ['open', 'turned', 'round', 'lower', 'past']),
+}
+WINDOW_SETTLE = 8
+WINDOW_TAP_EVERY = 2
+# the mean of a pixel's channels' differences, out of 255, that the
+# arenas' page must differ by from the stage page before it in the map's
+# frame and on the scroll (the same picture: 0; the page: 20 and more)
+WINDOW_DIFFER = 6.0
+# the map's frame and the scroll's names, as fractions of the game's 4:3
+# area (stage_page.c's MAP_ and NAME_ places, of 640 by 240)
+WINDOW_MAP = (144 / 640, 42 / 240, 494 / 640, 112 / 240)
+WINDOW_NAMES = (110 / 640, 126 / 240, 530 / 640, 190 / 240)
+
+
+def window_raw(path):
+    """A picture --tap-window kept (sdl_window.c: four words, then the
+    window's pixels as ARGB words, a row after a row): (w, h, rgb)."""
+    import struct
+    with open(path, 'rb') as f:
+        data = f.read()
+    _, w, h, _ = struct.unpack('<4I', data[:16])
+    pixels = data[16:16 + 4 * w * h]
+    rgb = bytearray(w * h * 3)
+    rgb[0::3] = pixels[2::4]
+    rgb[1::3] = pixels[1::4]
+    rgb[2::3] = pixels[0::4]
+    return w, h, bytes(rgb)
+
+
+def window_region_difference(a, b, box):
+    """The mean difference of two pictures' channels in `box` (fractions
+    of the 4:3 area in the middle of the window)."""
+    w, h, pa = a
+    _, _, pb = b
+    area_w = min(w, h * 4 // 3)
+    area_h = area_w * 3 // 4
+    x0 = (w - area_w) // 2
+    y0 = (h - area_h) // 2
+    total = 0
+    count = 0
+    for y in range(y0 + int(box[1] * area_h), y0 + int(box[3] * area_h), 2):
+        row = y * w * 3
+        for i in range(row + 3 * (x0 + int(box[0] * area_w)), row + 3 * (x0 + int(box[2] * area_w)), 6):
+            total += abs(pa[i] - pb[i]) + abs(pa[i + 1] - pb[i + 1]) + abs(pa[i + 2] - pb[i + 2])
+            count += 3
+    return total / max(count, 1)
+
+
+def window_pictures(playtest, report, out, name, text, extra, trace, folder, size):
+    """The plan `name` again in the window's program, with no window shown,
+    and its pictures at the stage pages' checkpoints into `folder`; each of
+    the arenas' page held to the stage page's before it."""
+    import threading
+    import time
+    program = os.path.join(REPO, WINDOW_PROGRAM)
+    if not os.path.isfile(program):
+        print('port_stage_select: --window: skipped: no %s (make port-sdl)' % WINDOW_PROGRAM)
+        return
+    looks, before, pages = WINDOW_PLANS[name]
+    blanks = {}
+    for line in trace.splitlines():
+        word = line.split()
+        if len(word) > 2 and word[0] == 'cp' and word[1] in [before] + pages:
+            blanks[int(word[2]) + WINDOW_SETTLE] = word[1]
+    if not report.check(len(blanks) == 1 + len(pages), '%s: window: the checkpoints of its pictures reached'
+                        % name):
+        return
+    os.makedirs(folder, exist_ok=True)
+    work = os.path.join(out, 'window-' + name)
+    os.makedirs(work, exist_ok=True)
+    toml = os.path.join(work, 'plan.toml')
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
+    playtest.PORT_PROGRAM = program
+    playtest.PORT_SYMBOLS = program + '.sym'
+    test = playtest.Test(toml)
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), 1)
+    plan = os.path.join(work, 'plan.txt')
+    with open(plan, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    for look in looks:
+        run = os.path.join(work, look)
+        tap = os.path.join(run, 'tap')
+        if os.path.isdir(run):
+            shutil.rmtree(run)
+        os.makedirs(tap)
+        config = os.path.join(run, 'rebushido.cfg')
+        with open(config, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('graphics = %s\nmenu = original\nfullscreen = off\n' % look)
+        cmd = [program, '--image', playtest.RETAIL_CUE] + extra + [
+            '--plan', plan, '--no-cards', '--fast', '--no-fps', '--window', size, '--config', config,
+            '--out', run, '--frames', str(max(blanks) + WINDOW_TAP_EVERY), '--log', os.path.join(run, 'log.txt'),
+            '--tap-window', tap, '--tap-every', str(WINDOW_TAP_EVERY)]
+        env = dict(os.environ, SDL_VIDEODRIVER='offscreen', SDL_AUDIODRIVER='dummy', LIBGL_ALWAYS_SOFTWARE='1')
+        wanted = ['window-%06d.raw' % blank for blank in blanks]
+        done = threading.Event()
+
+        def sweep():
+            # the pictures not wanted, let go as they come
+            while True:
+                stop = done.wait(0.5)
+                for entry in os.listdir(tap):
+                    if entry not in wanted:
+                        try:
+                            os.remove(os.path.join(tap, entry))
+                        except OSError:
+                            pass
+                if stop:
+                    return
+        sweeper = threading.Thread(target=sweep, daemon=True)
+        sweeper.start()
+        began = time.time()
+        with open(os.path.join(run, 'trace.txt'), 'wb') as o:
+            subprocess.run(cmd, cwd=REPO, env=env, stdout=o, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                           timeout=3600)
+        done.set()
+        sweeper.join()
+        pictures = {}
+        for blank, checkpoint in sorted(blanks.items()):
+            path = os.path.join(tap, 'window-%06d.raw' % blank)
+            if not report.check(os.path.isfile(path), '%s: window: %s: the picture at `%s`'
+                                % (name, look, checkpoint)):
+                continue
+            pictures[checkpoint] = window_raw(path)
+            w, h, rgb = pictures[checkpoint]
+            playtest.write_png(os.path.join(folder, '%s-%s-%s.png' % (name, look, checkpoint)), w, h, rgb)
+        print('port_stage_select: %s: window: %s: %d pictures (%.0f s)' % (name, look, len(pictures),
+                                                                          time.time() - began), flush=True)
+        if before not in pictures:
+            continue
+        for page in pages:
+            if page not in pictures:
+                continue
+            for what, box in (('the map\'s frame', WINDOW_MAP), ('the scroll\'s names', WINDOW_NAMES)):
+                differ = window_region_difference(pictures[before], pictures[page], box)
+                report.check(differ >= WINDOW_DIFFER, '%s: window: %s: at `%s`, %s is the arenas\' page\'s, not '
+                             'the stage page\'s (%.1f)' % (name, look, page, what, differ))
 
 
 def poke_lines(playtest, program, lines, pokes):

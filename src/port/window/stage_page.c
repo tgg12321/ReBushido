@@ -5,16 +5,21 @@
  * stage under the cursor (Classic or Remastered), its time of day, the
  * fight's music, and the custom arenas where there are any -- each its
  * value over the button that changes it (Square, L1 and R1, L2 and R2,
- * Select); with the arenas' page up it is that page: the arenas by their
- * names, the one under the cursor's picture (its file's preview, or a
- * card of its name where it has none), and what Cross and Triangle do.
- * It is drawn at the window's own resolution in the port's typeface, the
- * same over the remastered picture and over the console's (F2), and none
- * of it is in the game's video memory: what the game has on the screen is
- * the console's, and the play tests that hold the port's picture to the
- * emulator's see that. Everything it shows it reads of the game's state
- * (src/port/stage_choice.c, src/port/fight_music.c), which the game's
- * step alone writes. */
+ * Select). With the arenas' page up it is a page of the stage select's
+ * own: the game's page goes on drawing its title, its frame and its
+ * scroll and leaves out its map and the stages' names
+ * (port_StagePageCovers), and here the arenas are where those were --
+ * the one under the cursor's picture in the map's frame (its file's
+ * preview, or a card of its name where it has none), six names on the
+ * scroll in three rows of two as the stages' are, dark and the cursor's
+ * white with a dark edge, the page under them where the map's number
+ * is -- and the panel under the scroll says what Cross, Triangle or
+ * Select, and L1 and R1 do. It is drawn at the window's own resolution in
+ * the port's typeface, the same over the remastered picture and over the
+ * console's (F2), and none of it is in the game's video memory. Everything
+ * it shows it reads of the game's state (src/port/stage_choice.c,
+ * src/port/fight_music.c), which the game's step alone writes; the
+ * presses' sounds are the game's own, played by that step. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,16 +38,18 @@
 
 /* The colours, 0xAARRGGBB, the settings menu's; the panel's lets a little
  * of the game's picture through. */
-#define COLOR_PANEL 0xFF0E121EU
 #define COLOR_STRIP 0xE00E121EU
 #define COLOR_EDGE 0xFF6A5530U
 #define COLOR_GOLD 0xFFE6C877U
 #define COLOR_TEXT 0xFFEDEDF2U
 #define COLOR_DIM 0xFF8E96AAU
-#define COLOR_BAR 0xFF26304AU
 #define COLOR_CARD 0xFF1A1E2AU
 #define COLOR_CAP 0xFF2C3346U
 #define COLOR_CAP_EDGE 0xFF56607CU
+/* the scroll's lettering, measured from the stage pages: the names in a
+ * dark ink, the cursor's white with a dark edge */
+#define COLOR_INK 0xFF212119U
+#define COLOR_INK_EDGE 0xFF16160EU
 /* the pad's own colours for its symbols */
 #define COLOR_SQUARE 0xFFE59AC6U
 #define COLOR_CROSS 0xFF8FB8EAU
@@ -50,15 +57,16 @@
 #define COLOR_CIRCLE 0xFFE8737AU
 
 /* The panel under the stage pages' scroll, whose foot is at 207, and the
- * page over them, in the game's places. */
+ * arenas' page, from the map's frame to the panel's foot, in the game's
+ * places. */
 #define STRIP_X 40
 #define STRIP_Y 209
 #define STRIP_W 560
 #define STRIP_H 31
 #define PAGE_X 40
-#define PAGE_Y 62
+#define PAGE_Y 40
 #define PAGE_W 560
-#define PAGE_H 176
+#define PAGE_H 200
 
 /* The panel's columns: across the panel less this much at each end, a
  * value's baseline, the buttons' baseline, and the room a column leaves
@@ -68,29 +76,43 @@
 #define KEYS_BASE 235
 #define COLUMN_PAD 8
 
-/* The page's rows: so many shown, their place, their pitch. */
-#define ROWS 5
-#define ROW_X 64
-#define ROW_FIRST 108
-#define ROW_PITCH 20
-#define ROW_BAR_X 54
-#define ROW_BAR_W 256
-#define ROW_BAR_ABOVE 14
-#define ROW_BAR_H 19
-/* The picture's frame: 4:3 as the screen shows it. */
-#define PICTURE_X 322
-#define PICTURE_Y 94
-#define PICTURE_W 256
-#define PICTURE_H 96
-/* the buttons' line under the page */
-#define PAGE_KEYS_BASE 232
+/* The stage pages' map, whose frame the arena's picture fills: the
+ * game's window for it (select.c, STAGES_WINDOW_...), 352 by 74 of its
+ * places, shown about 2.4 to 1. */
+#define MAP_X 144
+#define MAP_Y 40
+#define MAP_W 352
+#define MAP_H 74
+/* The names on the scroll: the middles of its two columns, the first
+ * row's baseline and their pitch, the room a name has across, and the
+ * baseline of the map's number under them, all measured from the stage
+ * pages' own. */
+#define NAME_LEFT 211
+#define NAME_RIGHT 427
+#define NAME_FIRST 140
+#define NAME_PITCH 20
+#define NAME_ROOM 196
+#define NAME_PAGE_BASE 196
+/* the scroll's arrows to the page before and the next, where there is
+ * more than one: their points, how far back they reach, their top and
+ * foot, and their colour, the stage pages' */
+#define ARROW_LEFT 88
+#define ARROW_RIGHT 552
+#define ARROW_DEPTH 8
+#define ARROW_TOP 159
+#define ARROW_FOOT 168
+#define COLOR_ARROW 0xFF6B635AU
+#define PAGE_PLACES PORT_STAGE_PAGE_PLACES
+#define PAGE_COLS 2
 
 /* The letters' sizes, in the game's lines: one for each kind of text.
- * A value too wide for its column is made smaller, down to the least. */
+ * A value too wide for its column is made smaller, down to the least, and
+ * a name too wide for its place on the scroll likewise. */
 #define SIZE_TITLE 15
 #define SIZE_VALUE 11
 #define SIZE_VALUE_LEAST 7
-#define SIZE_ROW 11
+#define SIZE_NAME 11
+#define SIZE_NAME_LEAST 7
 #define SIZE_LABEL 8
 #define SIZE_CAP 6
 
@@ -185,19 +207,6 @@ static void port_PageRect(s32 x, s32 y, s32 w, s32 h, u32 color) {
 
 /* A line a pixel of the window wide, or two on a large one. */
 static s32 port_PageLine(void) { return g_page.area_h >= 960 ? 2 : 1; }
-
-static void port_PageFrame(s32 x, s32 y, s32 w, s32 h, u32 color) {
-    s32 x0 = port_PageX(x);
-    s32 y0 = port_PageY(y);
-    s32 x1 = port_PageX(x + w);
-    s32 y1 = port_PageY(y + h);
-    s32 line = port_PageLine();
-
-    port_PageFill(x0, y0, x1 - x0, line, color);
-    port_PageFill(x0, y1 - line, x1 - x0, line, color);
-    port_PageFill(x0, y0, line, y1 - y0, color);
-    port_PageFill(x1 - line, y0, line, y1 - y0, color);
-}
 
 /* ---- the buttons ---- */
 
@@ -396,28 +405,48 @@ static const Preview *port_PagePreview(s32 index) {
     return preview->rgba != NULL ? preview : NULL;
 }
 
-/* The picture into its frame, made that size by a mean of the pixels
- * each covers (it is made smaller) or the nearest (larger). */
+/* The picture into its frame, filling it: the middle of the picture as
+ * wide as the frame is shown (its top and bottom, or its sides, left
+ * out), made that size by a mean of the pixels each covers (it is made
+ * smaller) or the nearest (larger). The frame is in the game's places,
+ * shown 4:3, so a place down is two across. */
 static void port_PagePicture(
     const Preview *preview, s32 x, s32 y, s32 w, s32 h) {
     s32 x0 = port_PageX(x);
     s32 y0 = port_PageY(y);
     s32 pw = port_PageX(x + w) - x0;
     s32 ph = port_PageY(y + h) - y0;
+    /* the part of the picture shown: as wide as the frame */
+    s32 cw = preview->w;
+    s32 ch = preview->h;
+    s32 cx;
+    s32 cy;
     s32 i;
     s32 j;
 
+    if (pw <= 0 || ph <= 0) {
+        return;
+    }
+    if ((s64)preview->w * ph > (s64)preview->h * pw) {
+        cw = (s32)((s64)preview->h * pw / ph);
+    } else {
+        ch = (s32)((s64)preview->w * ph / pw);
+    }
+    cw = cw < 1 ? 1 : cw;
+    ch = ch < 1 ? 1 : ch;
+    cx = (preview->w - cw) / 2;
+    cy = (preview->h - ch) / 2;
     for (j = 0; j < ph; j++) {
-        s32 sy0 = j * preview->h / ph;
-        s32 sy1 = (j + 1) * preview->h / ph;
+        s32 sy0 = cy + j * ch / ph;
+        s32 sy1 = cy + (j + 1) * ch / ph;
 
         if (y0 + j < 0 || y0 + j >= g_page.box.h) {
             continue;
         }
         sy1 = sy1 > sy0 ? sy1 : sy0 + 1;
         for (i = 0; i < pw; i++) {
-            s32 sx0 = i * preview->w / pw;
-            s32 sx1 = (i + 1) * preview->w / pw;
+            s32 sx0 = cx + i * cw / pw;
+            s32 sx1 = cx + (i + 1) * cw / pw;
             u32 sum[3] = {0, 0, 0};
             u32 n = 0;
             s32 sx;
@@ -457,6 +486,7 @@ typedef struct {
     u32 color;
     const char *caps[2];
     s32 cap_count;
+    const char *between;
     const char *words;
 } Column;
 
@@ -473,16 +503,41 @@ static void port_PageValue(s32 x, const char *text, u32 color, s32 room) {
     port_PageTextAt(x, port_PageY(VALUE_BASE), text, &style);
 }
 
+/* The panel under the scroll, its `n` columns side by side. */
+static void port_PageColumns(const Column *columns, s32 n) {
+    s32 left = port_PageX(STRIP_X + STRIP_INSET);
+    s32 right = port_PageX(STRIP_X + STRIP_W - STRIP_INSET);
+    s32 pad = port_PageX(STRIP_X + COLUMN_PAD) - port_PageX(STRIP_X);
+    s32 i;
+
+    port_PageRect(STRIP_X, STRIP_Y, STRIP_W, STRIP_H, COLOR_STRIP);
+    port_PageFill(port_PageX(STRIP_X), port_PageY(STRIP_Y),
+                  port_PageX(STRIP_X + STRIP_W) - port_PageX(STRIP_X),
+                  port_PageLine(), COLOR_EDGE);
+    for (i = 0; i < n; i++) {
+        s32 x0 = left + (right - left) * i / n;
+        s32 x1 = left + (right - left) * (i + 1) / n;
+
+        if (i > 0) {
+            port_PageFill(
+                x0, port_PageY(STRIP_Y + 5), port_PageLine(),
+                port_PageY(STRIP_Y + STRIP_H - 4) - port_PageY(STRIP_Y + 5),
+                COLOR_EDGE);
+        }
+        port_PageValue(
+            x0 + pad, columns[i].value, columns[i].color, x1 - x0 - 2 * pad);
+        port_PageKeys(
+            x0 + pad, port_PageY(KEYS_BASE), columns[i].caps,
+            columns[i].cap_count, columns[i].between, columns[i].words, TRUE);
+    }
+}
+
 static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     static char arenas[24];
     static char match[24];
     Column columns[5];
     s32 n = 0;
     s32 row = g_port_fight_music.row;
-    s32 left = port_PageX(STRIP_X + STRIP_INSET);
-    s32 right = port_PageX(STRIP_X + STRIP_W - STRIP_INSET);
-    s32 pad = port_PageX(STRIP_X + COLUMN_PAD) - port_PageX(STRIP_X);
-    s32 i;
 
     memset(columns, 0, sizeof(columns));
     /* the kind */
@@ -550,106 +605,130 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
         columns[n].words = "Arenas";
         n++;
     }
+    port_PageColumns(columns, n);
+}
 
-    port_PageRect(STRIP_X, STRIP_Y, STRIP_W, STRIP_H, COLOR_STRIP);
-    port_PageFill(port_PageX(STRIP_X), port_PageY(STRIP_Y),
-                  port_PageX(STRIP_X + STRIP_W) - port_PageX(STRIP_X),
-                  port_PageLine(), COLOR_EDGE);
-    for (i = 0; i < n; i++) {
-        s32 x0 = left + (right - left) * i / n;
-        s32 x1 = left + (right - left) * (i + 1) / n;
+/* A name on the scroll, centred on the game's `x` at the baseline `y`, in
+ * the stage pages' lettering: dark ink, or white with a dark edge under
+ * the cursor; made smaller where it is wider than its place. */
+static void port_PageName(s32 x, s32 y, const char *name, s32 is_cursor) {
+    s32 lines = SIZE_NAME;
+    s32 room = port_PageX(x + NAME_ROOM / 2) - port_PageX(x - NAME_ROOM / 2);
+    PortTextStyle style;
 
-        if (i > 0) {
-            port_PageFill(
-                x0, port_PageY(STRIP_Y + 5), port_PageLine(),
-                port_PageY(STRIP_Y + STRIP_H - 4) - port_PageY(STRIP_Y + 5),
-                COLOR_EDGE);
+    for (;;) {
+        style = port_PageStyle(
+            PORT_FACE_BOLD, lines, is_cursor ? 0xFFFFFFFFU : COLOR_INK);
+        if (is_cursor) {
+            style.outline = COLOR_INK_EDGE;
+            style.outline_px = port_PageSize(lines) / 16 + 1;
         }
-        port_PageValue(
-            x0 + pad, columns[i].value, columns[i].color, x1 - x0 - 2 * pad);
-        port_PageKeys(x0 + pad, port_PageY(KEYS_BASE), columns[i].caps,
-                      columns[i].cap_count, NULL, columns[i].words, TRUE);
+        if (lines <= SIZE_NAME_LEAST ||
+            port_TextMeasure(name, &style) <= room) {
+            break;
+        }
+        lines--;
+    }
+    port_PageTextAt(port_PageX(x) - port_TextMeasure(name, &style) / 2,
+                    port_PageY(y), name, &style);
+}
+
+/* An arrow on the scroll, its point at the game's `tip` and pointing
+ * away from `back`, as the stage pages' arrows to another map are. */
+static void port_PageArrow(s32 tip, s32 back) {
+    s32 x0 = port_PageX(tip < back ? tip : back);
+    s32 x1 = port_PageX(tip < back ? back : tip);
+    s32 y0 = port_PageY(ARROW_TOP);
+    s32 y1 = port_PageY(ARROW_FOOT);
+    s32 half = (y1 - y0) / 2;
+    s32 j;
+
+    for (j = 0; j <= y1 - y0; j++) {
+        /* how far from the point this row reaches, out of the depth */
+        s32 off = j <= half ? j : y1 - y0 - j;
+        s32 w = half > 0 ? (x1 - x0) * off / half : x1 - x0;
+
+        if (tip < back) {
+            port_PageFill(x1 - w, y0 + j, w, 1, COLOR_ARROW);
+        } else {
+            port_PageFill(x0, y0 + j, w, 1, COLOR_ARROW);
+        }
     }
 }
 
 static void port_PageArenas(const PortStageChoice *choice, s32 count) {
-    static const char * const fight[] = {"#cross"};
-    static const char * const back[] = {"#triangle", "SELECT"};
-    static const char * const turn[] = {"L1", "R1"};
+    static char where[32];
     static char pages[24];
     const PortArena *chosen = port_ArenaAt(choice->page_cursor);
     const Preview *preview;
-    s32 base = port_PageY(PAGE_KEYS_BASE);
-    s32 gap = port_PageSize(SIZE_LABEL) * 2;
-    s32 w;
-    s32 x;
+    s32 page = choice->page_cursor / PAGE_PLACES;
+    s32 page_count = (count + PAGE_PLACES - 1) / PAGE_PLACES;
+    Column columns[3];
+    s32 n = 0;
     s32 i;
 
-    port_PageRect(PAGE_X, PAGE_Y, PAGE_W, PAGE_H, COLOR_PANEL);
-    port_PageFrame(PAGE_X, PAGE_Y, PAGE_W, PAGE_H, COLOR_EDGE);
-    port_PageText(
-        GAME_W / 2, 80, SIZE_TITLE, "Custom Arenas", COLOR_GOLD, TRUE, FALSE);
-    port_PageRect(
-        ROW_BAR_X, 86, PAGE_W - 2 * (ROW_BAR_X - PAGE_X), 1, COLOR_EDGE);
-    for (i = 0; i < ROWS && choice->page_top + i < count; i++) {
-        const PortArena *arena = port_ArenaAt(choice->page_top + i);
-        s32 y = ROW_FIRST + i * ROW_PITCH;
-        s32 is_cursor = choice->page_top + i == choice->page_cursor;
-
-        if (is_cursor) {
-            port_PageRect(
-                ROW_BAR_X, y - ROW_BAR_ABOVE, ROW_BAR_W, ROW_BAR_H, COLOR_BAR);
-            port_PageFrame(
-                ROW_BAR_X, y - ROW_BAR_ABOVE, ROW_BAR_W, ROW_BAR_H, COLOR_GOLD);
-        }
-        port_PageText(ROW_X, y, SIZE_ROW, arena->name,
-                      is_cursor ? COLOR_TEXT : COLOR_DIM, FALSE, FALSE);
-    }
-    if (choice->page_top > 0) {
-        port_PageText(ROW_BAR_X + ROW_BAR_W / 2, ROW_FIRST - ROW_PITCH + 4,
-                      SIZE_LABEL, "more above", COLOR_DIM, TRUE, FALSE);
-    }
-    if (choice->page_top + ROWS < count) {
-        port_PageText(ROW_BAR_X + ROW_BAR_W / 2, ROW_FIRST + ROWS * ROW_PITCH,
-                      SIZE_LABEL, "more below", COLOR_DIM, TRUE, FALSE);
-    }
-    /* more than a page: which of them, L1 and R1 turning them */
-    if (count > ROWS) {
-        snprintf(pages, sizeof(pages), "page %d of %d",
-                 (choice->page_cursor / ROWS) + 1, (count + ROWS - 1) / ROWS);
-        port_PageText(ROW_BAR_X + ROW_BAR_W / 2,
-                      ROW_FIRST + ROWS * ROW_PITCH + ROW_PITCH / 2, SIZE_LABEL,
-                      pages, COLOR_DIM, TRUE, FALSE);
-    }
+    /* the one under the cursor in the map's frame */
     preview = port_PagePreview(choice->page_cursor);
     if (preview != NULL) {
-        port_PagePicture(preview, PICTURE_X, PICTURE_Y, PICTURE_W, PICTURE_H);
+        port_PagePicture(preview, MAP_X, MAP_Y, MAP_W, MAP_H);
     } else {
         /* a card of its name where it brings no picture */
-        port_PageRect(PICTURE_X, PICTURE_Y, PICTURE_W, PICTURE_H, COLOR_CARD);
+        port_PageRect(MAP_X, MAP_Y, MAP_W, MAP_H, COLOR_CARD);
         if (chosen != NULL) {
-            port_PageText(
-                PICTURE_X + PICTURE_W / 2, PICTURE_Y + PICTURE_H / 2 + 5,
-                SIZE_TITLE, chosen->name, COLOR_GOLD, TRUE, FALSE);
+            port_PageText(MAP_X + MAP_W / 2, MAP_Y + MAP_H / 2 + 5, SIZE_TITLE,
+                          chosen->name, COLOR_GOLD, TRUE, FALSE);
         }
     }
-    port_PageFrame(PICTURE_X, PICTURE_Y, PICTURE_W, PICTURE_H, COLOR_EDGE);
-    if (chosen != NULL) {
-        port_PageText(PICTURE_X + PICTURE_W / 2, PICTURE_Y + PICTURE_H + 14,
-                      SIZE_ROW, chosen->name, COLOR_GOLD, TRUE, FALSE);
+    /* the page's arenas on the scroll, as the stages' names are */
+    for (i = 0; i < PAGE_PLACES; i++) {
+        s32 at = page * PAGE_PLACES + i;
+        const PortArena *arena = port_ArenaAt(at);
+
+        if (at >= count || arena == NULL) {
+            break;
+        }
+        port_PageName(i % PAGE_COLS == 0 ? NAME_LEFT : NAME_RIGHT,
+                      NAME_FIRST + (i / PAGE_COLS) * NAME_PITCH, arena->name,
+                      at == choice->page_cursor);
     }
-    /* the buttons, as the panel under the scroll draws them, in the middle */
-    w = port_PageKeys(0, base, fight, 1, NULL, "Fight here", FALSE) + gap +
-        port_PageKeys(0, base, back, 2, "or", "Back", FALSE);
-    if (count > ROWS) {
-        w += gap + port_PageKeys(0, base, turn, 2, NULL, "Pages", FALSE);
+    /* where the map's number is: which page of them; and the arrows */
+    if (page_count > 1) {
+        port_PageArrow(ARROW_LEFT, ARROW_LEFT + ARROW_DEPTH);
+        port_PageArrow(ARROW_RIGHT, ARROW_RIGHT - ARROW_DEPTH);
+        snprintf(where, sizeof(where), "( Arenas %d )", (int)page + 1);
+    } else {
+        snprintf(where, sizeof(where), "( Arenas )");
     }
-    x = port_PageX(GAME_W / 2) - w / 2;
-    x += port_PageKeys(x, base, fight, 1, NULL, "Fight here", TRUE) + gap;
-    x += port_PageKeys(x, base, back, 2, "or", "Back", TRUE);
-    if (count > ROWS) {
-        port_PageKeys(x + gap, base, turn, 2, NULL, "Pages", TRUE);
+    port_PageName((NAME_LEFT + NAME_RIGHT) / 2, NAME_PAGE_BASE, where, FALSE);
+
+    /* the panel: what the buttons do */
+    memset(columns, 0, sizeof(columns));
+    columns[n].value = chosen != NULL ? chosen->name : "";
+    columns[n].color = COLOR_GOLD;
+    columns[n].caps[0] = "#cross";
+    columns[n].cap_count = 1;
+    columns[n].words = "Fight here";
+    n++;
+    if (page_count > 1) {
+        snprintf(pages, sizeof(pages), "Page %d of %d", (int)page + 1,
+                 (int)page_count);
+        columns[n].value = pages;
+        columns[n].color = COLOR_TEXT;
+        columns[n].caps[0] = "L1";
+        columns[n].caps[1] = "R1";
+        columns[n].cap_count = 2;
+        columns[n].words = "Pages";
+        n++;
     }
+    columns[n].value = "The stages";
+    columns[n].color = COLOR_TEXT;
+    columns[n].caps[0] = "#triangle";
+    columns[n].caps[1] = "SELECT";
+    columns[n].cap_count = 2;
+    columns[n].between = "or";
+    columns[n].words = "Back";
+    n++;
+    port_PageColumns(columns, n);
 }
 
 /* ---- what the window asks ---- */

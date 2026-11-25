@@ -1062,7 +1062,14 @@ have met:
   arenas";
   textures, models, skies and music are not in it, and may differ). A
   guest that differs is turned away with the reason, which both logs
-  say;
+  say and the guest's screen shows. The arenas' sum goes in the hello
+  and the welcome on its own as well (`MEET_ARENAS`, protocol 17), so a
+  guest whose gameplay mods differ in their arenas -- one without the
+  host's, or with another, or another order -- is told that it is the
+  arenas (`REFUSE_ARENAS`: "The other player's custom arenas are not the
+  same as yours: you both need the same arenas, from the same mods."),
+  whether the host has one in play (`--arena`) or only offers them on
+  the stage select's arenas' page;
 - the host sends its **two memory cards**, whole, 1 KB a datagram, the
   guest saying which parts it has every 20 ms, and a **seed** taken from
   its clock. Both then play on copies of the host's cards kept in memory

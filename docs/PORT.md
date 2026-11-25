@@ -8526,12 +8526,22 @@ The game's hooks, all under `RB_PORT`:
 - `select_StageStep` (`select.c`), before the grid reads its presses:
   `port_StagePageStep` with the stage under the cursor. Square switches
   that stage's kind; Select opens the arenas' page, which then has every
-  press: up and down, L1 and R1 a page of five back or on (round from
-  the last to the first), Cross to fight on the arena (the grid's stage index
-  set to its host, the page confirmed as the grid's own Cross does),
-  Triangle or Select back. The grid's own Cross calls `port_StageChosen`:
-  the fight's kind is that stage's, and the arena is the run's own
-  (`--arena`, or none).
+  press: six arenas to a page in three rows of two, as a stage page's
+  places (an arena's place `row * 2 + column`), up and down a row round
+  the page's three, left and right the other column and, past the page's
+  side, the next page or the one before (as the grid's arrows go to the
+  next map), L1 and R1 a page back or on (round from the last to the
+  first), Cross to fight on the arena (the grid's stage index set to its
+  host, the page confirmed as the grid's own Cross does), Triangle or
+  Select back; each with the game's own sound (`snd_Play`, the cursor's,
+  the confirm's, the cancel's). While the page is up
+  (`port_StagePageCovers`) the stage page leaves out what the window
+  draws the arenas in place of: the map (`SELECT_STAGE_SHEET_UNDER`), its
+  marks, the stages' names and the map's number with the arrows
+  (`SELECT_STAGE_SHEET_REST`); its title, frame, scroll and the scroll's
+  picture are drawn as ever. The grid's own Cross calls
+  `port_StageChosen`: the fight's kind is that stage's, and the arena is
+  the run's own (`--arena`, or none).
 - `select_Update`: off the stage pages, `port_StageLeftPages`.
 - `select_Load`: `port_StageChoiceReset`, the fight's kind the default and
   the arena the run's own whenever a mode's select screen opens, so that
@@ -8569,16 +8579,23 @@ colour): **Kind** ("Remastered" in gold, "Classic" in white; Square),
 **Time** (L1, R1), **Music** (L2, R2) and, with arenas, **Arenas**
 (Select); one size of letters for the values, one for the buttons'
 words, a value too long for its column made smaller. The arenas' page
-covers the map and the
-scroll: the arenas by their names (five rows, scrolled; past five, which
-page of how many under them, and L1 and R1 among the keys), the picture of
-the one under the cursor (the PNG its file carries, or a card of its
-name), and the same keys for what Cross, and Triangle or Select, do.
-It reads the state and the
-arenas only, and is drawn again only when what it shows changes. So the
-play tests that hold the port's video memory to the emulator's
-(`port_picture`'s `select_stage`) see the console's screen, and the
-headless port has the whole choice without any of the drawing.
+is a page of the stage select's own (the owner, 2026-11-20: not "a
+window drawn on top of the emulation"): over the game's page, which
+has left its map and names out, the picture of the arena under the
+cursor fills the map's frame (the game's window for it, 352 by 74 of
+its places; the PNG its file carries shown filling it, its middle kept,
+or a card of its name), the page's arenas are on the scroll where the
+stages' names are and in their lettering (the port's typeface, bold, a
+dark ink; the cursor's white with a dark edge; a name too long for its
+place made smaller), `( Arenas )` where the map's number is (`( Arenas
+2 )` with more than one page, and the scroll's arrows), and the panel
+under the scroll has a column each for the arena chosen (Cross, "Fight
+here"), the pages (L1, R1) and the way back (Triangle or Select). It
+reads the state and the arenas only, and is drawn again only when what
+it shows changes. With the page down the game's video memory is the
+console's, so the play tests that hold the port's video memory to the
+emulator's (`port_picture`'s `select_stage`) see the console's screen,
+and the headless port has the whole choice without any of the drawing.
 
 **Netplay.** The presses on the stage pages are both players', as the
 grid's are, so the kind switched, the page and the arena chosen are the
@@ -8589,7 +8606,9 @@ nothing until the program starts again). The set-up's hash of the
 gameplay mods covers every arena the page offers, in its order and by
 its file's bytes and key, and the one `--arena` asked for
 (`port_ArenaSessionHash`): a guest without the host's arenas is turned
-away (`make port-net`).
+away, told that it is the arenas (`MEET_ARENAS`, `REFUSE_ARENAS`,
+protocol 17; NETPLAY.md, section 13), and a session can fight on one
+chosen on the page (`make port-net`).
 
 **How it is proved.** `python3 tools/port_stage_select.py` (in WSL, after
 `make port`; a step of `tools/gate.py`): a plan presses through versus
@@ -8601,8 +8620,18 @@ screen and Abandoned Station from the grid, which must be loaded again
 from the disc with its own starts. Each checkpoint's values are held to
 what the presses chose, and the two sizes print the same trace.
 The same tool drives versus the CPU and training through the stage pages
-("Every stage in every mode, and every unlock").
-`--shots FOLDER` keeps the console's pictures of each step.
+("Every stage in every mode, and every unlock"), and each of them
+through the arenas' page to a fight on the courtyard (`vscpu_arena`,
+`practice_arena`); and seven arenas (`many_arenas`), more than a page:
+the d-pad, the page's sides, L1 and R1, the seventh fought.
+`--shots FOLDER` keeps the console's pictures of each step, and
+`--window FOLDER` the window's (the Linux window's program offscreen, on
+software OpenGL), remastered and original, at the stage page and the
+arenas' page, each of the page held to differ from the stage page in
+the map's frame and on the scroll. `tools/port_replay.py` plays back the
+fight on the courtyard as it was recorded, and `make port-net` holds a
+session's match on it, chosen on the page by the host's presses, to the
+same state hashes on both machines and both machines' replays.
 `tests/port/arenas.c` holds the file's picture, the ground read in place
 of the host's, and the arena in play changed to another, to none and
 back. With no arena and the kind as built in, every play test is as it
