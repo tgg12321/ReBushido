@@ -1207,6 +1207,9 @@ static struct {
      * picture shown may be either. */
     PostView live;
     PostView kept;
+    /* the view `live` was when the ground's mesh began to be drawn again
+     * (port_GlPostBeforeMesh), until the new one is noted */
+    PostView was;
     /* the ground's mesh drawn since the frame began (port_GlPostNewFrame) */
     s32 is_noted;
     /* the depth the passes read (gl.h) */
@@ -1549,6 +1552,12 @@ void port_GlPostNoteView(const float *rotation, const float *camera, float h,
                          float middle_x, float middle_y, s32 top) {
     PostView *view = &g_post.live;
 
+    if (g_post.was.is_set && g_post.was.top != top) {
+        g_post.kept = g_post.was;
+    }
+    g_post.was.is_set = FALSE;
+    /* the fighters' depth of the drawing kept stays its own */
+    view->fighter_slot = 1 - g_post.kept.fighter_slot;
     memcpy(view->rotation, rotation, sizeof(view->rotation));
     memcpy(view->camera, camera, sizeof(view->camera));
     view->h = h;
@@ -1585,12 +1594,17 @@ static s32 port_GlPostShows(
 
 void port_GlPostBeforeMesh(const PortGlPicture *picture) {
     (void)picture;
-    if (g_post.live.is_set) {
-        g_post.kept = g_post.live;
-    }
+    /* Which view the drawing before becomes is known when this one's is
+     * noted: a drawing of the other part of video memory keeps it as the
+     * one before (the game draws one frame while it shows the last), and
+     * a drawing over the same part replaces it. A picture between two
+     * frames (gl_tween.h) draws the frame on show again, over its own
+     * part: kept as the one before, it pushed out the view of the part the
+     * game's own picture shows next, and that picture -- the one shown
+     * where no picture between two frames can be drawn, at a cut -- had
+     * none of these passes. */
+    g_post.was = g_post.live;
     g_post.live.is_set = FALSE;
-    /* the fighters' depth of the drawing kept stays its own */
-    g_post.live.fighter_slot = 1 - g_post.kept.fighter_slot;
     g_post.live.has_fighters = FALSE;
 }
 
