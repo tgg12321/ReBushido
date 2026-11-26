@@ -59,7 +59,7 @@ HEIGHT_MOST = 20000
 WORLD_MOST = 40000
 KINDS = ['grass', 'bush', 'reeds', 'flowers', 'water', 'particles', 'mesh', 'wind', 'shafts']
 PARTICLES = ['dust', 'leaves', 'embers', 'snow', 'petals', 'fireflies', 'rain', 'smoke', 'motes',
-             'spray', 'mist']
+             'spray', 'mist', 'gulls']
 ONS = ['any', 'green', 'earth', 'sand', 'stone', 'snow', 'blue']
 TIMES = ['dawn', 'day', 'dusk', 'night']
 # the walk (tools/arena_validate.py's): its step, and how far about a solid
@@ -712,6 +712,100 @@ def grave_obj(width=464.0, height=1150.0, depth=464.0, stone=(0.50, 0.49, 0.47),
     return '\n'.join(lines) + '\n'
 
 
+def lathe_obj(title, rings, segments, seed, shift=None, ridge=None):
+    """A body turned about the upright, as a Wavefront OBJ's text: `rings`
+    from the foot up, each (height, radius x, radius z, rgb), the world's
+    units, y down (a ring at height h lies at y -h); `shift(height)` moves a
+    ring across, (x, z), for a trunk that leans or bends; `ridge(angle,
+    height)` a point's radius and colour times what it gives, for bark's
+    ridges. Closed at the
+    foot and the top. Procedural: nothing of anyone's art."""
+    import math
+    import random
+
+    rnd = random.Random(seed)
+    lines = ['# %s made by tools/port_dressing.py meshes: procedural, the world\'s units, '
+             'y down' % title]
+    count = [0]
+
+    def vertex(x, y, z, rgb):
+        grain = rnd.uniform(-0.02, 0.02)
+        lines.append('v %.1f %.1f %.1f %.3f %.3f %.3f' % (
+            x, -y, z, *[min(1, max(0, c + grain)) for c in rgb]))
+        count[0] += 1
+        return count[0]
+
+    ids = []
+    for height, rx, rz, rgb in rings:
+        dx, dz = shift(height) if shift else (0.0, 0.0)
+        ring = []
+        for i in range(segments):
+            a = 2 * math.pi * i / segments
+            k, tone = ridge(a, height) if ridge else (1.0, 1.0)
+            ring.append(vertex(dx + k * rx * math.cos(a), height, dz + k * rz * math.sin(a),
+                               [c * tone for c in rgb]))
+        ids.append(ring)
+    for r in range(len(ids) - 1):
+        low, high = ids[r], ids[r + 1]
+        for i in range(segments):
+            j = (i + 1) % segments
+            lines.append('f %d %d %d %d' % (low[i], low[j], high[j], high[i]))
+    lines.append('f ' + ' '.join(str(v) for v in reversed(ids[0])))
+    lines.append('f ' + ' '.join(str(v) for v in ids[-1]))
+    return '\n'.join(lines) + '\n'
+
+
+def bollard_obj(width=645.0, height=680.0, depth=438.0):
+    """A mooring bollard of the ferry dock, `width` by `depth` and `height`
+    tall: a low base plate the whole of its foot, a round barrel a little
+    waisted, a flared head and a domed top, iron painted and weathered, the
+    rust where the ropes wear it. Its foot at y 0."""
+    iron = (0.33, 0.31, 0.29)
+    worn = (0.44, 0.33, 0.24)
+    half_w, half_d = width / 2, depth / 2
+    barrel = 0.62 * min(half_w, half_d)
+    head = 0.98 * min(half_w, half_d)
+    rings = [
+        (0.0, half_w, half_d, (0.27, 0.26, 0.25)),
+        (0.07 * height, half_w, half_d, (0.29, 0.28, 0.27)),
+        (0.07 * height, barrel * 1.08, barrel * 1.08, iron),
+        (0.45 * height, barrel * 0.94, barrel * 0.94, iron),
+        (0.70 * height, barrel, barrel, worn),
+        (0.76 * height, head, head, worn),
+        (0.86 * height, head, head, iron),
+        (0.93 * height, head * 0.72, head * 0.72, iron),
+        (1.0 * height, head * 0.25, head * 0.25, (0.36, 0.34, 0.31)),
+    ]
+    return lathe_obj('A mooring bollard', rings, 20, 31)
+
+
+def trunk_obj(width=580.0, height=2662.0, depth=580.0):
+    """An orange tree's trunk, `width` across and `height` tall: its roots
+    flared at the foot, a little thinner as it rises and bending, its bark
+    in furrows that wander up it, grey-brown and darker in them. Its foot
+    at y 0."""
+    import math
+
+    half = min(width, depth) / 2
+    rings = []
+    steps = 22
+    for k in range(steps + 1):
+        t = k / steps
+        flare = 0.45 * math.exp(-t * 14.0)
+        r = half * min(0.98, 0.52 + flare - 0.14 * t)
+        shade = 0.92 + 0.08 * math.sin(t * 31.0)
+        rings.append((t * height, r, r * 0.94, (0.36 * shade, 0.32 * shade, 0.27 * shade)))
+
+    def bend(h):
+        t = h / height
+        return (0.16 * half * math.sin(t * 2.6), 0.09 * half * math.sin(t * 1.7 + 0.6))
+
+    def furrows(angle, h):
+        wave = math.sin(7.0 * angle + 0.0021 * h + 0.6 * math.sin(0.004 * h + 3.0 * angle))
+        return 1.0 + 0.07 * wave, 0.78 + 0.22 * (0.5 + 0.5 * wave)
+    return lathe_obj('An orange tree\'s trunk', rings, 28, 47, bend, furrows)
+
+
 def rocks(args):
     folder = os.path.join(args.folder, 'dressing', 'meshes')
     os.makedirs(folder, exist_ok=True)
@@ -727,17 +821,27 @@ def rocks(args):
 # and their proportions, width height depth (gl_dressing.c fits each into
 # its piece's box, of the piece's own proportions within a quarter)
 GRAVES = {'grave': (464.0, 1150.0, 464.0), 'grave_wide': (1732.0, 1150.0, 464.0)}
+# ... the ferry dock's mooring bollards (stage 22, pieces 0, 1, 2 and 5) and
+# the orange trees' trunks (stage 12, pieces 7 to 11)
+PIECE_MESHES = {'bollard': (bollard_obj, (645.0, 680.0, 438.0)),
+                'orange_trunk': (trunk_obj, (580.0, 2662.0, 580.0))}
 
 
 def meshes(args):
     """The scenery meshes the program ships, made here: the gravestones
-    that stand in for the cemetery's own (`piece`)."""
+    that stand in for the cemetery's own (`piece`), the ferry dock's
+    bollards and the orange trees' trunks."""
     folder = os.path.join(args.folder, 'dressing', 'meshes')
     os.makedirs(folder, exist_ok=True)
     for name, (w, h, d) in sorted(GRAVES.items()):
         path = os.path.join(folder, name + '.obj')
         with open(path, 'w', encoding='utf-8', newline='\n') as f:
             f.write(grave_obj(w, h, d))
+        print(path)
+    for name, (make, (w, h, d)) in sorted(PIECE_MESHES.items()):
+        path = os.path.join(folder, name + '.obj')
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(make(w, h, d))
         print(path)
     return 0
 
