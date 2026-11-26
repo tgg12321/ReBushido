@@ -397,12 +397,21 @@ the stage").
     depth; the foliage casting into the sun's nearest map; gulls over the
     ship; the ferry dock's bollards and the orange trees' trunks as
     meshes. Left: the foliage in the lights' cubes, a mist the fight
-    camera sees, the bamboo's clumps as meshes. Next, the skies (the
+    camera sees, the bamboo's clumps as meshes. The skies (the
     owner, 2026-11-25: "I want striking skyboxes. With beautiful
-    volumetric clouds, sunsets and moon shots etc"): a procedural sky of
-    volumetric clouds lit by the sun or the moon, sunsets and dawns, a
-    moon and stars at night, following each stage's time of day (item
-    20), within the card's budget.
+    volumetric clouds, sunsets and moon shots etc"; PORT.md, "The sky"):
+    the air worked out as sunlight scattered through it, gold at dawn and
+    dusk; heaped clouds marched through as a volume, lit through
+    themselves by the sun or the moon, silver-lined and dark beneath,
+    drifting with the stage's wind, a high veil above them, a ceiling of
+    cloud where it rains; the sun's disc low over a sunset and a large
+    moon with its craters and corona, the clouds parting about them, the
+    suns of dawn and dusk and the night's moon lowered so that a fight's
+    camera sees them; stars and the Milky Way; ranges far off in the haze
+    below the horizon, running into the ground's fog; each time's own, a
+    mod's picture of a sky still its stage's; procedural, 0.54 ms of the
+    card's frame (a quarter of the clouds marched each picture, the rest
+    the last picture's).
 18. **Custom arenas**: a stage authored in Blender as a render mesh and
     a collision mesh with each face's surface (firm, sand, wet,
     barrier), compiled into the game's ground (`MODS.md`, "Stages");

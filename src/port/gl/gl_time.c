@@ -62,7 +62,7 @@ static const TimeLook g_time_looks[PORT_TIME_COUNT] = {
     /* dawn: a low sun turned back from the stage's own, pale gold over a
      * cool lilac morning */
     {
-        .height = 14.0f,
+        .height = 8.0f,
         .bearing = -50.0f,
         .sun_hue = {1.0f, 0.74f, 0.52f},
         .back_hue = {0.62f, 0.64f, 0.82f},
@@ -103,7 +103,7 @@ static const TimeLook g_time_looks[PORT_TIME_COUNT] = {
     /* dusk: a low sun turned on from the stage's own, deep orange over a
      * violet dark */
     {
-        .height = 12.0f,
+        .height = 7.0f,
         .bearing = 55.0f,
         .sun_hue = {1.0f, 0.56f, 0.3f},
         .back_hue = {0.62f, 0.52f, 0.66f},
@@ -124,7 +124,7 @@ static const TimeLook g_time_looks[PORT_TIME_COUNT] = {
     /* night: a weak, cool moon, soft; a dark between the lights; the
      * stage's own lights the brightest of the day */
     {
-        .height = 35.0f,
+        .height = 11.0f,
         .bearing = 25.0f,
         .sun_hue = {0.62f, 0.74f, 1.0f},
         .back_hue = {0.36f, 0.46f, 0.78f},

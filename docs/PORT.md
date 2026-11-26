@@ -3259,50 +3259,110 @@ stage there is a flat dark. Only the castle rooftop has more: a backdrop
 of a sky with a full moon, a prop kept a fixed way off from the camera
 (`stage_DrawBackdrop`, `stage_hooks.c`).
 
-**`sky = night`** (`src/port/gl/gl_sky.c`) paints a night sky of the
-port's own **in the place of that fill and nowhere else**, on the stages
-open to it. It is one triangle over the frame, drawn where the fill was
-(`port_GlSkyCleared`, from `port_GlWroteVram` when the game's write is
-the frame's own one-colour clear), so every primitive of the scene is
-painted over it exactly as over the fill: nothing of the stage's own
-geometry, its order or its depth changes. Each pixel works out the
-direction it looks in from the view the ground's mesh is drawn with --
-the coprocessor's rotation, its projection distance and its screen
-offsets, carried out of the renderer (`PortStageView`) -- and the sky is
-a function of that direction alone, so it turns with the camera and,
+**`sky = night`** (`src/port/gl/gl_sky.c`) paints a sky of the port's
+own **in the place of that fill and nowhere else**, on the stages open to
+it, at the stage's time of day ("The time of day"): the game's own night,
+or dawn, day, dusk and night of the port's. It is drawn where the fill was
+(`port_GlSkyCleared`, from `port_GlWroteVram` when the game's write is the
+frame's own one-colour clear), so every primitive of the scene is painted
+over it exactly as over the fill: nothing of the stage's own geometry, its
+order or its depth changes. Each pixel works out the direction it looks
+in from the view the ground's mesh is drawn with -- the coprocessor's
+rotation, its projection distance and its screen offsets, carried out of
+the renderer (`PortStageView`) -- and the sky is a function of that
+direction and the picture's clock alone, so it turns with the camera and,
 being infinitely far, never moves as the camera moves. A picture between
-two frames draws it with the camera between them, as it draws the
-ground (`port_GlStageViewNow`). It is made of:
+two frames draws it with the camera between them, as it draws the ground
+(`port_GlStageViewNow`). It is made in three steps (the owner,
+2026-11-25: "I want striking skyboxes. With beautiful volumetric clouds,
+sunsets and moon shots etc."; ROADMAP 17):
 
-- **a gradient** that is exactly the colour of the distance at the
-  horizon and a little below it, which is the colour the stage's own fog
-  fades to, so the fogged ground runs into the sky with no seam; just
-  above the horizon a glow of the stage's own ambient light
-  (`LIGHT_SCENERY`'s colour of the dark), darkening upwards to a deep
-  night -- a navy sky over the lost bridge, a purple one over the
-  cemetery, each from the stage's own lighting;
-- **stars**, two layers on the faces of a cube about the eye, a pixel
-  wide, fewer towards the horizon;
-- **a moon** where the stage's light comes from (the scenery's sun,
-  seen from above whichever way its vector is meant), placed low enough
-  to be in a fight's view -- the camera looks along the ground and sees
-  little more than a fifth of the way up -- with a halo and seas;
-- **a few thin clouds**, low and lit from the moon's side, which hide
-  the stars behind them.
+- **The air** (`port_GlSkyAir`): the clear sky of every direction, in a
+  picture of 192 by 96 texels wrapped round the eye (closer together near
+  the horizon), made again only when the stage, its time or its light
+  changes. By dawn, day and dusk it is the sunlight scattered once into
+  the eye through a planet's air -- the molecules' blue, the haze's glow
+  about the sun, the ozone's blue overhead at twilight -- the light at
+  each step dimmed by the air between it and the sun; at dawn and dusk
+  that dimming is worked out as for a sun lower than the time's (4 to 6
+  degrees), so that the sky's light is the time's own deep gold, the
+  colour the sun lights the ground with (`gl_time.c`). By night it is the
+  stage's own gradient: the colour of the distance at the horizon, a glow
+  of the stage's ambient light (`LIGHT_SCENERY`'s colour of the dark) just
+  above it darkening upwards -- a navy sky over the lost bridge, a purple
+  one over the cemetery -- and the moon's light in the air on its side.
+- **The clouds** (`g_sky_low_text`), in a picture of about 360 lines for
+  the frame, read smoothly at the frame's resolution (clouds are soft):
+  a layer of heaped clouds 1,100 to 5,200 metres up over a curved ground,
+  **marched through as a volume** -- their shapes a noise of billows
+  carved by three sizes of cells, their edges worn by a finer one, where
+  they gather and how tall they grow a weather of the place -- each step
+  lit by the sun or the moon through the cloud towards it (the light that
+  comes straight through, a forward lobe for the **silver lining** where
+  one looks towards the light through a thin edge, wider lobes for the
+  light scattered many times, the powder of an edge that faces it), and by
+  the sky: overhead on their tops, the horizon's on their **dark
+  undersides**; far ones seen through the haze, which is the air's colour
+  there. Over them a veil of **high cloud**, streaks of ice bent by the
+  high wind's eddies, which catches the sunset; at night the **Milky
+  Way**, a band of haze cut by lanes of dust; the glow about the sun or
+  the moon; and the clouds part about a low sun or moon, which the clouds
+  round the gap catch. Everything **drifts with the stage's wind**, the
+  dressing's `[wind]` (`port_GlDressingWeather`), on the picture's clock
+  (`port_GlLightsClock`); where the stage's dressing rains (the building's
+  rooftop) the sky is a ceiling of dark cloud, with no sun, moon or stars.
+- **The frame** (`g_sky_fragment_text`): the clouds' picture, and over it
+  at the frame's own resolution what must be sharp, as much as the clouds
+  leave clear: **stars** in three layers, coloured, the faint ones thicker
+  in the Milky Way, fewer near the horizon; the **sun's disc**, darker at
+  its limb; and **the moon**, large (6.6 degrees across: a telephoto's
+  moon), its seas and craters on a sphere fixed to it (cells of the
+  clouds' noise for the craters, their floors shadowed and their rims
+  bright), lit a little from one side so that they stand out, with a
+  faint earthshine and a corona about it.
 
-**What it costs.** The clouds are five octaves of a noise of the
-direction, forty hashes a pixel, which made the sky the card's second
-dearest pass (3.1 ms a fight frame at 2560 by 1440 with the picture
-supersampled, on the owner's RTX 3090). Being a function of the
-direction alone, the noise is worked out once, the first time a sky is
-painted, into a cube about the eye of six faces of 1,024 texels a side
-(`port_GlSkyBakeClouds`, 12 MB), and each pixel reads it there, the
-card smoothing between texels; the gradient, the moon, the stars and
-the clouds' colours are still worked out at each pixel, so that the
-stage's own light colours them. A texel is about a tenth of a degree,
-two pixels of that picture; the clouds lie where the noise's finest
-octave is several texels across, so they are the same clouds, softened
-by the smoothing where they are finest.
+**Below the horizon.** The stages are small: from a fight's camera,
+which looks down at the fighters, the ground and its water end well
+below the true horizon, and between them is what lies beyond (on the
+coast, 15 degrees and more of the picture). There the sky draws **ranges
+far off in the haze**, three of them one before another, each paler the
+farther it is, their valleys misted, their slopes in the shade of the sky
+overhead and their ridges against the horizon's own colour and glow --
+the sunset's on its side -- running down into the colour of the distance
+where the stage's ground ends, which the ground's fog runs into with no
+seam.
+
+**The sun and the moon in a fight's view.** That camera sees the sky only
+a few degrees up (about 8 on the coast). So that a sunset or a moonrise is
+in it, the times' own suns are low (dawn 8 degrees, dusk 7, the night's
+moon 11; "The time of day"), and the sky draws the disc, its glow and the
+gap in the clouds at most 4 degrees up at dawn, 3.5 at dusk and 5 at
+night, on the light's own bearing, so that the shadows run from it; the
+ground keeps the light's own height. At the stage's own time the moon is
+on the bearing of the stage's light (the scenery's sun, seen from above
+whichever way its vector is meant), 8 to 13 degrees up, drawn at most 5.
+By day the sun is the time's, high and out of view.
+
+**What it costs.** The clouds' noise is made once while the game loads
+(`port_GlSkyMakeNoise`, from `port_GlSkyWarm`): a cube of 128 texels a
+side of the shapes, one of 32 of the detail, both with their mipmaps, and
+a square of 512 of the weather (10 MB), each a function of the texel
+alone, the same for every stage; and the clouds' pictures, at the most a
+frame uses of them (14 MB); each of the sky's programs is drawn once then
+with its textures bound, so that the driver makes it ready (`first_blank`
+in the bench). Each picture marches **one pixel of each square of four**
+of the clouds' picture, into a quarter-size picture of its own so that
+the card's groups of pixels march together; the other three are the last
+picture's clouds where the same direction was in it (`g_sky_mix_text`),
+which for a sky, a function of the direction alone, is exact whatever the
+camera did -- the clouds drift too little in the three pictures since a
+pixel was marched to tell -- and where it was not in the last picture,
+the nearest pixel marched. A step through a cloud is longer the farther
+it is, three at once through the clear air between; the noise is read at
+the mipmap that fits a pixel there. On the RTX 3090 at 2,560 by 1,440,
+the sky's pass is 0.54 ms of a fight frame's card (median, three pictures
+a frame with run-ahead 1), against 0.27 for the night sky it replaces
+(`port_bench.py --case ra1`, 6% of the processors busy).
 
 **Which stages.** Looked at stage by stage over the prover's tour of
 each (`tools/port_stage_prove.py`, the pictures every 300 blanks of all
@@ -3323,25 +3383,27 @@ nadir at its bottom ([`MODS.md`](MODS.md), "Skies").
 **The far edge of the ground.** At `draw_distance max` the ground is
 drawn to the stage's own last cell ("How far the stage is drawn"), and
 where that edge is in view it is a line against what is beyond it. The
-sky does not move the edge, and keeps the colour beyond it the stage's
-own colour of the distance -- the band just under the horizon is that
-colour -- so the stage's fog, which is pushed out with the distance and
-fades the ground towards that same colour, is what hides it; a stage
-whose ground ends nearer than its fog does still shows the line, as it
-did. What a stage that stands high shows under the horizon (a bridge, a
-rooftop) is that same dark.
+sky does not move the edge, and keeps what is just beyond it the colour
+the ground's fog fades to (the stage's own colour of the distance, or the
+time's fog) -- the ranges below the horizon run down into it -- so the
+stage's fog, which is pushed out with the distance, is what hides it; a
+stage whose ground ends nearer than its fog does still shows the line, as
+it did.
 
 **What it is not held to.** The provers hold the picture to the
 console's own: with nothing said `rebushido-gl` draws the game's fill
 (`--sky original`), so `port_gl_prove.py`, `port_fps_prove.py` and
 `port_stage_prove.py` measure what they measured before. `--sky night`
-draws it. The window starts with `night` -- the owner's call: nobody
-has looked at it on a real screen.
+draws it, as does a time of day of the port's own. The window starts
+with `night` -- the owner's call. The look of each time (`g_sky_looks`:
+the clouds' cover, the high veil, the haze, the light on the clouds, the
+gap about the sun) is a judgement on the pictures of the work
+(`tmp/skies/`, not committed), and wants the owner's eye.
 
 | Measured | |
 |---|---|
 | Stages with a sky | 28 of 38 |
-| A frame of a fight | one more draw of three vertices, before the scene |
+| A picture of a fight | four draws of three vertices before the scene: the clouds marched (a quarter of a picture of about 360 lines), put together, and the frame; the air's picture besides when the stage, its time or its light changes |
 | The game's trace | untouched: nothing of the game is read but the stage's lighting and the view the ground already takes |
 | `port_game` (the building's rooftop) drawn as five pictures a frame, with the sky and the walls seen through | 697 frames checked; phase 0 the game's own frame in every one (0 pixels apart); none out of order, and the watched point off its line in 4 -- the same numbers as without them |
 | The sky between two frames | it moves a step a phase: of the picture's top fifth at blank 3000, 909, 1,999, 3,089 and 4,158 pixels apart from phase 0 at phases 1 to 4 |
@@ -5553,7 +5615,7 @@ asked for, none of them the fight's own:
 | the cast shadows' program into the sun's maps: a framebuffer of depth alone is another program to the driver | 40 ms, and the next cascade's clear 38 | under 1 | `port_GlSunWarm`: each map cleared and drawn into by `port_GlShadowWarmSunCasters` |
 | the ground mesh's slots and depth, several samples a pixel at the picture's size, given their memory at their first attachment | 9 + 5 ms | the same | `port_GlWarmTargets`: attached and cleared once for each size's targets |
 | the dressing's particles' program (a dressed stage) | 38 ms | under 1 | `port_GlDressingWarm`: every dressing program drawn once in its state through a scissor of no pixel |
-| the clouds' cube, baked at the first sky | 3 ms | 3 ms | `port_GlSkyWarm` |
+| the sky's clouds' noise, made at the first sky (since 2026-11-25 three textures of noise and the clouds' pictures, and each of the sky's four programs drawn once with its textures bound: "The sky") | 3 ms | 3 ms | `port_GlSkyWarm` |
 
 All four are called with `port_GlFighterPreload` while a load is on the
 screen, each once (the targets once for each size); none writes anything
@@ -8721,13 +8783,13 @@ the picture changes (the provers, the bench, the play tests).
 
 | | dawn | day | dusk | night |
 |---|---|---|---|---|
-| the sun's height | 14 degrees | 55 | 12 | 35 (the moon) |
+| the sun's height | 8 degrees | 55 | 7 | 11 (the moon) |
 | its bearing | the stage's own turned back 50 degrees | the stage's own | turned on 55 | turned on 25 |
 | its colour | pale gold | white | deep orange | weak, cool blue |
 | the floor's light, of the stage's own | 0.80 | 1.15 | 0.72 | 0.40 |
 | the sun's share of it | 0.42 | 0.65 | 0.42 | 0.55 |
 | the fog's colour, its most | lilac grey, 0.70 | pale haze, 0.50 | dusky rose, 0.75 | near black blue, 0.85 |
-| the sky | gold horizon to blue, a few stars | a blue sky, clouds | orange horizon to violet, stars | the night sky, stars, the moon |
+| the sky ("The sky") | the sun rising in pink and peach, a high veil, a few stars | heaped clouds in a deep blue | the sun setting under clouds aflame, stars | broken clouds under a large moon, the Milky Way |
 | the sun's penumbra | 1.3 times | 1 | 1.3 | 2.5 |
 | the bloom | 1.0 | 0.6 | 1.25 | 1.6 |
 | the stage's own lights | 0.7 | 0.4 | 1.2 | 1.6 |
@@ -8763,14 +8825,17 @@ the picture changes (the provers, the bench, the play tests).
   colours, unfogged, and lays the time's fog over the lit pixel by how far
   into the levels its depth is (`u_time_fog`), on every face of the mesh;
   so the ground runs into the time's horizon.
-- **The sky** (`gl_sky.c`): dawn, day and dusk have a sky of their own --
-  the time's horizon (the fog's colour, so the ground runs into it)
-  rising to its zenith, the sun's disc and glow where its light comes
-  from, colouring the horizon on its side, the baked clouds lit by it, a
-  few stars at dawn and dusk; night is the night sky with the time's
-  horizon and moon. A mod's picture of a sky is the stage's own time's.
-  A time of the port's own has its sky whatever `sky` says (a day over a
-  black fill is no day); a closed stage has none.
+- **The sky** (`gl_sky.c`, "The sky"): dawn, day and dusk are the air
+  lit by the time's sun, its clouds lit by the sun's colour, the sun's
+  disc low over a dawn or a sunset on the light's own bearing; night is
+  the night sky with the time's moon; below the horizon the ranges far
+  off run into the time's fog, so the ground runs into them. The suns of
+  dawn and dusk and the night's moon are low (8, 7 and 11 degrees, from
+  14, 12 and 35 before the skies, 2026-11-25) so that a fight's camera,
+  which sees the sky only a few degrees up, has them in view; the shadows
+  run long. A mod's picture of a sky is the stage's own time's. A time of
+  the port's own has its sky whatever `sky` says (a day over a black fill
+  is no day); a closed stage has none.
 - **Under a roof** (the halls, the dojos, the cave, the garage: the sky's
   closed stages) the sun keeps the stage's own way, the colours move half
   way to the time's and there is no time's fog: light through the doors.
