@@ -109,6 +109,13 @@ extern void port_GlDressingWarm(void);
  * u_pieces): the ground's mesh leaves them out. */
 extern void port_GlDressingHiddenPieces(u32 *words, s32 count);
 
+/* The stage's weather as its dressing has it, for the sky (gl_sky.c):
+ * the wind's way across the ground (x and z, of length one), its
+ * strength and its gusts (0 to 1, as `u_wind`), the dressing's default
+ * where the stage's file says none; and whether it rains. Read of the
+ * stage's file, nothing grown. FALSE where the stage is not dressed. */
+extern s32 port_GlDressingWeather(float *wind, s32 *is_raining);
+
 /* What the last picture drew, for the run's log and the bench: things,
  * triangles and draws. */
 extern u32 port_GlDressingThings(void);

@@ -3377,6 +3377,40 @@ static const PortDressSet *port_DressNow(void) {
 
 s32 port_GlDressingIsShown(void) { return port_DressNow() != NULL; }
 
+s32 port_GlDressingWeather(float *wind, s32 *is_raining) {
+    const PortDressSet *set;
+    s32 i;
+
+    wind[0] = 0.87f;
+    wind[1] = 0.5f;
+    wind[2] = 0.5f;
+    wind[3] = 0.33f;
+    *is_raining = FALSE;
+    if (!g_dress.is_started || !g_dress.is_on) {
+        return FALSE;
+    }
+    set = port_DressingOfStage(port_RemasterStageNumber());
+    if (set == NULL || set->count == 0) {
+        return FALSE;
+    }
+    for (i = 0; i < set->count; i++) {
+        const PortDressDef *def = &set->block[i];
+
+        if (def->kind == PORT_DRESS_WIND) {
+            float way = (float)def->direction * PI_F / DEGREES_HALF;
+
+            wind[0] = port_DressCos(way);
+            wind[1] = port_DressSin(way);
+            wind[2] = (float)def->strength / PORT_DRESSING_ONE;
+            wind[3] = (float)def->gusts / PORT_DRESSING_ONE;
+        } else if (def->kind == PORT_DRESS_PARTICLES &&
+                   def->subkind == PORT_PARTICLES_RAIN) {
+            *is_raining = TRUE;
+        }
+    }
+    return TRUE;
+}
+
 void port_GlDressingHiddenPieces(u32 *words, s32 count) {
     s32 i;
 
