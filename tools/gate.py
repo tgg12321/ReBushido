@@ -78,6 +78,9 @@ WAITS = {
     'port-sdl-windows': [],
     'port-rollback': ['port'],
     'port-stage-select': ['port'],
+    # the provers' programs build from the sources alone, beside the rest
+    'port-gl': [],
+    'port-gl-windows': [],
     'port-net': ['port', 'port-sdl'],
     # the Windows programs meeting each other, by address and through a
     # lobby server run here, the menu's restart and the refusals
@@ -119,6 +122,12 @@ OWN = [
     ('discs', ['make', '-j8', 'playtest-console'], 'wsl'),
     ('port-sdl', ['make', 'port-sdl'], 'wsl'),
     ('port-sdl-windows', ['make', 'port-sdl-windows'], 'wsl'),
+    # the picture provers' programs (tools/port_gl_build.py), which no other
+    # step builds: built only so a change cannot break them unseen (the
+    # replays' code sum, 2026-11-26, broke their link and only the
+    # baselines found it)
+    ('port-gl', ['python3', 'tools/port_gl_build.py'], 'wsl'),
+    ('port-gl-windows', ['make', 'port-gl-windows'], 'wsl'),
     ('port-rollback', ['make', 'port-rollback'], 'wsl'),
     ('port-stage-select', ['make', 'port-stage-select'], 'wsl'),
     ('port-net', None, 'wsl'),  # with its ports (net_base)

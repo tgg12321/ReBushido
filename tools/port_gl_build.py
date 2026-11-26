@@ -164,7 +164,14 @@ def main():
     if blob is None:
         print("FAILED: port-gl: the game's object does not link")
         return 1
-    if not sdl.link_program(target, target.program, [blob] + hosted, target.link_flags()):
+    # the sum of the game's code the replays and sessions check
+    # (port_StateBuildSum), as the window's build makes it
+    value = sdl.code_sum(target, blob)
+    summed = None if value is None else sdl.compile_code_sum(target, value)
+    if summed is None:
+        print("FAILED: port-gl: the sum of the game's object's core was not made")
+        return 1
+    if not sdl.link_program(target, target.program, [blob, summed] + hosted, target.link_flags()):
         return 1
     if windows:
         shutil.copyfile(target.sdl + '/bin/SDL2.dll', target.dir + '/SDL2.dll')
