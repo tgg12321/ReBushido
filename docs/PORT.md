@@ -10334,7 +10334,12 @@ pieces, a name and a size each), STRT (the start's size and its zlib
 stream), DISC, VIEW (each kind of game view once), INPT (runs of frames
 alike: which of the two pads' buttons, which pads answered and the view
 changed, the new values, then how many frames, a varint), HASH, END. A
-fight's inputs are a few hundred bytes.
+fight's inputs are a few hundred bytes. Version 3 (2026-11-26) adds to
+each frame whether a page of the window's covered the top menu, and the
+chunks CHSH (the console's hash beside each of HASH's), LEAD and CARD
+(below, "Across builds"); META says `code` (the core's sum), `console`
+(the start's console hash), `stage_music` and `lead` (1, or 0 and
+`lead_why`). A file of version 1 or 2 is read as before.
 
 **Held to the program.** A replay plays only where the build's sum
 (`port_ReplayBuild`: where the game's object's core lies and what its
@@ -10359,6 +10364,71 @@ the fight had them, and kept as they are where it had none. Otherwise the
 page, `--replay` and `--replay-check` say why. The start's hash is checked
 as it is put in: a start that is not the one recorded stops the playback
 there.
+
+**Across builds: the lead-in** (2026-11-26; ROADMAP 23's "replays
+across builds"). A build of another core (another release whose game
+changed, the other size of pointer, a window that grew past a page)
+cannot put the start in, so a replay also keeps what plays the fight
+again from power on: LEAD, the run's setup as it began (the switches and
+defaults the game takes in from outside its state, as a session holds the
+host's: the stage pages' kind and time of day, the gameplay switches, the
+fight's music, the match rule and teams, and the stages' music's sum),
+each change of that setup on the way and the input it came before, every
+input from power on to the fight's start with the view it read, the menu
+sound asked and the top menu's cover, the movie player's reads of the
+pads (which are not inputs: the movie reads the pads by itself, `PAD_dr`),
+and the console's own hash every 30 inputs; CARD, the memory cards as the
+run found them at power on, deflated; CHSH, the console's hash at each of
+the fight's hashes. A few hundred bytes for port_game's 1,558 inputs to
+its fight. Another build keeps its own state at power on
+(`port_ReplayKeepBoot`, before the first step), puts it back, the cards in
+as a session's are (`port_SetCardImage`) and the setup held, and runs the
+game with those inputs to the fight's start unseen (all at once with
+`--replay-check`, in slices of 40 ms in the window, whose line says how far
+it is), then the fight as from its start; the state at the fight's start
+it reached is its own start for a restart and a skip. Every console hash
+is held to the recorded one. Where the game is the one that recorded it
+(the code's sum, or the version where there is none) one that differs is a
+desync; where it is another game, the playback stops there and says that
+this build's game went otherwise (before the fight, so many inputs after
+power on, or at a frame of the fight), never showing a fight that is not
+the recorded one. The Replays page marks such a replay "another build's"
+and its help says it plays the session again first. A build of the same
+core plays from the start as before; `--replay-from-boot` plays from
+power on all the same, every hash held, the state's as well.
+
+*The console's hash* (`port_StateConsoleHash`): the console's RAM and
+scratchpad, the sound chip's registers and memory and the GTE's registers,
+not the game's and Sony's variables, whose layout is the build's. Of the
+RAM and the scratchpad each word that may be a link into the program's own
+memory is left out but for its top byte: a tag or an address whose low 24
+bits are past the console's RAM and below the port's primitive buffers'
+(the game's variables, the game's stack: an ordering table in a variable
+of the game's is linked to by the low 24 bits of its address), and an
+address on the game's stack not at all. The rule is the word's alone, so
+two builds leave out the same words: port_game's fight gives the same
+console hashes in the 64-bit and the 32-bit programs, every one.
+
+*What a run keeps it for*: a run that began from power on as a plain one
+does, while nothing but its inputs and that setup changed the game. It is
+not kept for a run begun with `--fight`, `--partners`, `--arena`,
+`--weapon`, a session or a link cable; from a play test's poke, a change of
+the settings menu's Bug fixes, or a link cable's game on, the fights after
+play only on this build (`port_ReplayLeadBreak`, said in the log), and an
+online fight keeps none (`lead_why` says which). A session begun in the
+program, a spectator's match and a replay's playback put the player's own
+state back after them, and the lead-in waits while they run.
+
+*Two things that made the same game go otherwise*, both found by this:
+the movie player's reads of the pads (the plan skips the opening movie
+with Cross, which the playback did not see), now kept; and what lies
+below the game's stack pointer, which a function of the game's that reads
+a local it never set reads (the console's code has a few: a vector's z
+read uninitialised, seen in the GTE's registers): it was whatever the
+host had last run on the game's stack (a take hook, a replay's, a plan's)
+and was cleared only where a snapshot was saved. Now it is cleared as each
+input is taken (`port_FiberClearDeadStack`, `pad.c`), whatever the host
+ran, in every run alike.
 
 A replay is watched from a menu, never in the middle of a fight
 (`port_PlayReplay` says so): the picture's stage is the one loaded last
@@ -10431,8 +10501,16 @@ emulator): port_game's plan and four of `tools/port_stage_select.py`'s
 (the stage select's arena and rematch, versus the CPU through two fights,
 training, versus the CPU with `--stage-select --unlock-all`) recorded by
 both sizes, every file played back by both: the size that recorded it
-to the end with every hash the same, the other refusing it as another
-build's; the two sizes' files of a fight have the same inputs. And
+to the end with every hash the same, from its start and from power on
+(`--replay-from-boot`); the other from power on, every console hash the
+same, where the file keeps its lead-in, and refusing it as another
+build's where it does not (a plan that pokes the game's memory); the two
+sizes' files of a fight have the same inputs. port_game's first fight
+played from power on with thirty inputs changed (`--replay-differ N`, as
+another game would have them) stops at the next hash, before the fight or
+in it, saying that the game went otherwise, exit 1; and the file with its
+lead-in taken out, as one of before it, plays on its own build and is
+refused by the other. And
 `python3 tools/port_replay.py --window` (from Windows' Python the
 Windows program, in WSL the Linux one): port_game's fight recorded by
 the window's program, then played by two programs linked beside it with
@@ -10440,7 +10518,11 @@ room between the game's object and the window's files (`make port-sdl
 PADDED=1`, `port_sdl_build.py --padded`): with 96 bytes of code, which
 moves the window's code and none of the core's, every hash the one
 recorded; with 192 KB of each kind, which moves the core's variables,
-refused as another build's, never a crash. And
+played from power on to its end, every console hash the one recorded,
+never a crash. The Linux window's replay of port_game's fight played by
+the Windows window's program (another system and compiler, another core's
+sum) from power on to its end, all 81 console hashes the same (by hand,
+2026-11-26). And
 `tools/port_net.py session`: both machines of a session keep the fight,
 their files have the same inputs, hashes and views, and each plays back
 headlessly with every hash the same. The window's program recorded

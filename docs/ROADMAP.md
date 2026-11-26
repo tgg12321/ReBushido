@@ -530,8 +530,13 @@ the stage").
     H.264 and AAC encoders) or an .avi (the port's own Motion JPEG, on
     Linux), a frame a blank, the sound the fight's own; `tools/
     port_film.py` holds its frames to `--tap-window` and its sound to
-    `--wav`. Left: replays across builds (inputs from a pristine boot
-    state, which a fight's start does not need).
+    `--wav`. Replays across builds (2026-11-26; [`PORT.md`](PORT.md),
+    "Across builds: the lead-in"): each file keeps the run from power on
+    to its fight (its setup, cards, every input, the console's hash every
+    second), and a build of another core plays the session again from its
+    own power on to the fight, every console hash held, stopping where its
+    game went otherwise. Left: an online fight's (from the session's own
+    start), and a run begun with a fight chosen.
 24. **2v2** (longer term): four fighters in one fight, two teams; a
     button retargets to the other enemy; online with four players
     (rollback of four, the bench's four-fighter case as the budget).

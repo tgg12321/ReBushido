@@ -144,6 +144,10 @@ static const char g_port_usage[] =
     "                 to before its first cut, and end: 0 where every\n"
     "                 hash was the one recorded, 1 on a desync or a\n"
     "                 replay not played\n"
+    "  --replay-from-boot   ... from power on (its lead-in), as another\n"
+    "                 build plays it, even on this one\n"
+    "  --replay-differ N   ... and inputs N on (30) from power on changed, as\n"
+    "                 a game that went otherwise would have them (a test)\n"
     "  --whole-state  save and put back every byte of the state, not only\n"
     "                 the pages written since (for measuring)\n"
     "  --run-ahead N  before each frame run the next N (0 to 2) and put\n"
@@ -516,7 +520,10 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetTrace(1);
         } else if (port_TextsEqual(word, "--no-cards")) {
             port_SetCardsOff();
+        } else if (port_TextsEqual(word, "--replay-from-boot")) {
+            port_SetReplayFromBoot(1);
         } else if (port_TextsEqual(word, "--fight-cpu")) {
+            port_ReplayLeadBreak("--fight-cpu");
             port_FightBothCpu();
         } else if (port_TextsEqual(word, "--unlock-all")) {
             port_SetUnlockAll(1);
@@ -533,8 +540,10 @@ s32 port_Main(s32 argc, char **argv) {
             }
             i++;
         } else if (port_TextsEqual(word, "--fight-2p")) {
+            port_ReplayLeadBreak("--fight-2p");
             port_FightTwoPlayers();
         } else if (port_TextsEqual(word, "--fight")) {
+            port_ReplayLeadBreak("the run began in a fight (--fight)");
             if (i + 3 >= argc) {
                 port_UsageError("--fight takes STAGE FIGHTER FIGHTER", "");
             }
@@ -544,6 +553,7 @@ s32 port_Main(s32 argc, char **argv) {
             }
             i += 3;
         } else if (port_TextsEqual(word, "--partners")) {
+            port_ReplayLeadBreak("--partners");
             if (i + 2 >= argc) {
                 port_UsageError("--partners takes FIGHTER FIGHTER", "");
             }
@@ -585,6 +595,15 @@ s32 port_Main(s32 argc, char **argv) {
             }
             port_SetReplayKeep((u32)keep, 0);
             i++;
+        } else if (port_TextsEqual(word, "--replay-differ")) {
+            s32 input;
+
+            if (!port_ParseNumber(argv[i + 1], &input) || input < 0) {
+                port_UsageError("--replay-differ takes an input's number, not ",
+                                argv[i + 1]);
+            }
+            port_SetReplayDiffer((u32)input);
+            i++;
         } else if (port_TextsEqual(word, "--replay") ||
                    port_TextsEqual(word, "--replay-check")) {
             replay_quiet = port_TextsEqual(word, "--replay-check");
@@ -618,6 +637,7 @@ s32 port_Main(s32 argc, char **argv) {
         } else if (port_TextsEqual(word, "--dump-music")) {
             port_MusicSetDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--arena")) {
+            port_ReplayLeadBreak("--arena");
             if (i + 1 >= argc || !port_ArenaAsk(argv[++i])) {
                 port_UsageError("--arena takes the name of a mod's arena", "");
             }
@@ -657,6 +677,7 @@ s32 port_Main(s32 argc, char **argv) {
         } else if (port_TextsEqual(word, "--dump-stages")) {
             port_SetStageDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--weapon")) {
+            port_ReplayLeadBreak("--weapon");
             if (!port_WeaponsChoose(argv[++i])) {
                 port_UsageError(
                     "--weapon takes 1=NAME or 2=NAME, not ", argv[i]);
@@ -722,17 +743,20 @@ s32 port_Main(s32 argc, char **argv) {
             }
             net_addresses |= 2;
         } else if (port_TextsEqual(word, "--link-side")) {
+            port_ReplayLeadBreak("the program began a session or a link");
             if (!port_ParseNumber(argv[++i], &link_side) || link_side < 0 ||
                 link_side > 1) {
                 port_UsageError("--link-side takes 0 or 1, not ", argv[i]);
             }
         } else if (port_TextsEqual(word, "--netplay")) {
+            port_ReplayLeadBreak("the program began a session or a link");
             if (!port_ParseNumber(argv[++i], &netplay_pad) || netplay_pad < 1 ||
                 netplay_pad > PORT_PADS) {
                 port_UsageError("--netplay takes 1 or 2, not ", argv[i]);
             }
         } else if (port_TextsEqual(word, "--host") ||
                    port_TextsEqual(word, "--join")) {
+            port_ReplayLeadBreak("the program began a session or a link");
             if (session_role != PORT_SESSION_NONE) {
                 port_UsageError("--host or --join, once: ", word);
             }
@@ -1185,6 +1209,8 @@ s32 port_Main(s32 argc, char **argv) {
     /* the state of the game's start, before its first step, where a
      * session may begin in this program (online.c) */
     port_OnlineKeepBoot(&g_port_disc);
+    /* ... and where a replay of another build's is played from */
+    port_ReplayKeepBoot();
     for (;;) {
         /* a replay's turn: a fight's start seen, or a playback's frame */
         port_ReplayBoundary();

@@ -207,6 +207,14 @@ static inline void port_HostTouchPages(void *dest, u32 bytes) {
  * calls port_HostLeaveGame, and then returns. Only the game calls
  * port_HostLeaveGame, which returns when the host enters it again. */
 extern void port_HostStartGame(void (*function)(void), u32 stack_top);
+/* On the game's stack: what lies below its stack pointer, of the part of
+ * the stack the state keeps, cleared (fiber.c). The game takes its input
+ * after the host has run there (the take hook, a replay's, a plan's), and
+ * a function of the game's that reads a local it never set (the
+ * console's code has a few) then reads 0 whatever the host ran, in
+ * every run alike: a replay played on another build, or with other hooks
+ * than the run that recorded it, takes the same course. */
+extern void port_FiberClearDeadStack(void);
 extern void port_HostEnterGame(void);
 extern void port_HostLeaveGame(void);
 /* The game's stack pointer while it is not running, which is part of the

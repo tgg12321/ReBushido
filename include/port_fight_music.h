@@ -124,6 +124,9 @@ extern s32 port_GetFightMusicRow(void);
  * setters change nothing after. */
 extern u32 port_FightMusicBits(void);
 extern void port_HoldFightMusic(u32 bits);
+/* ... and as a replay's run from power on had it, a piece of the mods'
+ * included (the mods are held to be the same: port_replay.h). */
+extern void port_HoldFightMusicExactly(u32 bits);
 
 /* ---- a mod's own pieces (src/port/music.c) ---- */
 

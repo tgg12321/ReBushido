@@ -131,6 +131,12 @@ extern u32 port_StateFaults(void);
  * pointer that is not a variable's: two runs of one program on two PCs
  * give the same hash for the same state. */
 extern u64 port_StateHash(void);
+/* ... and of that the console's own memory and registers alone (its RAM,
+ * scratchpad, sound chip, GTE), not the game's variables: no address of
+ * the program is among them, so two builds that run the same game, laid
+ * out otherwise or of the other size of pointer, give the same hash for
+ * the same state (a replay played from power on, port_replay.h). */
+extern u64 port_StateConsoleHash(void);
 
 /* ---- the self-test (--rollback-test) ---- */
 

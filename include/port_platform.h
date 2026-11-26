@@ -151,6 +151,9 @@ extern const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS];
  * memory's (port_gpu.h, port_AddLinkRegion). */
 #define PORT_STACK_ADDR 0x7FC00000U
 #define PORT_STACK_SIZE 0x100000U
+/* ... of which the top is the state's (port_state.h): at a frame's
+ * boundary the game is a few calls deep, a kilobyte or two */
+#define PORT_STACK_KEPT 0x10000U
 /* Where the port's own two buffers of primitives go, for a run that
  * asks the remastered picture to draw more of the stage than the
  * console does (port_remaster.h, PORT_PRIM_BUFFER_BYTES): the

@@ -19,6 +19,19 @@
 
 /* The pieces of memory of a snapshot and of the hash, at most. */
 #define STATE_RUNS_MAX 10
+/* The hash's runs that are the console's own memory and registers (the
+ * RAM, the scratchpad, the sound chip's registers and memory, the GTE's),
+ * which come first: port_StateConsoleHash. */
+#define CONSOLE_RUNS 5
+/* ... of which the first two (the RAM and the scratchpad) may hold links
+ * into the program's own memory (port_HashLinksOut): the low 24 bits of
+ * a tag or an address, from past the console's RAM to the port's own
+ * primitive buffers' (port_platform.h) */
+#define CONSOLE_LINKED_RUNS 2
+#define CONSOLE_CHUNK_WORDS 256
+#define TAG_LINK_MASK 0xFFFFFFU
+#define TAG_LINK_LEAST 0x200000U
+#define TAG_LINK_PAST (PORT_PRIMS_ADDR & TAG_LINK_MASK)
 /* What the self-test compares the state by. */
 #define STATE_PAGE_BYTES 0x1000U
 #define STATE_IO_PAGE_ADDR (PORT_SPU_REGS_ADDR & ~(STATE_PAGE_BYTES - 1))
@@ -26,7 +39,7 @@
 /* The top of the game's stack that a snapshot holds: at a frame's
  * boundary the game is a few calls deep (main, pad_Update,
  * port_TakeInput, the switch), a kilobyte or two. */
-#define STATE_STACK_BYTES 0x10000U
+#define STATE_STACK_BYTES PORT_STACK_KEPT
 #define STATE_STACK_TOP (PORT_STACK_ADDR + PORT_STACK_SIZE)
 /* Snapshots whose epochs are kept: netplay's ring, run-ahead's and the
  * self-test's two. */
@@ -1110,8 +1123,8 @@ static u64 port_HashEnd(const PortHashLanes *lanes, u32 bytes) {
            port_HashFinal(lanes->b, bytes);
 }
 
-/* What the console would hold, as one hash (port_state.h). */
-u64 port_StateHash(void) {
+/* The first `count` of the hashed runs as one hash. */
+static u64 port_StateHashRuns(s32 count) {
     PortHashLanes lanes;
     u32 bytes = 0;
     s32 i;
@@ -1119,10 +1132,77 @@ u64 port_StateHash(void) {
     port_PaintSyncAll();
     port_StateFindPieces();
     port_HashStart(&lanes);
-    for (i = 0; i < g_port_state_hashed_count; i++) {
+    for (i = 0; i < count && i < g_port_state_hashed_count; i++) {
         port_HashBytes(
             &lanes, g_port_state_hashed[i].start, g_port_state_hashed[i].bytes);
         bytes += g_port_state_hashed[i].bytes;
+    }
+    return port_HashEnd(&lanes, bytes);
+}
+
+/* What the console would hold, as one hash (port_state.h). */
+u64 port_StateHash(void) { return port_StateHashRuns(STATE_RUNS_MAX); }
+
+/* `bytes` more bytes, a multiple of a word, as port_HashBytes takes them
+ * but for each word that may be a link into the program's own memory,
+ * whose place each build has its own of: a primitive's or an ordering
+ * table's tag (its words' count in the top byte, the low 24 bits of where
+ * the next one is) or an address of the program's variables (they lie
+ * past the console's 2 MB, port_platform.h), whose low 24 bits are past
+ * the console's RAM and below the port's own primitive buffers' (the game's
+ * variables, the game's stack: port_AddLinkRegion), of which only the top
+ * byte is hashed; and an address on the game's stack, which a build whose
+ * functions' frames are otherwise has elsewhere, not at all. The rule is
+ * the word's alone, so every build leaves out the same words of the same
+ * state. */
+static void port_HashLinksOut(
+    PortHashLanes *lanes, const u8 *start, u32 bytes) {
+    u32 words[CONSOLE_CHUNK_WORDS];
+    const PortLooseWord *in = (const PortLooseWord *)start;
+    u32 done;
+
+    for (done = 0; done < bytes / HASH_WORD_BYTES;) {
+        u32 count = bytes / HASH_WORD_BYTES - done;
+        u32 i;
+
+        count = count < CONSOLE_CHUNK_WORDS ? count : CONSOLE_CHUNK_WORDS;
+        for (i = 0; i < count; i++) {
+            u32 word = in[done + i];
+
+            if (word - PORT_STACK_ADDR < PORT_STACK_SIZE) {
+                word = PORT_STACK_ADDR;
+            } else if ((word & TAG_LINK_MASK) - TAG_LINK_LEAST <
+                       TAG_LINK_PAST - TAG_LINK_LEAST) {
+                word &= ~TAG_LINK_MASK;
+            }
+            words[i] = word;
+        }
+        port_HashBytes(lanes, (const u8 *)words, count * HASH_WORD_BYTES);
+        done += count;
+    }
+}
+
+/* ... and of it the console's own memory and registers alone
+ * (port_state.h): the hashed runs before the game's and Sony's
+ * variables, the links into the program's memory left out of the RAM and
+ * the scratchpad. */
+u64 port_StateConsoleHash(void) {
+    PortHashLanes lanes;
+    u32 bytes = 0;
+    s32 i;
+
+    port_PaintSyncAll();
+    port_StateFindPieces();
+    port_HashStart(&lanes);
+    for (i = 0; i < CONSOLE_RUNS && i < g_port_state_hashed_count; i++) {
+        const PortStateRun *run = &g_port_state_hashed[i];
+
+        if (i < CONSOLE_LINKED_RUNS) {
+            port_HashLinksOut(&lanes, run->start, run->bytes);
+        } else {
+            port_HashBytes(&lanes, run->start, run->bytes);
+        }
+        bytes += run->bytes;
     }
     return port_HashEnd(&lanes, bytes);
 }

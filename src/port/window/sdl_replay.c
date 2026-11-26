@@ -231,6 +231,15 @@ u32 port_ReplayWords(char *out, u32 room) {
         }
         return g_replay.ended_badly ? COLOR_TROUBLE : COLOR_TEXT;
     }
+    if (status.in_lead) {
+        /* another build's: its run from power on, unseen, to the fight */
+        snprintf(
+            out, room,
+            "Replay of another build: playing its session again from "
+            "power on to the fight, %u%%   |   Esc back",
+            status.lead_of > 0 ? status.lead_at * 100 / status.lead_of : 100);
+        return COLOR_TEXT;
+    }
     if (status.speed >= SPEED_ONE) {
         snprintf(speed, sizeof(speed), "x%d", status.speed / SPEED_ONE);
     } else {

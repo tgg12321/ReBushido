@@ -155,6 +155,71 @@ static PortAddress port_FiberPrepare(
     return (PortAddress)word;
 }
 
+#if defined(__x86_64__) && defined(_WIN32)
+/* rcx: the bottom; rdi is the caller's, kept */
+__asm__(
+    ".text\n"
+    ".globl port_FiberClearBelow\n"
+    "port_FiberClearBelow:\n"
+    "    pushq %rdi\n"
+    "    movq %rcx, %rdi\n"
+    "    movq %rsp, %rcx\n"
+    "    cmpq %rdi, %rcx\n"
+    "    jbe 1f\n"
+    "    subq %rdi, %rcx\n"
+    "    xorl %eax, %eax\n"
+    "    cld\n"
+    "    rep stosb\n"
+    "1:\n"
+    "    popq %rdi\n"
+    "    ret\n");
+#elif defined(__x86_64__)
+/* rdi: the bottom */
+__asm__(
+    ".text\n"
+    ".globl port_FiberClearBelow\n"
+    ".type port_FiberClearBelow, @function\n"
+    "port_FiberClearBelow:\n"
+    "    movq %rsp, %rcx\n"
+    "    cmpq %rdi, %rcx\n"
+    "    jbe 1f\n"
+    "    subq %rdi, %rcx\n"
+    "    xorl %eax, %eax\n"
+    "    cld\n"
+    "    rep stosb\n"
+    "1:\n"
+    "    ret\n");
+#else
+/* the bottom on the stack; edi is the caller's, kept */
+__asm__(
+    ".text\n"
+#if defined(_WIN32)
+    ".globl _port_FiberClearBelow\n"
+    "_port_FiberClearBelow:\n"
+#else
+    ".globl port_FiberClearBelow\n"
+    ".type port_FiberClearBelow, @function\n"
+    "port_FiberClearBelow:\n"
+#endif
+    "    pushl %edi\n"
+    "    movl 8(%esp), %edi\n"
+    "    movl %esp, %ecx\n"
+    "    cmpl %edi, %ecx\n"
+    "    jbe 1f\n"
+    "    subl %edi, %ecx\n"
+    "    xorl %eax, %eax\n"
+    "    cld\n"
+    "    rep stosb\n"
+    "1:\n"
+    "    popl %edi\n"
+    "    ret\n");
+#endif
+
+void port_FiberClearDeadStack(void) {
+    port_FiberClearBelow(
+        (PortAddress)ADDR(PORT_STACK_ADDR + PORT_STACK_SIZE - PORT_STACK_KEPT));
+}
+
 PortAddress g_port_game_context;
 static PortAddress g_port_host_context;
 static void (*g_port_game_function)(void);

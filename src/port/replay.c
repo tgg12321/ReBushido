@@ -15,6 +15,13 @@
  *   INPT  every input from there: runs of frames alike, each its fields
  *         that changed and how many frames it held for
  *   HASH  the state's hash every PORT_REPLAY_HASH_EVERY frames
+ *   CHSH  the console's own hash (port_StateConsoleHash) at the same
+ *         frames
+ *   LEAD  the run from power on to the fight's start, for a build that
+ *         cannot put STRT in (below, "the lead-in"): its setup, each
+ *         change of it, every input with its view and menu sound, the
+ *         console's hash every PORT_REPLAY_HASH_EVERY inputs
+ *   CARD  the memory cards as the run found them at power on, deflated
  *   END   nothing
  *
  * The file is this file's: nothing of it is the game's state, and a load
@@ -32,8 +39,10 @@
 #include "bb2.h"
 
 /* 2: a frame may have the third and fourth pads (CHANGED_THIRD,
- * CHANGED_FOURTH, two on two's); a file of version 1 is read as before */
-#define FORMAT_VERSION 2
+ * CHANGED_FOURTH, two on two's); 3: and whether a page of the window's
+ * covers the top menu (CHANGED_COVER), and the chunks CHSH, LEAD and CARD.
+ * A file of an earlier version is read as before. */
+#define FORMAT_VERSION 3
 #define FORMAT_VERSION_FIRST 1
 #define MAGIC_BYTES 8
 #define HEAD_BYTES (MAGIC_BYTES + 4)
@@ -78,6 +87,7 @@
 #define CHANGED_VIEW 8
 #define CHANGED_THIRD 16
 #define CHANGED_FOURTH 32
+#define CHANGED_COVER 64
 /* what the disc holds already (DISC): the game's last sectors read, each
  * 64 bytes of them indexed by a hash, and a run of the disc found in the
  * snapshot that is at least MATCH_LEAST bytes long */
@@ -122,6 +132,9 @@
 #define TAG_INPUT TAG('I', 'N', 'P', 'T')
 #define TAG_HASH TAG('H', 'A', 'S', 'H')
 #define TAG_END TAG('E', 'N', 'D', ' ')
+#define TAG_CONSOLE TAG('C', 'H', 'S', 'H')
+#define TAG_LEAD TAG('L', 'E', 'A', 'D')
+#define TAG_CARDS TAG('C', 'A', 'R', 'D')
 #define TAG_DISC TAG('D', 'I', 'S', 'C')
 /* the menu sounds of the window's pages over the fight's pause: a count,
  * then each frame's number and its sound (a file without it has none) */
@@ -136,15 +149,68 @@ static const char * const g_mode_words[] = {
 #define MODE_WORDS ((s32)(sizeof(g_mode_words) / sizeof(g_mode_words[0])))
 
 /* One frame of a fight: the two pads' buttons, which pads answered (a
- * bit each), the view it read (VIEW's number), and the menu sound the
+ * bit each), the view it read (VIEW's number), the menu sound the
  * window asked the game for as it took the input (port_top_menu.h), plus
- * one, or 0: SOND. */
+ * one, or 0: SOND; and whether a page of the window's covered the top
+ * menu as it took it (port_top_menu.h, covered). */
 typedef struct {
     u16 buttons[PORT_INPUT_PADS];
     u8 present;
     u8 view;
     u8 sound;
+    u8 cover;
 } ReplayFrame;
+
+/* ---- the lead-in's ---- */
+
+/* The inputs from power on a run keeps, at most: as many as a fight's. */
+#define LEAD_MAX FRAMES_MAX
+#define LEAD_HASHES (LEAD_MAX / PORT_REPLAY_HASH_EVERY + 2)
+#define LEAD_VIEWS 64
+#define LEAD_EVENTS 256
+/* the movie player's reads of the pads whose word changed, at most */
+#define LEAD_MOVIE_READS 4096
+/* its word with no button held */
+#define MOVIE_NO_BUTTONS 0xFFFFFFFFU
+#define LEAD_VERSION 1
+/* the most bytes a frame takes packed */
+#define FRAME_PACKED_MOST 14
+/* --replay-differ: how many inputs are changed */
+#define DIFFER_INPUTS 30
+/* a slice of a playback's run from power on, in the window, in
+ * milliseconds: the window's events are read between two */
+#define LEAD_SLICE_MS 40
+
+/* What the run takes in from outside its state that is not an input
+ * (the settings the game reads when it next asks: port_play.h,
+ * port_stage_choice.h, port_fight_music.h, port_match.h), as a session
+ * holds the host's (session.c, port_ApplySession). */
+enum {
+    SETUP_KIND,        /* the stage pages' kind of stage */
+    SETUP_PLAY,        /* the gameplay switches (port_PlaySwitchBits) */
+    SETUP_MUSIC,       /* the fight's music (port_FightMusicBits) */
+    SETUP_TIME,        /* the time of day */
+    SETUP_MATCH,       /* the match rule, its number and the teams */
+    SETUP_STAGE_MUSIC, /* the mods' stages' own pieces (a sum): not held */
+    SETUP_WORDS
+};
+
+/* LEAD's words before the events: its version, the input it begins at,
+ * how many inputs it holds, the setup */
+#define LEAD_HEAD_WORDS (3 + SETUP_WORDS)
+
+/* A word the movie player read of the pads that is not the one before:
+ * read number `read` of the run's (pad.c, PAD_dr). */
+typedef struct {
+    u32 read;
+    u32 word;
+} ReplayMovieRead;
+
+/* A change of the setup, at the boundary before input `count`. */
+typedef struct {
+    u32 count;
+    u32 words[SETUP_WORDS];
+} ReplaySetupChange;
 
 typedef struct {
     char name[PIECE_NAME_BYTES];
@@ -199,6 +265,8 @@ static struct {
     u8 *snapshot;
     ReplayFrame *frames;
     u64 *hashes;
+    u64 *consoles; /* the console's own hash at the same frames */
+    u64 start_console;
     PortGameView views[VIEWS_MAX];
     s32 view_count;
     u64 start_hash;
@@ -255,11 +323,37 @@ static struct {
 static struct {
     u8 *snapshot;
     u64 hash;
+    u64 console;
     u32 count;
     u32 frame;
     PortGameView view;
     s32 is_kept;
 } g_before;
+
+/* The run from power on, kept for each fight's lead-in (below). */
+static struct {
+    s32 kept;      /* the state at power on is (port_ReplayKeepBoot) */
+    s32 plain;     /* ... and the run began from power on as plain runs do */
+    s32 started;   /* its first boundary was seen */
+    u32 broken_at; /* the first input it does not hold, or NONE */
+    char why[PORT_REPLAY_WHY_BYTES];
+    u8 *boot;            /* the state at power on, this run's */
+    ReplayFrame *frames; /* by the input's number */
+    u32 length;
+    u64 *hashes; /* the console's hash at each PORT_REPLAY_HASH_EVERY'th */
+    PortGameView views[LEAD_VIEWS];
+    s32 view_count;
+    u32 setup[SETUP_WORDS]; /* at power on */
+    u32 now[SETUP_WORDS];   /* at the last boundary */
+    ReplaySetupChange events[LEAD_EVENTS];
+    s32 event_count;
+    ReplayMovieRead movie[LEAD_MOVIE_READS];
+    s32 movie_count;
+    u32 card_flags;   /* the slots that had a card at power on */
+    u8 *cards;        /* their images then */
+    u8 *packed_cards; /* one deflated */
+    u32 packed_room;
+} g_lead = {.broken_at = NONE};
 
 /* The start of the fight a match's host gives its spectators: compressed
  * as soon as it is final, a slice at each boundary, into a replay's own
@@ -279,7 +373,7 @@ static struct {
 static struct {
     u32 index;
     ReplayFrame frame;
-} g_last = {NONE, {{0, 0}, 0, 0, 0}};
+} g_last = {NONE, {{0, 0, 0, 0}, 0, 0, 0, 0}};
 
 /* Whether each of the last boundaries was in a fight, by input number. */
 static u32 g_ring_count[FIGHT_RING];
@@ -312,7 +406,35 @@ static struct {
     u32 hash_count;
     PortGameView views[VIEWS_MAX];
     s32 view_count;
+    /* played from power on (the lead-in): another build's */
+    s32 from_boot;
+    s32 in_lead;    /* ... not at the fight's start yet */
+    s32 same_build; /* the state's hashes are this build's to hold */
+    s32 same_game;  /* one that differs is a desync, not another game */
+    ReplayFrame *lead;
+    u32 lead_count;
+    u64 *lead_hashes;
+    u32 lead_hash_count;
+    PortGameView lead_views[LEAD_VIEWS];
+    s32 lead_view_count;
+    ReplaySetupChange events[LEAD_EVENTS];
+    s32 event_count;
+    s32 event_next;
+    u32 setup[SETUP_WORDS];
+    u32 card_flags;
+    u8 *cards;
+    u64 *consoles; /* the fight's console hashes */
+    u32 console_count;
+    u64 start_console;
+    u32 differ_at;   /* --replay-differ: the input changed, or NONE */
+    s32 at_power_on; /* the next boundary is power on's, before any step */
+    ReplayMovieRead movie[LEAD_MOVIE_READS];
+    s32 movie_count;
 } g_play;
+
+/* --replay-from-boot and --replay-differ (port_replay.h) */
+static s32 g_from_boot_asked;
+static u32 g_differ_asked = NONE;
 
 void (*g_port_replay_wait_hook)(void);
 void (*g_port_replay_end_hook)(const char *trouble);
@@ -483,6 +605,29 @@ void port_ReplayAbandon(const char *why) {
     }
 }
 
+/* The run from power on is not whole from here (port_replay.h). */
+void port_ReplayLeadBreak(const char *why) {
+    u32 i;
+
+    if (g_lead.broken_at != NONE || g_lead.why[0] != 0) {
+        return;
+    }
+    for (i = 0; why[i] != 0 && i + 1 < sizeof(g_lead.why); i++) {
+        g_lead.why[i] = why[i];
+    }
+    g_lead.why[i] = 0;
+    if (!g_lead.kept) {
+        /* before the state at power on is kept: an option of the command
+         * line's, and the run is not a plain one */
+        g_lead.plain = FALSE;
+        return;
+    }
+    g_lead.broken_at = g_port_input_count;
+    port_Log("replay: from input %u on, a fight's replay plays only on a "
+             "build of this one's core: %s\n",
+             g_lead.broken_at, why);
+}
+
 /* ---- pruning ---- */
 
 static char g_list_names[LIST_MAX][PORT_REPLAY_NAME_BYTES];
@@ -601,6 +746,7 @@ static s32 port_ReplayRoom(void) {
     g_before.snapshot = port_HostAllocate(size);
     g_rec.frames = port_HostAllocate(FRAMES_MAX * sizeof(ReplayFrame));
     g_rec.hashes = port_HostAllocate(HASHES_MAX * sizeof(u64));
+    g_rec.consoles = port_HostAllocate(HASHES_MAX * sizeof(u64));
     g_rec.packed_room = port_DeflateBound(size);
     g_rec.packed = port_HostAllocate(g_rec.packed_room);
     g_dedupe.data = port_HostAllocate(SECTOR_LOG * PORT_DISC_DATA_BYTES);
@@ -609,7 +755,8 @@ static s32 port_ReplayRoom(void) {
     g_dedupe.slot_of = port_HostAllocate((SECTOR_SLOT_MASK + 1) * sizeof(u32));
     g_dedupe.matches = port_HostAllocate(MATCHES_MAX * sizeof(ReplayMatch));
     if (g_rec.snapshot == NULL || g_before.snapshot == NULL ||
-        g_rec.frames == NULL || g_rec.hashes == NULL || g_rec.packed == NULL ||
+        g_rec.frames == NULL || g_rec.hashes == NULL ||
+        g_rec.consoles == NULL || g_rec.packed == NULL ||
         g_dedupe.data == NULL || g_dedupe.sectors == NULL ||
         g_dedupe.index == NULL || g_dedupe.matches == NULL ||
         g_dedupe.slot_of == NULL) {
@@ -952,24 +1099,26 @@ static u32 port_PutVarint(u8 *out, u32 value) {
     return used;
 }
 
-/* The frames as INPT has them, into `out`: its length. */
-static u32 port_ReplayPackInputs(u8 *out) {
-    ReplayFrame last = {{0, 0, 0, 0}, 0, 0, 0};
+/* `count` frames as INPT has them, into `out`: its length. */
+static u32 port_ReplayPackFrames(
+    u8 *out, const ReplayFrame *frames, u32 count) {
+    ReplayFrame last = {{0, 0, 0, 0}, 0, 0, 0, 0};
     u32 at = 0;
     u32 frame = 0;
 
-    while (frame < g_rec.length) {
-        const ReplayFrame *now = &g_rec.frames[frame];
+    while (frame < count) {
+        const ReplayFrame *now = &frames[frame];
         u32 run = 1;
         u8 changed = 0;
 
-        while (frame + run < g_rec.length &&
-               g_rec.frames[frame + run].buttons[0] == now->buttons[0] &&
-               g_rec.frames[frame + run].buttons[1] == now->buttons[1] &&
-               g_rec.frames[frame + run].buttons[2] == now->buttons[2] &&
-               g_rec.frames[frame + run].buttons[3] == now->buttons[3] &&
-               g_rec.frames[frame + run].present == now->present &&
-               g_rec.frames[frame + run].view == now->view) {
+        while (frame + run < count &&
+               frames[frame + run].buttons[0] == now->buttons[0] &&
+               frames[frame + run].buttons[1] == now->buttons[1] &&
+               frames[frame + run].buttons[2] == now->buttons[2] &&
+               frames[frame + run].buttons[3] == now->buttons[3] &&
+               frames[frame + run].present == now->present &&
+               frames[frame + run].view == now->view &&
+               frames[frame + run].cover == now->cover) {
             run++;
         }
         changed |= now->buttons[0] != last.buttons[0] ? CHANGED_FIRST : 0;
@@ -978,6 +1127,7 @@ static u32 port_ReplayPackInputs(u8 *out) {
         changed |= now->view != last.view ? CHANGED_VIEW : 0;
         changed |= now->buttons[2] != last.buttons[2] ? CHANGED_THIRD : 0;
         changed |= now->buttons[3] != last.buttons[3] ? CHANGED_FOURTH : 0;
+        changed |= now->cover != last.cover ? CHANGED_COVER : 0;
         out[at++] = changed;
         if (changed & CHANGED_FIRST) {
             out[at++] = (u8)now->buttons[0];
@@ -1001,6 +1151,9 @@ static u32 port_ReplayPackInputs(u8 *out) {
             out[at++] = (u8)now->buttons[3];
             out[at++] = (u8)(now->buttons[3] >> BITS_PER_BYTE);
         }
+        if (changed & CHANGED_COVER) {
+            out[at++] = now->cover;
+        }
         at += port_PutVarint(out + at, run);
         last = *now;
         frame += run;
@@ -1023,19 +1176,28 @@ static void port_PutHex(char *out, u64 value) {
 }
 
 /* What META says. */
+static s32 port_LeadCovers(void);
+
+/* META into `out`: its length. */
 static u32 port_ReplayMeta(char *out, u32 room) {
     char build[HEX_DIGITS + 1];
     char disc[HEX_DIGITS + 1];
     char mods[HEX_DIGITS + 1];
     char start[HEX_DIGITS + 1];
+    char code[HEX_DIGITS + 1];
+    char console[HEX_DIGITS + 1];
     s32 has_prims;
+    s32 lead = port_LeadCovers();
+    u32 length;
 
     port_ReplayStateSize(&has_prims);
+    port_PutHex(code, g_port_code_sum);
+    port_PutHex(console, g_rec.start_console);
     port_PutHex(build, port_ReplayBuild());
     port_PutHex(disc, port_SessionDiscSum());
     port_PutHex(mods, port_ReplayMods());
     port_PutHex(start, g_rec.start_hash);
-    return port_ReplayText(
+    length = port_ReplayText(
         out, room,
         "date %04d-%02d-%02d %02d:%02d:%02d\nutc %d\nversion %s\n"
         "mode %d\nstage %d\nfighter0 %d %d %d\nfighter1 %d %d %d\n"
@@ -1052,6 +1214,19 @@ static u32 port_ReplayMeta(char *out, u32 room) {
         g_rec.kill == NONE ? g_rec.length : g_rec.kill, PORT_REPLAY_HASH_EVERY,
         g_rec.start_count, start, build, disc, mods, has_prims,
         g_rec.unfinished);
+    length += port_ReplayText(
+        out + length, room - length,
+        "code %s\nconsole %s\nstage_music %u\nlead %d\n", code, console,
+        lead ? g_lead.setup[SETUP_STAGE_MUSIC] : 0, lead);
+    if (!lead) {
+        length += port_ReplayText(
+            out + length, room - length, "lead_why %s\n",
+            g_rec.online != 0    ? "an online fight"
+            : !g_lead.kept       ? "the run kept nothing from power on"
+            : g_lead.why[0] != 0 ? g_lead.why
+                                 : "the run from power on is not whole");
+    }
+    return length;
 }
 
 static s32 port_AppendChunk(s32 file, u32 tag, const void *bytes, u32 size) {
@@ -1092,6 +1267,305 @@ static void port_ReplayName(char *path, u32 room) {
 }
 
 static void port_ReplayServeBuild(void);
+
+/* ---- the lead-in ----
+ *
+ * A fight's start (STRT) is put in only by a build of the same core
+ * (port_StateBuildSum): its stack's frames and its pointers are that
+ * build's. So a replay also keeps what plays the fight again from power
+ * on, on any build of the game: the run's setup as it began (its memory
+ * cards, the switches and defaults the game takes in), every input from
+ * power on to the fight's start with the view it read, the menu sound
+ * asked and the top menu's cover, each change of the setup on the way,
+ * and the console's own hash (port_StateConsoleHash) every
+ * PORT_REPLAY_HASH_EVERY inputs, the fight's frames' too (CHSH). Another
+ * build puts its own state at power on back, the setup in, and runs the
+ * game with those inputs to the fight's start, every console hash held
+ * to the one recorded; then the fight as it is played from its start.
+ * Where its game is the one that recorded it a hash that differs is a
+ * desync; where it is another, the game went otherwise there, and the
+ * playback stops and says so.
+ *
+ * A run keeps it from its first step while it is whole: it began from
+ * power on as a plain run does (no --fight, no session started with the
+ * program, no link cable), and nothing but its inputs and that setup
+ * changed the game (a play test's poke and the settings menu's Bug fixes
+ * end it: port_ReplayLeadBreak). A session begun in the program, a
+ * spectator's match and a replay's playback put the player's own state
+ * back after them, and the lead-in waits while they run. */
+
+/* What the run takes in now of its setup. */
+static void port_ReplaySetupWords(u32 *words) {
+    words[SETUP_KIND] = (u32)port_GetStageKindDefault();
+    words[SETUP_PLAY] = port_PlaySwitchBits();
+    words[SETUP_MUSIC] = port_FightMusicBits();
+    words[SETUP_TIME] = (u32)port_GetStageTimeDefault();
+    words[SETUP_MATCH] = port_MatchBits();
+    words[SETUP_STAGE_MUSIC] = port_MusicStageSum();
+}
+
+/* The setup held, as a session holds the host's. */
+static void port_ReplayHoldSetup(const u32 *words) {
+    port_HoldStageKindDefault((s32)words[SETUP_KIND]);
+    port_HoldPlaySwitches(words[SETUP_PLAY]);
+    port_HoldFightMusicExactly(words[SETUP_MUSIC]);
+    port_HoldStageTimeDefault((s32)words[SETUP_TIME]);
+    port_HoldMatch(words[SETUP_MATCH]);
+}
+
+/* The state at power on, before the first step (port_replay.h). */
+void port_ReplayKeepBoot(void) {
+    u32 size = port_StateSize();
+
+    if (g_lead.kept) {
+        return;
+    }
+    if (port_IsNetplayOn() || port_LinkIsUp()) {
+        port_ReplayLeadBreak("the program began a session or a link");
+    }
+    if (g_lead.why[0] == 0) {
+        g_lead.plain = TRUE;
+    }
+    g_lead.boot = port_HostAllocate(size);
+    g_lead.frames = port_HostAllocate(LEAD_MAX * sizeof(ReplayFrame));
+    g_lead.hashes = port_HostAllocate(LEAD_HASHES * sizeof(u64));
+    g_lead.cards = port_HostAllocate(PORT_CARD_SLOTS * PORT_CARD_IMAGE_SIZE);
+    g_lead.packed_room = port_DeflateBound(PORT_CARD_IMAGE_SIZE);
+    g_lead.packed_cards = port_HostAllocate(g_lead.packed_room);
+    if (g_lead.boot == NULL || g_lead.frames == NULL || g_lead.hashes == NULL ||
+        g_lead.cards == NULL || g_lead.packed_cards == NULL) {
+        port_Log("replay: no memory for the run from power on: replays play "
+                 "only on a build of this one's core\n");
+        g_lead.boot = NULL;
+        return;
+    }
+    port_StateSave(g_lead.boot);
+    g_lead.kept = TRUE;
+    if (!g_lead.plain) {
+        g_lead.broken_at = 0;
+    }
+}
+
+/* Whether the lead-in is being kept: TRUE where this boundary and this
+ * input are the run's own, from power on. */
+static s32 port_LeadIsOn(void) {
+    return g_lead.kept && g_lead.broken_at == NONE && g_lead.started &&
+           g_play.state == PLAY_OFF && !port_IsNetplayOn() && !g_port_ahead &&
+           !g_port_rerun;
+}
+
+/* The number of a view among the lead-in's, a new one kept: -1 where
+ * there is no room for it. */
+static s32 port_LeadViewNumber(const PortGameView *view) {
+    s32 i;
+
+    for (i = 0; i < g_lead.view_count; i++) {
+        if (g_lead.views[i].distance == view->distance &&
+            g_lead.views[i].margin_w == view->margin_w &&
+            g_lead.views[i].margin_h == view->margin_h) {
+            return i;
+        }
+    }
+    if (g_lead.view_count == LEAD_VIEWS) {
+        return -1;
+    }
+    g_lead.views[g_lead.view_count] = *view;
+    return g_lead.view_count++;
+}
+
+/* The lead-in's turn at a boundary, before the step: the setup at power
+ * on and each change of it, the view, and the console's hash. */
+static void port_LeadBoundary(u32 count, const PortGameView *view) {
+    u32 words[SETUP_WORDS];
+    s32 number;
+    s32 i;
+
+    if (!g_lead.kept || g_lead.broken_at != NONE || g_play.state != PLAY_OFF ||
+        port_IsNetplayOn() || g_port_rerun) {
+        return;
+    }
+    if (port_LinkIsUp()) {
+        port_ReplayLeadBreak(
+            "a link cable's game: the other console is not an input");
+        return;
+    }
+    if (!g_lead.started) {
+        s32 slot;
+
+        if (count != 0 || g_port_steps != 0) {
+            port_ReplayLeadBreak("the run did not begin at power on");
+            return;
+        }
+        g_lead.started = TRUE;
+        port_ReplaySetupWords(g_lead.setup);
+        for (i = 0; i < SETUP_WORDS; i++) {
+            g_lead.now[i] = g_lead.setup[i];
+        }
+        g_lead.card_flags = 0;
+        for (slot = 0; slot < PORT_CARD_SLOTS; slot++) {
+            if (port_ReadCardFile(
+                    slot, g_lead.cards + slot * PORT_CARD_IMAGE_SIZE)) {
+                g_lead.card_flags |= 1U << slot;
+            }
+        }
+        /* power on is a boundary of its own, before the first step; the
+         * next is the one before input 0, the game at its first read of
+         * the pads, whose hash is the first */
+        number = port_LeadViewNumber(view);
+        g_lead.frames[0].view = (u8)(number < 0 ? 0 : number);
+        return;
+    }
+    if (count >= LEAD_MAX) {
+        port_ReplayLeadBreak("the run is longer than a replay keeps of it");
+        return;
+    }
+    port_ReplaySetupWords(words);
+    for (i = 0; i < SETUP_WORDS && words[i] == g_lead.now[i]; i++) {
+    }
+    if (i < SETUP_WORDS) {
+        ReplaySetupChange *event;
+
+        if (g_lead.event_count == LEAD_EVENTS) {
+            port_ReplayLeadBreak("its settings changed too often");
+            return;
+        }
+        event = &g_lead.events[g_lead.event_count++];
+        event->count = count;
+        for (i = 0; i < SETUP_WORDS; i++) {
+            event->words[i] = g_lead.now[i] = words[i];
+        }
+    }
+    number = port_LeadViewNumber(view);
+    if (number < 0) {
+        port_ReplayLeadBreak("its picture changed too often");
+        return;
+    }
+    g_lead.frames[count].view = (u8)number;
+    if (count % PORT_REPLAY_HASH_EVERY == 0) {
+        g_lead.hashes[count / PORT_REPLAY_HASH_EVERY] = port_StateConsoleHash();
+    }
+}
+
+/* Whether the fight being written has its lead-in: the run was whole
+ * from power on to the fight's end. */
+static s32 port_LeadCovers(void) {
+    return g_lead.kept && g_lead.plain && g_lead.started && g_rec.online == 0 &&
+           (g_lead.broken_at == NONE || g_lead.broken_at > g_rec.end_count) &&
+           g_rec.start_count <= g_lead.length;
+}
+
+/* LEAD into `out`: its length, or 0 where it has no room. */
+static u32 port_LeadPack(u8 *out, u32 room) {
+    u32 frames = g_rec.start_count;
+    u32 hashes = (frames + PORT_REPLAY_HASH_EVERY - 1) / PORT_REPLAY_HASH_EVERY;
+    u32 events = 0;
+    u32 sounds = 0;
+    u32 need;
+    u32 at = 0;
+    u32 i;
+
+    for (i = 0; i < (u32)g_lead.event_count; i++) {
+        events += g_lead.events[i].count <= frames;
+    }
+    for (i = 0; i < frames; i++) {
+        sounds += g_lead.frames[i].sound != 0;
+    }
+    need = (LEAD_HEAD_WORDS + 1 + events * (1 + SETUP_WORDS) + 1 +
+            (u32)g_lead.view_count * 3 + 2 + 1 + sounds * 2 + 1 +
+            (u32)g_lead.movie_count * 2) *
+               WORD_BYTES +
+           hashes * LONG_BYTES + frames * FRAME_PACKED_MOST;
+    if (need > room) {
+        port_Log("replay: the run from power on is too long to keep\n");
+        return 0;
+    }
+    port_PutWord(out, LEAD_VERSION);
+    port_PutWord(out + WORD_BYTES, 0);
+    port_PutWord(out + 2 * WORD_BYTES, frames);
+    at = 3 * WORD_BYTES;
+    for (i = 0; i < SETUP_WORDS; i++, at += WORD_BYTES) {
+        port_PutWord(out + at, g_lead.setup[i]);
+    }
+    port_PutWord(out + at, events);
+    at += WORD_BYTES;
+    for (i = 0; i < (u32)g_lead.event_count; i++) {
+        u32 k;
+
+        if (g_lead.events[i].count > frames) {
+            continue;
+        }
+        port_PutWord(out + at, g_lead.events[i].count);
+        at += WORD_BYTES;
+        for (k = 0; k < SETUP_WORDS; k++, at += WORD_BYTES) {
+            port_PutWord(out + at, g_lead.events[i].words[k]);
+        }
+    }
+    port_PutWord(out + at, (u32)g_lead.view_count);
+    at += WORD_BYTES;
+    for (i = 0; i < (u32)g_lead.view_count; i++) {
+        port_PutWord(out + at, (u32)g_lead.views[i].distance);
+        port_PutWord(out + at + WORD_BYTES, (u32)g_lead.views[i].margin_w);
+        port_PutWord(out + at + 2 * WORD_BYTES, (u32)g_lead.views[i].margin_h);
+        at += 3 * WORD_BYTES;
+    }
+    port_PutWord(out + at, hashes);
+    port_PutWord(out + at + WORD_BYTES, PORT_REPLAY_HASH_EVERY);
+    at += 2 * WORD_BYTES;
+    for (i = 0; i < hashes; i++, at += LONG_BYTES) {
+        port_PutWord(out + at, (u32)g_lead.hashes[i]);
+        port_PutWord(
+            out + at + WORD_BYTES, (u32)(g_lead.hashes[i] >> WORD_BITS));
+    }
+    port_PutWord(out + at, sounds);
+    at += WORD_BYTES;
+    for (i = 0; i < frames; i++) {
+        if (g_lead.frames[i].sound != 0) {
+            port_PutWord(out + at, i);
+            port_PutWord(out + at + WORD_BYTES, g_lead.frames[i].sound);
+            at += 2 * WORD_BYTES;
+        }
+    }
+    /* the movie player's reads (all of them the run's: those of the
+     * fight's frames are none, a fight has no movie) */
+    port_PutWord(out + at, (u32)g_lead.movie_count);
+    at += WORD_BYTES;
+    for (i = 0; i < (u32)g_lead.movie_count; i++) {
+        port_PutWord(out + at, g_lead.movie[i].read);
+        port_PutWord(out + at + WORD_BYTES, g_lead.movie[i].word);
+        at += 2 * WORD_BYTES;
+    }
+    return at + port_ReplayPackFrames(out + at, g_lead.frames, frames);
+}
+
+/* CARD into `out`: the slots that had a card, and each one's image
+ * deflated; its length, or 0. */
+static u32 port_LeadPackCards(u8 *out, u32 room) {
+    u32 at = WORD_BYTES;
+    s32 slot;
+
+    port_PutWord(out, g_lead.card_flags);
+    for (slot = 0; slot < PORT_CARD_SLOTS; slot++) {
+        PortDeflate z;
+
+        if (((g_lead.card_flags >> slot) & 1) == 0) {
+            continue;
+        }
+        port_DeflateBegin(
+            &z, g_lead.cards + slot * PORT_CARD_IMAGE_SIZE,
+            PORT_CARD_IMAGE_SIZE, g_lead.packed_cards, g_lead.packed_room);
+        while (!port_DeflateSome(&z, FILE_MAX)) {
+        }
+        if (z.failed || at + 2 * WORD_BYTES + z.out_at > room) {
+            return 0;
+        }
+        port_PutWord(out + at, PORT_CARD_IMAGE_SIZE);
+        port_PutWord(out + at + WORD_BYTES, z.out_at);
+        port_CopyBytes(
+            out + at + 2 * WORD_BYTES, g_lead.packed_cards, z.out_at);
+        at += 2 * WORD_BYTES + z.out_at;
+    }
+    return at;
+}
 
 /* The fight's file, its start compressed: written beside, then given its
  * name. */
@@ -1200,7 +1674,8 @@ static void port_ReplayWrite(void) {
     /* the inputs into the compressed start's room, which is done with */
     inputs = g_rec.packed;
     port_PutWord(inputs, g_rec.length);
-    at = WORD_BYTES + port_ReplayPackInputs(inputs + WORD_BYTES);
+    at = WORD_BYTES +
+         port_ReplayPackFrames(inputs + WORD_BYTES, g_rec.frames, g_rec.length);
     ok &= port_AppendChunk(file, TAG_INPUT, inputs, at);
     /* the menu sounds, where the window's pages played any */
     at = WORD_BYTES;
@@ -1225,6 +1700,22 @@ static void port_ReplayWrite(void) {
         at += LONG_BYTES;
     }
     ok &= port_AppendChunk(file, TAG_HASH, inputs, at);
+    port_PutWord(inputs, hash_count);
+    port_PutWord(inputs + WORD_BYTES, PORT_REPLAY_HASH_EVERY);
+    at = 2 * WORD_BYTES;
+    for (i = 0; i < (s32)hash_count; i++) {
+        port_PutWord(inputs + at, (u32)g_rec.consoles[i]);
+        port_PutWord(
+            inputs + at + WORD_BYTES, (u32)(g_rec.consoles[i] >> WORD_BITS));
+        at += LONG_BYTES;
+    }
+    ok &= port_AppendChunk(file, TAG_CONSOLE, inputs, at);
+    if (port_LeadCovers()) {
+        at = port_LeadPack(inputs, g_rec.packed_room);
+        ok &= at != 0 && port_AppendChunk(file, TAG_LEAD, inputs, at);
+        at = port_LeadPackCards(inputs, g_rec.packed_room);
+        ok &= at != 0 && port_AppendChunk(file, TAG_CARDS, inputs, at);
+    }
     ok &= port_AppendChunk(file, TAG_END, NULL, 0);
     port_HostClose(file);
     if (!ok || !port_HostRename(part, path)) {
@@ -1366,7 +1857,9 @@ static void port_ReplayStart(u32 count) {
         g_rec.start_count = g_before.count;
         g_rec.start_frame = g_before.frame;
         g_rec.start_hash = g_before.hash;
+        g_rec.start_console = g_before.console;
         g_rec.hashes[0] = g_before.hash;
+        g_rec.consoles[0] = g_before.console;
         g_rec.hash_count = 1;
         g_rec.frames[0] = g_last.frame;
         g_rec.frames[0].view = (u8)port_ReplayViewNumber(&g_before.view);
@@ -1377,6 +1870,7 @@ static void port_ReplayStart(u32 count) {
         g_rec.start_count = count;
         g_rec.start_frame = port_IsNetplayOn() ? port_NetplayFrameNow() : 0;
         g_rec.start_hash = port_StateHash();
+        g_rec.start_console = port_StateConsoleHash();
     }
     port_ReplayClearOwn(g_rec.snapshot);
     port_HostDate(&g_rec.date);
@@ -1411,6 +1905,8 @@ static void port_ReplayRecordFrame(
     }
     if (index % PORT_REPLAY_HASH_EVERY == 0) {
         g_rec.hashes[index / PORT_REPLAY_HASH_EVERY] = port_StateHash();
+        g_rec.consoles[index / PORT_REPLAY_HASH_EVERY] =
+            port_StateConsoleHash();
         g_rec.hash_count = index / PORT_REPLAY_HASH_EVERY + 1;
     }
     if (g_fight_defeat_frames != 0) {
@@ -1466,6 +1962,21 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     g_last.frame.buttons[2] = input->buttons[2];
     g_last.frame.buttons[3] = input->buttons[3];
     g_last.frame.present = port_ReplayPresent(input);
+    g_last.frame.cover = g_port_top_menu.covered;
+    if (port_LeadIsOn() && index < LEAD_MAX) {
+        ReplayFrame *lead = &g_lead.frames[index];
+
+        lead->buttons[0] = input->buttons[0];
+        lead->buttons[1] = input->buttons[1];
+        lead->buttons[2] = input->buttons[2];
+        lead->buttons[3] = input->buttons[3];
+        lead->present = g_last.frame.present;
+        lead->cover = g_last.frame.cover;
+        lead->sound = 0;
+        if (index + 1 > g_lead.length) {
+            g_lead.length = index + 1;
+        }
+    }
     if (g_rec.state != REC_FIGHT || index < g_rec.start_count) {
         return;
     }
@@ -1479,11 +1990,56 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     frame->buttons[2] = input->buttons[2];
     frame->buttons[3] = input->buttons[3];
     frame->present = port_ReplayPresent(input);
+    frame->cover = g_last.frame.cover;
     frame->sound = 0;
     g_rec.length = at + 1;
 }
 
+/* The movie player's read of the pads kept (port_replay.h). */
+void port_ReplayTookMovieRead(u32 read, u32 word) {
+    u32 last;
+
+    if (!port_LeadIsOn()) {
+        return;
+    }
+    /* a read taken back (rollback's run again of a movie is none of a
+     * plain run's): the reads after it are its run's again */
+    while (g_lead.movie_count > 0 &&
+           g_lead.movie[g_lead.movie_count - 1].read >= read) {
+        g_lead.movie_count--;
+    }
+    last = g_lead.movie_count > 0 ? g_lead.movie[g_lead.movie_count - 1].word
+                                  : MOVIE_NO_BUTTONS;
+    if (word == last) {
+        return;
+    }
+    if (g_lead.movie_count == LEAD_MOVIE_READS) {
+        port_ReplayLeadBreak("a movie's buttons changed too often");
+        return;
+    }
+    g_lead.movie[g_lead.movie_count].read = read;
+    g_lead.movie[g_lead.movie_count].word = word;
+    g_lead.movie_count++;
+}
+
+/* ... and as the replay being played from power on kept it. */
+s32 port_ReplayMovieRead(u32 read, u32 *word) {
+    s32 i;
+
+    if (g_play.state != PLAY_ON || !g_play.from_boot) {
+        return FALSE;
+    }
+    *word = MOVIE_NO_BUTTONS;
+    for (i = 0; i < g_play.movie_count && g_play.movie[i].read <= read; i++) {
+        *word = g_play.movie[i].word;
+    }
+    return TRUE;
+}
+
 void port_ReplayTookSound(u32 index, s32 sound) {
+    if (port_LeadIsOn() && index < LEAD_MAX) {
+        g_lead.frames[index].sound = (u8)(sound + 1);
+    }
     if (g_port_ahead || g_rec.state != REC_FIGHT || index < g_rec.start_count ||
         index - g_rec.start_count >= FRAMES_MAX) {
         return;
@@ -1491,14 +2047,37 @@ void port_ReplayTookSound(u32 index, s32 sound) {
     g_rec.frames[index - g_rec.start_count].sound = (u8)(sound + 1);
 }
 
+/* The menu sound kept with input `index` of the replay being played
+ * (port_replay.h). */
 s32 port_ReplaySoundAt(u32 index) {
     u32 at = index - g_play.start_count;
+
+    if (g_play.state == PLAY_ON && g_play.in_lead) {
+        return index < g_play.lead_count ? (s32)g_play.lead[index].sound - 1
+                                         : -1;
+    }
 
     if (g_play.state != PLAY_ON || index < g_play.start_count ||
         at >= g_play.frames) {
         return -1;
     }
     return (s32)g_play.list[at].sound - 1;
+}
+
+/* ... and the top menu's cover (port_replay.h). */
+s32 port_ReplayCoverAt(u32 index) {
+    u32 at = index - g_play.start_count;
+
+    if (g_play.state != PLAY_ON) {
+        return -1;
+    }
+    if (g_play.in_lead) {
+        return index < g_play.lead_count ? g_play.lead[index].cover : -1;
+    }
+    if (index < g_play.start_count || at >= g_play.frames) {
+        return -1;
+    }
+    return g_play.list[at].cover;
 }
 
 /* Every frame of a session's fight is known and run as it was: the
@@ -1783,6 +2362,7 @@ static void port_ReplayRecordBoundary(
          * next: its pages written since the last (port_state.h) */
         port_StateSave(g_before.snapshot);
         g_before.hash = port_StateHash();
+        g_before.console = port_StateConsoleHash();
         g_before.count = count;
         g_before.frame = port_IsNetplayOn() ? port_NetplayFrameNow() : 0;
         g_before.view = *view;
@@ -2012,6 +2592,111 @@ static s32 port_ReplayPlayable(const u8 *bytes, u32 size, char *why, u32 room) {
     return TRUE;
 }
 
+/* Whether the game that recorded a replay is this one: its code's sum
+ * (port_state.h), or where neither program has one (no window) its
+ * version with its commit. */
+static s32 port_ReplaySameGame(const u8 *meta, u32 size) {
+    char version[PORT_REPLAY_WHY_BYTES];
+    u64 code = port_MetaHex(meta, size, "code");
+
+    if (code != 0 || g_port_code_sum != 0) {
+        return code == g_port_code_sum;
+    }
+    return port_MetaValue(meta, size, "version", version, sizeof(version)) &&
+           port_TextsEqual(version, g_rb_version);
+}
+
+/* Whether this program can play what `bytes` holds from power on (its
+ * lead-in), and why not. */
+static s32 port_ReplayLeadPlayable(
+    const u8 *bytes, u32 size, char *why, u32 room) {
+    const u8 *meta;
+    u32 meta_size;
+    s32 has_prims;
+
+    if (size < HEAD_BYTES ||
+        port_GetWord(bytes + MAGIC_BYTES) != FORMAT_VERSION ||
+        !port_FindChunk(bytes, size, TAG_META, &meta, &meta_size)) {
+        port_ReplayText(why, room,
+                        "it holds nothing from power on (a replay "
+                        "of an earlier version)");
+        return FALSE;
+    }
+    if (port_MetaNumber(meta, meta_size, "lead") != 1) {
+        char lead_why[PORT_REPLAY_WHY_BYTES];
+
+        if (!port_MetaValue(
+                meta, meta_size, "lead_why", lead_why, sizeof(lead_why))) {
+            lead_why[0] = 0;
+        }
+        port_ReplayText(
+            why, room, "it holds nothing from power on (%s)", lead_why);
+        return FALSE;
+    }
+    if (port_MetaHex(meta, meta_size, "disc") != port_SessionDiscSum()) {
+        port_ReplayText(why, room, "recorded from another disc image");
+        return FALSE;
+    }
+    if (port_MetaHex(meta, meta_size, "mods") != port_ReplayMods() ||
+        (u32)port_MetaNumber(meta, meta_size, "stage_music") !=
+            port_MusicStageSum()) {
+        port_ReplayText(why, room,
+                        "recorded with other gameplay mods (stages, weapons, "
+                        "motions, arenas or the stages' music)");
+        return FALSE;
+    }
+    port_ReplayStateSize(&has_prims);
+    if (port_MetaNumber(meta, meta_size, "prims") != 0 && !has_prims) {
+        port_ReplayText(why, room,
+                        "recorded with a draw distance past the console's: "
+                        "start with draw_distance far or max to play it");
+        return FALSE;
+    }
+    /* (a replay asked for on the command line is read before the state
+     * at power on is kept: the playback's beginning holds it to it) */
+    if ((g_lead.kept && !g_lead.plain) || g_lead.why[0] != 0) {
+        port_ReplayText(why, room,
+                        "recorded by another build, and this run did not "
+                        "begin from power on as a plain run does (%s)",
+                        g_lead.why[0] != 0 ? g_lead.why : "nothing kept");
+        return FALSE;
+    }
+    why[0] = 0;
+    return TRUE;
+}
+
+/* Whether and how this program plays what `bytes` holds: from its start
+ * (a build of the same core), or from power on (*from_boot); and why
+ * not. */
+static s32 port_ReplayPlayableHow(
+    const u8 *bytes, u32 size, char *why, u32 room, s32 *from_boot) {
+    char lead_why[PORT_REPLAY_WHY_BYTES];
+    s32 same = port_ReplayPlayable(bytes, size, why, room);
+
+    *from_boot = FALSE;
+    if (same && !g_from_boot_asked) {
+        return TRUE;
+    }
+    if (port_ReplayLeadPlayable(bytes, size, lead_why, sizeof(lead_why))) {
+        *from_boot = TRUE;
+        if (!same) {
+            port_ReplayText(why, room, "another build's: played from power on");
+        }
+        return TRUE;
+    }
+    if (same) {
+        /* --replay-from-boot, and it cannot be */
+        port_ReplayText(why, room, "%s", lead_why);
+        return FALSE;
+    }
+    {
+        u32 length = port_TextLength(why);
+
+        port_ReplayText(why + length, room - length, "; and %s", lead_why);
+    }
+    return FALSE;
+}
+
 /* What the file in `bytes` says of itself, into `info`. */
 static void port_ReplayInfoOf(const u8 *bytes, u32 size, PortReplayInfo *info) {
     const u8 *meta;
@@ -2043,8 +2728,8 @@ static void port_ReplayInfoOf(const u8 *bytes, u32 size, PortReplayInfo *info) {
     info->winner = port_MetaNumber(meta, meta_size, "winner");
     info->frames = (u32)port_MetaNumber(meta, meta_size, "frames");
     info->kill = (u32)port_MetaNumber(meta, meta_size, "kill");
-    info->playable =
-        port_ReplayPlayable(bytes, size, info->why, sizeof(info->why));
+    info->playable = port_ReplayPlayableHow(
+        bytes, size, info->why, sizeof(info->why), &info->from_boot);
 }
 
 /* The last part of a path: the file's own name. */
@@ -2124,20 +2809,13 @@ static u32 port_GetVarint(const u8 *in, u32 size, u32 *at) {
     return value;
 }
 
-/* INPT into the playback's frames: FALSE where it is not whole. */
-static s32 port_ReplayUnpackInputs(const u8 *in, u32 size) {
-    ReplayFrame now = {{0, 0, 0, 0}, 0, 0, 0};
-    u32 frames;
+/* `frames` frames packed as INPT has them (port_ReplayPackFrames) into
+ * `list`: FALSE where they are not whole. */
+static s32 port_ReplayUnpackFrames(
+    const u8 *in, u32 size, u32 at, ReplayFrame *list, u32 frames) {
+    ReplayFrame now = {{0, 0, 0, 0}, 0, 0, 0, 0};
     u32 frame = 0;
-    u32 at = WORD_BYTES;
 
-    if (size < WORD_BYTES) {
-        return FALSE;
-    }
-    frames = port_GetWord(in);
-    if (frames >= FRAMES_MAX) {
-        return FALSE;
-    }
     while (frame < frames && at < size) {
         u8 changed = in[at++];
         u32 run;
@@ -2164,13 +2842,49 @@ static s32 port_ReplayUnpackInputs(const u8 *in, u32 size) {
             now.buttons[3] = (u16)(in[at] | (in[at + 1] << BITS_PER_BYTE));
             at += HALF_BYTES;
         }
+        if ((changed & CHANGED_COVER) && at < size) {
+            now.cover = in[at++];
+        }
         run = port_GetVarint(in, size, &at);
         while (run-- > 0 && frame < frames) {
-            g_play.list[frame++] = now;
+            list[frame++] = now;
         }
     }
-    g_play.frames = frames;
     return frame == frames;
+}
+
+/* INPT into the playback's frames: FALSE where it is not whole. */
+static s32 port_ReplayUnpackInputs(const u8 *in, u32 size) {
+    if (size < WORD_BYTES || port_GetWord(in) >= FRAMES_MAX) {
+        return FALSE;
+    }
+    g_play.frames = port_GetWord(in);
+    return port_ReplayUnpackFrames(
+        in, size, WORD_BYTES, g_play.list, g_play.frames);
+}
+
+/* A list of 64-bit hashes as HASH and CHSH have them, into `out`: how
+ * many, or -1 where it is not whole. */
+static s32 port_ReplayUnpackHashes(
+    const u8 *chunk, u32 chunk_size, u64 *out, u32 most) {
+    u32 count;
+    u32 i;
+
+    if (chunk_size < 2 * WORD_BYTES ||
+        port_GetWord(chunk + WORD_BYTES) != PORT_REPLAY_HASH_EVERY) {
+        return -1;
+    }
+    count = port_GetWord(chunk);
+    if (count > most || chunk_size < 2 * WORD_BYTES + count * LONG_BYTES) {
+        return -1;
+    }
+    for (i = 0; i < count; i++) {
+        const u8 *at = chunk + 2 * WORD_BYTES + i * LONG_BYTES;
+
+        out[i] = port_GetWord(at) |
+                 ((u64)port_GetWord(at + WORD_BYTES) << WORD_BITS);
+    }
+    return (s32)count;
 }
 
 /* The start of the file in `bytes` into the playback's snapshot, laid
@@ -2234,10 +2948,12 @@ static s32 port_ReplayUnpackStart(const u8 *bytes, u32 size) {
     return from == raw;
 }
 
-/* INPT, HASH and VIEW into the playback: FALSE where one is not whole. */
+/* INPT, HASH, CHSH and VIEW into the playback: FALSE where one is not
+ * whole. */
 static s32 port_ReplayUnpackRest(const u8 *bytes, u32 size) {
     const u8 *chunk;
     u32 chunk_size;
+    s32 got;
     u32 i;
 
     if (!port_FindChunk(bytes, size, TAG_INPUT, &chunk, &chunk_size) ||
@@ -2259,21 +2975,22 @@ static s32 port_ReplayUnpackRest(const u8 *bytes, u32 size) {
             }
         }
     }
-    if (!port_FindChunk(bytes, size, TAG_HASH, &chunk, &chunk_size) ||
-        chunk_size < 2 * WORD_BYTES ||
-        port_GetWord(chunk + WORD_BYTES) != PORT_REPLAY_HASH_EVERY) {
+    if (!port_FindChunk(bytes, size, TAG_HASH, &chunk, &chunk_size)) {
         return FALSE;
     }
-    g_play.hash_count = port_GetWord(chunk);
-    if (g_play.hash_count > HASHES_MAX ||
-        chunk_size < 2 * WORD_BYTES + g_play.hash_count * LONG_BYTES) {
+    got = port_ReplayUnpackHashes(chunk, chunk_size, g_play.hashes, HASHES_MAX);
+    if (got < 0) {
         return FALSE;
     }
-    for (i = 0; i < g_play.hash_count; i++) {
-        const u8 *at = chunk + 2 * WORD_BYTES + i * LONG_BYTES;
-
-        g_play.hashes[i] = port_GetWord(at) |
-                           ((u64)port_GetWord(at + WORD_BYTES) << WORD_BITS);
+    g_play.hash_count = (u32)got;
+    g_play.console_count = 0;
+    if (port_FindChunk(bytes, size, TAG_CONSOLE, &chunk, &chunk_size)) {
+        got = port_ReplayUnpackHashes(
+            chunk, chunk_size, g_play.consoles, HASHES_MAX);
+        if (got < 0) {
+            return FALSE;
+        }
+        g_play.console_count = (u32)got;
     }
     if (!port_FindChunk(bytes, size, TAG_VIEW, &chunk, &chunk_size) ||
         chunk_size < WORD_BYTES || port_GetWord(chunk) > VIEWS_MAX) {
@@ -2295,6 +3012,142 @@ static s32 port_ReplayUnpackRest(const u8 *bytes, u32 size) {
     return TRUE;
 }
 
+/* LEAD and CARD into the playback: FALSE where one is not whole. */
+static s32 port_ReplayUnpackLead(const u8 *bytes, u32 size) {
+    const u8 *chunk;
+    u32 chunk_size;
+    u32 at;
+    u32 count;
+    u32 i;
+    s32 slot;
+
+    if (!port_FindChunk(bytes, size, TAG_LEAD, &chunk, &chunk_size) ||
+        chunk_size < (LEAD_HEAD_WORDS + 1) * WORD_BYTES ||
+        port_GetWord(chunk) != LEAD_VERSION ||
+        port_GetWord(chunk + WORD_BYTES) != 0) {
+        return FALSE;
+    }
+    g_play.lead_count = port_GetWord(chunk + 2 * WORD_BYTES);
+    if (g_play.lead_count > LEAD_MAX) {
+        return FALSE;
+    }
+    at = 3 * WORD_BYTES;
+    for (i = 0; i < SETUP_WORDS; i++, at += WORD_BYTES) {
+        g_play.setup[i] = port_GetWord(chunk + at);
+    }
+    count = port_GetWord(chunk + at);
+    at += WORD_BYTES;
+    if (count > LEAD_EVENTS ||
+        at + count * (1 + SETUP_WORDS) * WORD_BYTES + WORD_BYTES > chunk_size) {
+        return FALSE;
+    }
+    g_play.event_count = (s32)count;
+    for (i = 0; i < count; i++) {
+        u32 k;
+
+        g_play.events[i].count = port_GetWord(chunk + at);
+        at += WORD_BYTES;
+        for (k = 0; k < SETUP_WORDS; k++, at += WORD_BYTES) {
+            g_play.events[i].words[k] = port_GetWord(chunk + at);
+        }
+    }
+    count = port_GetWord(chunk + at);
+    at += WORD_BYTES;
+    if (count > LEAD_VIEWS || at + count * 3 * WORD_BYTES > chunk_size) {
+        return FALSE;
+    }
+    g_play.lead_view_count = (s32)count;
+    for (i = 0; i < count; i++, at += 3 * WORD_BYTES) {
+        g_play.lead_views[i].distance = (s32)port_GetWord(chunk + at);
+        g_play.lead_views[i].margin_w =
+            (s32)port_GetWord(chunk + at + WORD_BYTES);
+        g_play.lead_views[i].margin_h =
+            (s32)port_GetWord(chunk + at + 2 * WORD_BYTES);
+    }
+    {
+        s32 hashes = port_ReplayUnpackHashes(
+            chunk + at, chunk_size - at, g_play.lead_hashes, LEAD_HASHES);
+
+        if (hashes < 0) {
+            return FALSE;
+        }
+        g_play.lead_hash_count = (u32)hashes;
+        at += 2 * WORD_BYTES + (u32)hashes * LONG_BYTES;
+    }
+    if (at + WORD_BYTES > chunk_size) {
+        return FALSE;
+    }
+    count = port_GetWord(chunk + at);
+    at += WORD_BYTES;
+    if (at + count * 2 * WORD_BYTES > chunk_size) {
+        return FALSE;
+    }
+    {
+        u32 sounds_at = at;
+        u32 reads;
+
+        at += count * 2 * WORD_BYTES;
+        if (at + WORD_BYTES > chunk_size) {
+            return FALSE;
+        }
+        reads = port_GetWord(chunk + at);
+        at += WORD_BYTES;
+        if (reads > LEAD_MOVIE_READS ||
+            at + reads * 2 * WORD_BYTES > chunk_size) {
+            return FALSE;
+        }
+        g_play.movie_count = (s32)reads;
+        for (i = 0; i < reads; i++, at += 2 * WORD_BYTES) {
+            g_play.movie[i].read = port_GetWord(chunk + at);
+            g_play.movie[i].word = port_GetWord(chunk + at + WORD_BYTES);
+        }
+        if (!port_ReplayUnpackFrames(
+                chunk, chunk_size, at, g_play.lead, g_play.lead_count)) {
+            return FALSE;
+        }
+        for (i = 0; i < count; i++) {
+            u32 frame = port_GetWord(chunk + sounds_at + i * 2 * WORD_BYTES);
+
+            if (frame < g_play.lead_count) {
+                g_play.lead[frame].sound = (u8)port_GetWord(
+                    chunk + sounds_at + i * 2 * WORD_BYTES + WORD_BYTES);
+            }
+        }
+    }
+    for (i = 0; i < g_play.lead_count; i++) {
+        if (g_play.lead[i].view >= g_play.lead_view_count) {
+            return FALSE;
+        }
+    }
+    if (!port_FindChunk(bytes, size, TAG_CARDS, &chunk, &chunk_size) ||
+        chunk_size < WORD_BYTES) {
+        return FALSE;
+    }
+    g_play.card_flags = port_GetWord(chunk);
+    at = WORD_BYTES;
+    for (slot = 0; slot < PORT_CARD_SLOTS; slot++) {
+        u32 packed;
+
+        if (((g_play.card_flags >> slot) & 1) == 0) {
+            continue;
+        }
+        if (at + 2 * WORD_BYTES > chunk_size ||
+            port_GetWord(chunk + at) != PORT_CARD_IMAGE_SIZE) {
+            return FALSE;
+        }
+        packed = port_GetWord(chunk + at + WORD_BYTES);
+        at += 2 * WORD_BYTES;
+        if (packed > chunk_size - at ||
+            !port_ZlibInflate(
+                chunk + at, packed, g_play.cards + slot * PORT_CARD_IMAGE_SIZE,
+                PORT_CARD_IMAGE_SIZE)) {
+            return FALSE;
+        }
+        at += packed;
+    }
+    return TRUE;
+}
+
 /* The playback's memory, given once: FALSE where there is none. */
 static s32 port_ReplayPlayRoom(void) {
     u32 size = port_StateSize();
@@ -2307,11 +3160,18 @@ static s32 port_ReplayPlayRoom(void) {
     g_play.back = port_HostAllocate(size);
     g_play.list = port_HostAllocate(FRAMES_MAX * sizeof(ReplayFrame));
     g_play.hashes = port_HostAllocate(HASHES_MAX * sizeof(u64));
+    g_play.consoles = port_HostAllocate(HASHES_MAX * sizeof(u64));
+    g_play.lead = port_HostAllocate(LEAD_MAX * sizeof(ReplayFrame));
+    g_play.lead_hashes = port_HostAllocate(LEAD_HASHES * sizeof(u64));
+    g_play.cards = port_HostAllocate(PORT_CARD_SLOTS * PORT_CARD_IMAGE_SIZE);
     g_kept_run =
         port_HostAllocate((u32)(g_port_state_data_end - g_port_run_data) +
                           (u32)(g_port_state_bss_end - g_port_run_bss) + 1);
     if (g_play.file == NULL || g_play.start == NULL || g_play.back == NULL ||
-        g_play.list == NULL || g_play.hashes == NULL || g_kept_run == NULL) {
+        g_play.list == NULL || g_play.hashes == NULL ||
+        g_play.consoles == NULL || g_play.lead == NULL ||
+        g_play.lead_hashes == NULL || g_play.cards == NULL ||
+        g_kept_run == NULL) {
         g_play.start = NULL;
         return FALSE;
     }
@@ -2365,15 +3225,30 @@ s32 port_PlayReplay(
             return FALSE;
         }
     }
-    if (!port_ReplayPlayable(g_play.file, size, why, room)) {
+    if (!port_ReplayPlayableHow(
+            g_play.file, size, why, room, &g_play.from_boot)) {
         return FALSE;
     }
-    if (!port_ReplayUnpackStart(g_play.file, size) ||
-        !port_ReplayUnpackRest(g_play.file, size)) {
+    if ((g_play.from_boot ? !port_ReplayUnpackLead(g_play.file, size)
+                          : !port_ReplayUnpackStart(g_play.file, size)) ||
+        !port_ReplayUnpackRest(g_play.file, size) ||
+        (g_play.from_boot && g_play.console_count == 0)) {
         port_ReplayText(why, room, "the file is not whole");
         return FALSE;
     }
     port_FindChunk(g_play.file, size, TAG_META, &meta, &meta_size);
+    {
+        char ignored[PORT_REPLAY_WHY_BYTES];
+
+        g_play.same_build =
+            port_ReplayPlayable(g_play.file, size, ignored, sizeof(ignored));
+    }
+    g_play.same_game =
+        port_ReplaySameGame(meta, meta_size) && g_differ_asked == NONE;
+    g_play.differ_at = g_differ_asked;
+    g_play.start_console = port_MetaHex(meta, meta_size, "console");
+    g_play.in_lead = g_play.from_boot;
+    g_play.event_next = 0;
     g_play.start_count = (u32)port_MetaNumber(meta, meta_size, "start_count");
     g_play.start_hash = port_MetaHex(meta, meta_size, "start_hash");
     g_play.kill = (u32)port_MetaNumber(meta, meta_size, "kill");
@@ -2403,15 +3278,27 @@ static void port_ReplayTakeHook(PortInput *input) {
     const ReplayFrame *frame;
     s32 pad;
 
-    if (g_play.frames == 0) {
+    if (g_play.in_lead && g_play.lead_count > 0) {
+        u32 count = g_port_input_count;
+
+        frame = &g_play.lead[count < g_play.lead_count ? count
+                                                       : g_play.lead_count - 1];
+    } else if (g_play.frames == 0) {
         return;
+    } else {
+        frame = &g_play.list[index < g_play.frames ? index : g_play.frames - 1];
     }
-    frame = &g_play.list[index < g_play.frames ? index : g_play.frames - 1];
     for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
         input->buttons[pad] = frame->buttons[pad];
         input->present[pad] = (frame->present >> (pad + PRESENT_CPU_SHIFT)) & 1
                                   ? PORT_PAD_CPU
                                   : (u8)((frame->present >> pad) & 1);
+    }
+    if (g_play.differ_at != NONE && g_port_input_count >= g_play.differ_at &&
+        g_port_input_count - g_play.differ_at < DIFFER_INPUTS) {
+        /* --replay-differ: as a game that went otherwise would have it,
+         * the first pad's buttons the others for a second */
+        input->buttons[0] = (u16)~input->buttons[0];
     }
 }
 
@@ -2454,6 +3341,12 @@ static void port_ReplayEnd(const char *trouble) {
     PortGameView view;
 
     g_play.state = PLAY_OFF;
+    if (g_play.from_boot) {
+        port_RestorePlaySwitches();
+        port_RestoreStageDefaults();
+        port_RestoreMatch();
+    }
+    g_play.in_lead = FALSE;
     port_StateLoad(g_play.back);
     port_RemasterHoldGameView(NULL);
     port_RemasterGameView(&view);
@@ -2483,6 +3376,42 @@ static void port_ReplayBegin(void) {
         port_ReplayWrite();
     }
     port_StateSave(g_play.back);
+    if (g_play.from_boot && (!g_lead.kept || !g_lead.plain)) {
+        port_ReplayEnd("this run did not keep its state at power on, which a "
+                       "replay of another build's is played from");
+        return;
+    }
+    if (g_play.from_boot) {
+        s32 slot;
+
+        /* the run from power on: this run's own state at power on, the
+         * recorded cards and setup in, as a session puts the host's in */
+        port_KeepPlaySwitches();
+        port_KeepStageDefaults();
+        port_KeepMatch();
+        port_ReplayKeep(TRUE);
+        port_StateLoad(g_lead.boot);
+        port_ReplayKeep(FALSE);
+        for (slot = 0; slot < PORT_CARD_SLOTS; slot++) {
+            port_SetCardImage(
+                slot, ((g_play.card_flags >> slot) & 1)
+                          ? g_play.cards + slot * PORT_CARD_IMAGE_SIZE
+                          : NULL);
+        }
+        port_ReplayHoldSetup(g_play.setup);
+        g_port_take_hook = port_ReplayTakeHook;
+        g_play.at_power_on = TRUE;
+        g_play.state = PLAY_ON;
+        port_Log("replay: %s: from power on (%s): %u inputs to the fight, then "
+                 "%u frames, the console's hashes held%s\n",
+                 g_play.path,
+                 g_play.same_build  ? "as asked"
+                 : g_play.same_game ? "the same game laid out otherwise"
+                                    : "another build's game",
+                 g_play.lead_count, g_play.frames,
+                 g_play.same_build ? " and the state's" : "");
+        return;
+    }
     port_ReplayLoadStart();
     g_play.state = PLAY_ON;
     if (port_StateHash() != g_play.start_hash) {
@@ -2494,14 +3423,116 @@ static void port_ReplayBegin(void) {
              g_play.frames, g_play.start_count);
 }
 
+static s32 port_ReplayPlayFrame(void);
+
+/* A hash that is not the recorded one: a desync where the game is the one
+ * that recorded the replay, and where it is another the game went
+ * otherwise there. The playback ends; FALSE. */
+static s32 port_ReplayWentOtherwise(
+    const char *where, u32 at, u64 hash, u64 recorded) {
+    static char trouble[PORT_REPLAY_WHY_BYTES];
+    static char place[PORT_REPLAY_WHY_BYTES];
+
+    port_ReplayText(place, sizeof(place), where, at);
+    g_play.desync = TRUE;
+    if (g_play.same_game) {
+        port_ReplayText(trouble, sizeof(trouble),
+                        "DESYNC %s: the state's hash is %08X%08X, recorded "
+                        "%08X%08X",
+                        place, (u32)(hash >> WORD_BITS), (u32)hash,
+                        (u32)(recorded >> WORD_BITS), (u32)recorded);
+    } else {
+        port_ReplayText(trouble, sizeof(trouble),
+                        "this build's game is not the one that recorded the "
+                        "replay, and it went otherwise %s: stopped there",
+                        place);
+    }
+    port_ReplayEnd(trouble);
+    return FALSE;
+}
+
+/* A boundary of the run from power on: the setup's changes held, the
+ * console's hash held to the one recorded, the input's view; at the
+ * fight's start the state kept as the playback's start, and the fight's
+ * first frame. FALSE where the playback ended here. */
+static s32 port_ReplayLeadFrame(void) {
+    u32 count = g_port_input_count;
+
+    if (g_play.at_power_on) {
+        /* the state at power on, put in: the first step is the game's
+         * start, to its first read of the pads */
+        g_play.at_power_on = FALSE;
+        if (g_play.lead_count > 0) {
+            port_RemasterHoldGameView(&g_play.lead_views[g_play.lead[0].view]);
+            return TRUE;
+        }
+    }
+    while (g_play.event_next < g_play.event_count &&
+           g_play.events[g_play.event_next].count <= count) {
+        port_ReplayHoldSetup(g_play.events[g_play.event_next].words);
+        g_play.event_next++;
+    }
+    if (count < g_play.lead_count && count % PORT_REPLAY_HASH_EVERY == 0 &&
+        count / PORT_REPLAY_HASH_EVERY < g_play.lead_hash_count) {
+        u64 hash = port_StateConsoleHash();
+        u64 recorded = g_play.lead_hashes[count / PORT_REPLAY_HASH_EVERY];
+
+        if (hash != recorded) {
+            return port_ReplayWentOtherwise(
+                "before the fight, %u inputs after power on", count, hash,
+                recorded);
+        }
+        g_play.hashes_matched++;
+    }
+    if (count >= g_play.lead_count) {
+        u64 hash = port_StateConsoleHash();
+
+        if (count != g_play.start_count || hash != g_play.start_console) {
+            return port_ReplayWentOtherwise(
+                "before the fight, at its start (input %u)", count, hash,
+                g_play.start_console);
+        }
+        hash = g_play.same_build ? port_StateHash() : g_play.start_hash;
+        if (hash != g_play.start_hash) {
+            return port_ReplayWentOtherwise("at the fight's start (input %u)",
+                                            count, hash, g_play.start_hash);
+        }
+        /* the fight's start, as this build has it: a restart and a skip
+         * go back to it */
+        port_StateSave(g_play.start);
+        g_play.in_lead = FALSE;
+        port_Log("replay: %s: the fight's start reached from power on, its "
+                 "console's hash the one recorded\n",
+                 g_play.path);
+        return port_ReplayPlayFrame();
+    }
+    g_play.frame = 0;
+    port_RemasterHoldGameView(&g_play.lead_views[g_play.lead[count].view]);
+    return TRUE;
+}
+
 /* A boundary of the playback: the frame's view held and its hash held to
  * the one recorded; FALSE where the playback ended here. */
 static s32 port_ReplayPlayFrame(void) {
     static char trouble[PORT_REPLAY_WHY_BYTES];
     u32 index = g_port_input_count - g_play.start_count;
 
+    if (g_play.in_lead) {
+        return port_ReplayLeadFrame();
+    }
     g_play.frame = index;
-    if (index % PORT_REPLAY_HASH_EVERY == 0 &&
+    if (g_play.from_boot && index % PORT_REPLAY_HASH_EVERY == 0 &&
+        index / PORT_REPLAY_HASH_EVERY < g_play.console_count) {
+        u64 hash = port_StateConsoleHash();
+        u64 recorded = g_play.consoles[index / PORT_REPLAY_HASH_EVERY];
+
+        if (hash != recorded) {
+            return port_ReplayWentOtherwise(
+                "at frame %u of the fight", index, hash, recorded);
+        }
+    }
+    if ((!g_play.from_boot || g_play.same_build) &&
+        index % PORT_REPLAY_HASH_EVERY == 0 &&
         index / PORT_REPLAY_HASH_EVERY < g_play.hash_count) {
         u64 hash = port_StateHash();
         u64 recorded = g_play.hashes[index / PORT_REPLAY_HASH_EVERY];
@@ -2516,6 +3547,9 @@ static s32 port_ReplayPlayFrame(void) {
             port_ReplayEnd(trouble);
             return FALSE;
         }
+        g_play.hashes_matched++;
+    } else if (g_play.from_boot && index % PORT_REPLAY_HASH_EVERY == 0 &&
+               index / PORT_REPLAY_HASH_EVERY < g_play.console_count) {
         g_play.hashes_matched++;
     }
     if (index >= g_play.frames || g_play.stop_asked) {
@@ -2585,6 +3619,27 @@ static void port_ReplayPlayBoundary(void) {
     if (!port_ReplayPlayFrame()) {
         return;
     }
+    if (g_play.in_lead) {
+        /* the run from power on to the fight, unseen: all of it at once
+         * where nothing is shown, in slices in the window, whose events
+         * are read between two (a step shown between) */
+        u32 began = port_HostTicks();
+
+        g_play.seek_to = NONE;
+        while (g_play.in_lead) {
+            if (g_play.stop_asked) {
+                port_ReplayEnd(NULL);
+                return;
+            }
+            if (!g_play.quiet &&
+                port_HostTicks() - began > LEAD_SLICE_MS * TICKS_PER_MS) {
+                return;
+            }
+            if (!port_ReplayQuietStep()) {
+                return;
+            }
+        }
+    }
     if (g_play.quiet) {
         port_ReplayCheckAll();
         return;
@@ -2646,6 +3701,7 @@ void port_ReplayControl(s32 what) {
     }
 }
 
+/* Where the playback is (port_replay.h). */
 void port_GetReplayStatus(PortReplayStatus *status) {
     status->is_playing = g_play.state == PLAY_ON;
     status->is_paused = g_play.paused;
@@ -2654,7 +3710,15 @@ void port_GetReplayStatus(PortReplayStatus *status) {
     status->frames = g_play.frames;
     status->kill = g_play.kill;
     status->desync = g_play.desync;
+    status->from_boot = g_play.state == PLAY_ON && g_play.from_boot;
+    status->in_lead = g_play.state == PLAY_ON && g_play.in_lead;
+    status->lead_at = g_port_input_count;
+    status->lead_of = g_play.lead_count;
 }
+
+void port_SetReplayFromBoot(s32 on) { g_from_boot_asked = on; }
+
+void port_SetReplayDiffer(u32 input) { g_differ_asked = input; }
 
 /* ---- the boundary ---- */
 
@@ -2675,6 +3739,7 @@ void port_ReplayBoundary(void) {
     port_RemasterHoldGameView(NULL);
     port_RemasterGameView(&view);
     port_RemasterHoldGameView(&view);
+    port_LeadBoundary(g_port_input_count, &view);
     port_ReplayRecordBoundary(
         g_port_input_count, g_sys_screen == SCREEN_FIGHT_UPDATE, &view);
 }

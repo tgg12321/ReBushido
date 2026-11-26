@@ -1343,12 +1343,17 @@ and F12 are the window's as ever.
 there; `--replay-check FILE` plays it as fast as it runs, showing and
 playing nothing, and says whether it played the same as it was recorded.
 
-**A replay plays only in a build whose game is the one that recorded
-it**, from the same disc image, with the same gameplay mods (stages,
-weapons, motions, arenas): it is the game run again, and another game
-runs otherwise. A build that changed only the window's side (its menus,
-its picture) plays it; one whose game changed refuses it. The Replays
-page says why one cannot be played. Each replay notes the state of the
+**A replay of another build** (a newer release, say) plays too, from the
+same disc image and with the same gameplay mods (stages, weapons,
+motions, arenas): a replay keeps the whole session from power on to its
+fight, and another build plays that session again first, unseen (the line
+says how far it is), then the fight. Where the new build's game differs
+from the one that recorded it, the fight may go otherwise; the replay
+then stops at the first moment it does and says so, rather than show a
+fight that never happened. A fight of a session begun with a fight
+already chosen, an online fight, or one after Bug fixes was changed in the
+settings menu plays only on the build that recorded it. The Replays page
+says why one cannot be played, and marks one of another build's. Each replay notes the state of the
 game every second as it was recorded and the playback holds itself to
 it; a difference (a "desync", which must never happen) stops it and says
 so on the line and in the log.

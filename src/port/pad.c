@@ -10,6 +10,7 @@
  * (g_port_device_hook, src/port/window/): two digital pads, always
  * plugged in once the driver has started. */
 #include "common.h"
+#include "port_host.h"
 #include "port_movie.h"
 #include "port_replay.h"
 #include "bb2.h"
@@ -133,6 +134,18 @@ static void port_PlayAskedSound(void) {
     }
 }
 
+/* Whether a page of the window's covers the top menu (port_top_menu.h),
+ * taken in with the input: as the window asked, or as the replay being
+ * played kept it with this input. */
+static void port_TakeTopMenuCover(void) {
+    s32 cover = port_ReplayIsPlaying() ? port_ReplayCoverAt(g_port_input_count)
+                                       : port_AskedTopMenuCover();
+
+    if (cover >= 0) {
+        g_port_top_menu.covered = (u8)cover;
+    }
+}
+
 /* The game reads the pads (port_platform.h): the packets, as the driver
  * leaves them, from the input. One that nothing answered says so, and
  * the rest of it is left as it was. This is the frame's boundary: the
@@ -145,6 +158,7 @@ void port_TakeInput(void) {
     if (g_port_take_hook != NULL) {
         g_port_take_hook(&g_port_input);
     }
+    port_TakeTopMenuCover();
     port_ReplayTook(&g_port_input, g_port_input_count);
     port_PlayAskedSound();
     g_port_input_count++;
@@ -163,6 +177,8 @@ void port_TakeInput(void) {
         packet[PACKET_BUTTONS] = (u8) ~(g_port_input.buttons[pad] >> BYTE_BITS);
         packet[PACKET_BUTTONS + 1] = (u8)~g_port_input.buttons[pad];
     }
+    /* the game goes on from here, nothing of the host's below it */
+    port_FiberClearDeadStack();
 }
 
 /* The game's two buffers, one a pad: until the driver first asks a pad,
@@ -215,6 +231,9 @@ void PAD_init(s32 type, s32 *buf) {
 /* Set by netplay (port_platform.h): every movie is skipped where it
  * begins, on both machines alike. */
 s32 g_port_movies_skipped;
+/* The movie player's reads of the pads so far, which a replay's run from
+ * power on keeps the buttons of (port_replay.h). */
+static u32 g_port_movie_reads;
 
 /* The movie player is a program of its own, which reads the pads when it
  * likes and not through the game's buffers: it is given them as they are
@@ -226,9 +245,15 @@ void PAD_dr(void) {
         *g_port_pad_word = (s32) ~(u32)PADRdown;
     } else if (g_port_pad_word != NULL) {
         PortInput now;
+        u32 word;
 
-        port_SampleInput(&now);
-        *g_port_pad_word =
-            (s32) ~((u32)now.buttons[0] | ((u32)now.buttons[1] << BUTTON_BITS));
+        if (!port_ReplayMovieRead(g_port_movie_reads, &word)) {
+            port_SampleInput(&now);
+            word =
+                ~((u32)now.buttons[0] | ((u32)now.buttons[1] << BUTTON_BITS));
+            port_ReplayTookMovieRead(g_port_movie_reads, word);
+        }
+        *g_port_pad_word = (s32)word;
+        g_port_movie_reads++;
     }
 }

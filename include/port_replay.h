@@ -21,7 +21,16 @@
  * gameplay mods plays one (the sums netplay holds two programs to,
  * docs/NETPLAY.md, section 13); and one with the port's own primitive
  * buffers where the fight had them (a draw distance past the console's
- * when it started). */
+ * when it started).
+ *
+ * A build of another core (port_StateBuildSum: another build of the game,
+ * or another game) plays it from power on instead, where the file has
+ * its lead-in (replay.c, "the lead-in"): the run's setup, cards and
+ * every input from power on to the fight, and the console's own hash
+ * (port_StateConsoleHash) every REPLAY_HASH_EVERY inputs. It runs the
+ * game from its own state at power on to the fight's start unseen, then
+ * the fight, holding every console hash: where its game went otherwise
+ * it stops there and says so. */
 
 #include "common.h"
 
@@ -55,6 +64,16 @@ extern void port_SetReplayRecording(s32 on);
  * fixes). */
 extern void port_ReplayAbandon(const char *why);
 
+/* The state at power on, kept once before the first step (main.c): a
+ * replay of another build's is played from it. */
+extern void port_ReplayKeepBoot(void);
+/* The run is not whole from power on from here on, and why: something
+ * changed the game that is neither an input nor the setup a replay keeps
+ * (a play test's poke, the settings menu's Bug fixes), or the run did not
+ * begin as a plain one does (--fight, called before port_ReplayKeepBoot).
+ * Its fights' replays play only on a build of this one's core after it. */
+extern void port_ReplayLeadBreak(const char *why);
+
 /* The program ends (port_Quit): a fight being recorded is written as
  * far as it went, and one being written is finished. */
 extern void port_ReplayAtQuit(void);
@@ -70,6 +89,15 @@ extern void port_ReplayTook(const struct PortInput *input, u32 index);
  * kept with input number `index`, or -1. */
 extern void port_ReplayTookSound(u32 index, s32 sound);
 extern s32 port_ReplaySoundAt(u32 index);
+/* Whether a page of the window's covered the top menu as the replay
+ * being played took input `index`, or -1 (pad.c). */
+extern s32 port_ReplayCoverAt(u32 index);
+/* The movie player reads the pads by itself (pad.c, PAD_dr): read
+ * number `read` of the run kept, its word as the player takes it; and
+ * the word of that read in the replay being played from power on, TRUE,
+ * or FALSE where it keeps none. */
+extern void port_ReplayTookMovieRead(u32 read, u32 word);
+extern s32 port_ReplayMovieRead(u32 read, u32 *word);
 
 /* The disc the game runs from, whose runs of bytes a fight's start is
  * not written with (main.c); and each sector the game reads from it
@@ -114,7 +142,8 @@ typedef struct {
     u32 frames;
     u32 kill; /* the frame the first fighter was cut down at, or frames */
     u32 bytes;
-    s32 playable; /* this program can play it; `why` says why not */
+    s32 playable;  /* this program can play it; `why` says why not */
+    s32 from_boot; /* ... from power on only: `why` says so */
     char why[PORT_REPLAY_WHY_BYTES];
 } PortReplayInfo;
 
@@ -132,6 +161,13 @@ extern s32 port_ListReplays(PortReplayInfo *infos, s32 most);
 extern s32 port_PlayReplay(
     const char *path, s32 quiet, s32 then_quit, char *why, u32 room);
 extern s32 port_ReplayIsPlaying(void);
+/* --replay-from-boot: a replay this build could put the start of in is
+ * played from power on all the same (its lead-in), every hash held. And
+ * --replay-differ N: inputs N to N + 29 of the run from power on are changed,
+ * as a game that went otherwise there would have it, for a test of what a
+ * playback says then (tools/port_replay.py). */
+extern void port_SetReplayFromBoot(s32 on);
+extern void port_SetReplayDiffer(u32 input);
 
 /* What the player asks of a playback. */
 enum {
@@ -153,7 +189,11 @@ typedef struct {
     u32 frame;
     u32 frames;
     u32 kill;
-    s32 desync; /* a hash differed at `frame` */
+    s32 desync;    /* a hash differed at `frame` */
+    s32 from_boot; /* played from power on (another build's) */
+    s32 in_lead;   /* ... and on its way there, at input lead_at of lead_of */
+    u32 lead_at;
+    u32 lead_of;
 } PortReplayStatus;
 
 extern void port_GetReplayStatus(PortReplayStatus *status);

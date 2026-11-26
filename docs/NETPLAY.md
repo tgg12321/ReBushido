@@ -503,6 +503,15 @@ the host's in), for another run of a build of the same **core**, which
 keeps its own hooks, cards and `run` group out of the load ([`PORT.md`](PORT.md),
 "Replays").
 
+**What lies below the stack pointer** (2026-11-26). A function of the
+game's that reads a local it never set reads what was last left there:
+before, whatever the host had run on the game's stack (a take hook, a
+replay's or a plan's) and what a snapshot's save had cleared, so two runs
+of the same game with other hooks, or saving at other boundaries, could
+read otherwise. It is now cleared as each input is taken
+(`port_FiberClearDeadStack`), in every run alike (PORT.md, "Across
+builds: the lead-in").
+
 **The core and the build's sum** (2026-11-25). A snapshot holds pointers
 into the program's code and variables, and the game's stack, whose
 frames return into the code (section 8): a program that puts the state
