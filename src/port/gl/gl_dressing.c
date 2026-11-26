@@ -1109,8 +1109,13 @@ static const char g_dress_water_fragment[] =
     "    float seen = u_sun_on != 0 ? sun_visible(v_place, vec3(0.0, -1.0, 0.0))\n"
     "                               : 1.0;\n"
     "    vec3 sun = u_color[0] * 256.0;\n"
-    "    float glint = pow(max(dot(r, to_sun), 0.0), 180.0) * 3.0\n"
-    "                + pow(max(dot(r, to_sun), 0.0), 40.0) * 0.10;\n"
+    /* the glint widened and dimmed with distance, its light kept: a
+     * pixel far off holds many waves, and a sharp glint there was a
+     * scatter of single white pixels across the sea and the stream */
+    "    float sharp = mix(180.0, 28.0, smoothstep(1500.0, 12000.0, v_depth));\n"
+    "    float facing_sun = max(dot(r, to_sun), 0.0);\n"
+    "    float glint = pow(facing_sun, sharp) * 1.4 * (sharp + 8.0) / 188.0\n"
+    "                + pow(facing_sun, 40.0) * 0.10;\n"
     /* never all mirror: the water's own colour shows even far off, so it
      * reads as water and not as the sky's colour laid on the ground */
     "    vec3 color = mix(body, sky, min(fresnel, 0.62)) + sun * glint * seen;\n"
@@ -2478,9 +2483,58 @@ static void port_DressGrowMap(
  * `on`, the ground's own faces in its areas lifted `y` above them -- each
  * face where a stream is painted across them (its map says where), or the
  * faces of that colour where it is puddles. */
+/* The heights a water laid on the ground's faces lies at, each with its
+ * area: the most is the plane the post mirrors the scene in
+ * (port_GlPostWaterPlane). A stream's bed, and not the mean of the banks
+ * about it, which stood 20 units and more over the bed under the lost
+ * bridge, out of the mirror's reach. */
+#define WATER_HEIGHTS 32
+#define WATER_HEIGHT_STEP 4.0f
+
+typedef struct {
+    float height[WATER_HEIGHTS];
+    float area[WATER_HEIGHTS];
+    s32 count;
+} DressHeights;
+
+static void port_DressHeightAdd(DressHeights *h, const DressTri *t) {
+    float u[3];
+    float v[3];
+    float n[3];
+    float y = (t->p[0][1] + t->p[1][1] + t->p[2][1]) / 3.0f;
+    s32 k;
+
+    for (k = 0; k < 3; k++) {
+        u[k] = t->p[1][k] - t->p[0][k];
+        v[k] = t->p[2][k] - t->p[0][k];
+    }
+    n[0] = u[1] * v[2] - u[2] * v[1];
+    n[1] = u[2] * v[0] - u[0] * v[2];
+    n[2] = u[0] * v[1] - u[1] * v[0];
+    y = WATER_HEIGHT_STEP *
+        (float)(s32)(y / WATER_HEIGHT_STEP + (y < 0.0f ? -0.5f : 0.5f));
+    for (k = 0; k < h->count; k++) {
+        if (h->height[k] == y) {
+            break;
+        }
+    }
+    if (k == h->count) {
+        if (k == WATER_HEIGHTS) {
+            return;
+        }
+        h->height[k] = y;
+        h->area[k] = 0.0f;
+        h->count++;
+    }
+    h->area[k] += port_DressRoot(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+}
+
 static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
     s32 is_stream = def->on != PORT_DRESS_ON_ANY && def->puddles == 0;
+    DressHeights heights;
     s32 i;
+
+    heights.count = 0;
 
     run->first = g_dress.mesh_vertex_count;
     run->count = 0;
@@ -2523,9 +2577,24 @@ static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
             }
             sum += middle[1];
             run->count += 3;
+            if (def->reflect > 0 && -t->normal_y > 0.99f &&
+                (!is_stream || (port_DressTexel(t, weight, rgb) &&
+                                port_DressGroundIs(rgb, def->on)))) {
+                port_DressHeightAdd(&heights, t);
+            }
         }
         run->ground_y = run->count > 0 ? (float)(sum / (run->count / 3)) : 0.0f;
         port_DressGrowMap(def, run, is_stream);
+        if (heights.count > 0) {
+            s32 best = 0;
+
+            for (i = 1; i < heights.count; i++) {
+                if (heights.area[i] > heights.area[best]) {
+                    best = i;
+                }
+            }
+            port_GlPostWaterPlane(heights.height[best], heights.area[best]);
+        }
         return;
     }
     for (i = 0; i < def->area_count &&
@@ -2551,6 +2620,15 @@ static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
     }
     run->ground_y = (float)def->at[1];
     port_DressGrowMap(def, run, FALSE);
+    if (def->reflect > 0) {
+        float size = 0.0f;
+
+        for (i = 0; i < def->area_count; i++) {
+            size += 2.0f * (float)(def->area[i][2] - def->area[i][0]) *
+                    (float)(def->area[i][3] - def->area[i][1]);
+        }
+        port_GlPostWaterPlane(run->ground_y, size);
+    }
 }
 
 /* A shafts block's beams: for each of the stage's lights it names, shown at

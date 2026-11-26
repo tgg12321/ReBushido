@@ -223,6 +223,9 @@ static const PostFloor g_post_floors[POST_STAGES] = {
     {0, 0},   /* 37: a model of a castle town */
 };
 
+/* How rough the dressing's water is, mirrored (port_GlPostRough). */
+#define POST_WATER_ROUGH 0.45f
+
 /* How level a face has to be to reflect: its normal's upward part. */
 #define POST_LEVEL 0.94f
 
@@ -263,6 +266,10 @@ static struct {
     float area[POST_PLANE_HEIGHTS];
     s32 is_set;
     float plane;
+    /* the plane is the dressing's water's (port_GlPostWaterPlane), and how
+     * much of it there is */
+    s32 is_water;
+    float water_size;
 } g_post_plane;
 
 /* A square root by Newton's steps (the window's C library is not asked
@@ -335,6 +342,19 @@ void port_GlPostFloorsEnd(void) {
     }
     g_post_plane.is_set = best >= 0;
     g_post_plane.plane = best >= 0 ? g_post_plane.height[best] : 0.0f;
+}
+
+void port_GlPostWaterPlane(float height, float size) {
+    /* a stage whose floor reflects keeps its floor's plane; of the water,
+     * the most of it */
+    if (g_post_plane.is_set &&
+        (!g_post_plane.is_water || size <= g_post_plane.water_size)) {
+        return;
+    }
+    g_post_plane.is_set = TRUE;
+    g_post_plane.is_water = TRUE;
+    g_post_plane.water_size = size;
+    g_post_plane.plane = height;
 }
 
 /* ---- the shaders ---- */
@@ -1919,6 +1939,12 @@ static void port_GlPostMirror(const PostFrame *frame, GLuint picture_texture,
 static float port_GlPostRough(void) {
     s32 stage = port_RemasterStageNumber();
 
+    /* water mirrored is broken by its waves: the grain of its own
+     * picture turns the mirror aside, and what stands farther from it is
+     * blurred, as on a floor this rough */
+    if (g_post_plane.is_water) {
+        return POST_WATER_ROUGH;
+    }
     return stage >= 0 && stage < POST_STAGES
                ? (float)g_post_floors[stage].rough / 100.0f
                : 0.5f;
