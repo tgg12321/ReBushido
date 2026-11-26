@@ -60,7 +60,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils-mipsel-linux-gnu cpp-mipsel-linux-gnu
+          sudo apt-get install -y binutils-mipsel-linux-gnu cpp-mipsel-linux-gnu python3-numpy python3-pil
 
       - name: Cache the compiler
         if: ${{ !cancelled() }}
