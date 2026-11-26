@@ -117,7 +117,9 @@ lessons still holds unless this section says otherwise.
   full gate on a loaded machine and pass alone every time (`win-pages`
   6 of 6, five of them under load); the provers' stage counts are 66
   primitives a stage fewer than stored baselines even on the baseline's
-  own code; `ra1-stress`'s `settled_p99` is over its limit on main too.
+  own code, in agents' worktrees only (the baselines of `e7da37638` and
+  `cf2896ad5` have the same counts on every stage; likely the version's
+  letters on the options page, `-dirty` or another hash's length); `ra1-stress`'s `settled_p99` is over its limit on main too.
 
 - **The bench copies the disc-made mods** into `build/bench/mods/`
   instead of linking them (`ca10d3d4f`): on 2026-11-25 `tmp/mods/art`
