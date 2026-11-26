@@ -27,3 +27,13 @@ size = 18
 top = 900
 color = #C8FF7A
 times = dusk night
+
+# mist over the paddies at dawn and at night
+[particles mist]
+kind = mist
+area = -10000 -15500 10500 14000
+size = 3000
+top = 450
+glow = 0.9
+color = #D4DAE0
+times = dawn night

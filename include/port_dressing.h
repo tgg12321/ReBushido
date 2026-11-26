@@ -117,6 +117,9 @@ typedef struct {
     s32 piece; /* the stage's piece a mesh stands in for, or -1 (`piece`) */
     /* a mesh set on the ground under its place, `at`'s y above it (`sit`) */
     s32 sit;
+    /* a mesh set at each culm of its piece (culms): each upright column
+     * of the piece's faces that stands on the piece's foot, the piece kept */
+    s32 culms;
     char file[PORT_DRESSING_NAME_SIZE]; /* a mesh's file's key (`file`) */
     /* water: how much of what is under it shows, the size of its waves,
      * in thousandths (`clarity`, `waves`) */

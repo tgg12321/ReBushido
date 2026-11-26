@@ -159,6 +159,11 @@ def set_value(block, name, value):
     elif name == 'sit':
         if value.strip().lower() not in ('yes', 'on', 'no', 'off'):
             raise Problem('`sit` is yes or no')
+    elif name == 'culms':
+        word = value.strip().lower()
+        if word not in ('yes', 'on', 'no', 'off'):
+            raise Problem('`culms` is yes or no')
+        block['culms'] = word in ('yes', 'on')
     elif name == 'solid':
         word = value.strip().lower()
         if word not in ('yes', 'on', 'no', 'off'):
@@ -806,6 +811,99 @@ def trunk_obj(width=580.0, height=2662.0, depth=580.0):
     return lathe_obj('An orange tree\'s trunk', rings, 28, 47, bend, furrows)
 
 
+BAMBOO = (0.40, 0.50, 0.24)       # a culm's green
+BAMBOO_NODE = (0.58, 0.58, 0.36)  # the ridge of a node, paler
+BAMBOO_SHEATH = (0.30, 0.33, 0.17)  # the dark band under a node
+
+
+def bamboo_obj(seed, height=4000.0, radius=69.0):
+    """A bamboo culm `height` tall, `radius` at its foot: round, tapering a
+    little as it rises, its nodes (each a raised, paler ridge with a dark
+    band under it) closer together near the foot, a slight lean, its green
+    streaked along it and paler towards the top. Its foot at y 0; the
+    program sets one at each column of a bamboo clump's piece (`culms`)."""
+    import math
+    import random
+
+    rnd = random.Random(seed)
+    rings = []
+
+    def radius_at(h):
+        return radius * (1.0 - 0.16 * h / height)
+
+    def green(h, k=1.0):
+        t = h / height
+        return tuple(min(1.0, c * k * (0.92 + 0.22 * t)) for c in BAMBOO)
+    h = 0.0
+    rings.append((0.0, radius_at(0) * 1.04, radius_at(0) * 1.04, green(0.0, 0.8)))
+    step = rnd.uniform(240.0, 300.0)
+    while True:
+        node = h + step
+        if node > height - 120.0:
+            break
+        r = radius_at(node)
+        rings.append((node - 60.0, r, r, green(node - 60.0)))
+        rings.append((node - 22.0, r, r, tuple(c * (0.92 + 0.2 * node / height) for c in BAMBOO_SHEATH)))
+        rings.append((node - 6.0, r * 1.07, r * 1.07, BAMBOO_NODE))
+        rings.append((node + 8.0, r * 1.07, r * 1.07, BAMBOO_NODE))
+        rings.append((node + 22.0, r, r, green(node + 22.0, 1.04)))
+        h = node
+        step = min(560.0, step * rnd.uniform(1.08, 1.2))
+    rings.append((height, radius_at(height), radius_at(height), green(height)))
+    lean = (rnd.uniform(-0.02, 0.02), rnd.uniform(-0.02, 0.02))
+
+    def shift(hh):
+        t = hh / height
+        return (lean[0] * radius * 8.0 * t * t, lean[1] * radius * 8.0 * t * t)
+
+    def streaks(angle, hh):
+        wave = math.sin(5.0 * angle + seed) * math.sin(3.0 * angle + 0.0007 * hh)
+        return 1.0, 0.94 + 0.08 * wave
+    return lathe_obj('A bamboo culm', rings, 16, seed, shift, streaks)
+
+
+def stump_obj(width=120.0, height=400.0, depth=138.0):
+    """A bamboo culm cut on the slant, `height` at its tallest: one node
+    near its foot, the cut's face showing the culm's wall around its hollow,
+    the cut paler than the green. Its foot at y 0."""
+    import math
+
+    r = min(width, depth) / 2
+    segments = 16
+    lines = ['# A cut bamboo culm made by tools/port_dressing.py meshes: procedural, '
+             'the world\'s units, y down']
+    count = [0]
+
+    def vertex(x, y, z, rgb):
+        lines.append('v %.1f %.1f %.1f %.3f %.3f %.3f' % (x, -y, z, *rgb))
+        count[0] += 1
+        return count[0]
+
+    def ring(h_of, k, rgb):
+        return [vertex(k * r * math.cos(2 * math.pi * i / segments), h_of(i),
+                       k * r * math.sin(2 * math.pi * i / segments), rgb) for i in range(segments)]
+
+    def cut(i, drop=0.0):
+        a = 2 * math.pi * i / segments
+        return height * (0.70 + 0.30 * (0.5 + 0.5 * math.cos(a))) - drop
+    rings = [ring(lambda i: 0.0, 1.03, tuple(c * 0.8 for c in BAMBOO)),
+             ring(lambda i: 90.0, 1.0, BAMBOO),
+             ring(lambda i: 118.0, 1.0, BAMBOO_SHEATH),
+             ring(lambda i: 132.0, 1.07, BAMBOO_NODE),
+             ring(lambda i: 146.0, 1.07, BAMBOO_NODE),
+             ring(lambda i: 160.0, 1.0, BAMBOO),
+             ring(cut, 1.0, (0.62, 0.62, 0.40)),
+             ring(lambda i: cut(i, 4.0), 0.72, (0.70, 0.66, 0.46)),
+             ring(lambda i: cut(i, 60.0), 0.70, (0.22, 0.20, 0.12))]
+    for low, high in zip(rings, rings[1:]):
+        for i in range(segments):
+            j = (i + 1) % segments
+            lines.append('f %d %d %d %d' % (low[i], low[j], high[j], high[i]))
+    lines.append('f ' + ' '.join(str(v) for v in reversed(rings[0])))
+    lines.append('f ' + ' '.join(str(v) for v in rings[-1]))
+    return '\n'.join(lines) + '\n'
+
+
 def rocks(args):
     folder = os.path.join(args.folder, 'dressing', 'meshes')
     os.makedirs(folder, exist_ok=True)
@@ -824,13 +922,18 @@ GRAVES = {'grave': (464.0, 1150.0, 464.0), 'grave_wide': (1732.0, 1150.0, 464.0)
 # ... the ferry dock's mooring bollards (stage 22, pieces 0, 1, 2 and 5) and
 # the orange trees' trunks (stage 12, pieces 7 to 11)
 PIECE_MESHES = {'bollard': (bollard_obj, (645.0, 680.0, 438.0)),
-                'orange_trunk': (trunk_obj, (580.0, 2662.0, 580.0))}
+                'orange_trunk': (trunk_obj, (580.0, 2662.0, 580.0)),
+                'bamboo_stump': (stump_obj, (120.0, 400.0, 138.0))}
+# ... the bamboo thicket's culms (stage 7, pieces 0 to 16: each set at its
+# piece's own column, `culms`), three of them that their nodes differ
+CULMS = 3
 
 
 def meshes(args):
     """The scenery meshes the program ships, made here: the gravestones
     that stand in for the cemetery's own (`piece`), the ferry dock's
-    bollards and the orange trees' trunks."""
+    bollards, the orange trees' trunks, the bamboo thicket's cut culm and
+    its culms."""
     folder = os.path.join(args.folder, 'dressing', 'meshes')
     os.makedirs(folder, exist_ok=True)
     for name, (w, h, d) in sorted(GRAVES.items()):
@@ -842,6 +945,11 @@ def meshes(args):
         path = os.path.join(folder, name + '.obj')
         with open(path, 'w', encoding='utf-8', newline='\n') as f:
             f.write(make(w, h, d))
+        print(path)
+    for n in range(CULMS):
+        path = os.path.join(folder, 'bamboo_culm_%d.obj' % n)
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(bamboo_obj(70 + n))
         print(path)
     return 0
 

@@ -232,4 +232,50 @@ extern s32 port_GlLightsShadowed(void);
     "    return lights_add_wrapped(world, n, 0.0);\n"                               \
     "}\n"
 
+/* `lights_add_lifted(world, normal, lift)`, after PORT_GL_LIGHTS_SHADER: the
+ * same light as `lights_add`, each light's shadow looked up `lift` units
+ * nearer to it than the point. For the dressing's blades of grass, which
+ * cast into the lights' maps themselves (gl_dressing.h,
+ * port_GlDressingDrawLightCasters): read where it stands, a blade lies in
+ * its own shadow and its neighbours', as it does in the sun's maps. */
+#define PORT_GL_LIGHTS_LIFTED_SHADER                                                \
+    "vec3 lights_add_lifted(vec3 world, vec3 n, float lift) {\n"                    \
+    "    if (u_lights_count == 0) { return vec3(0.0); }\n"                          \
+    "    ivec2 cell = ivec2(floor((world.xz - grid_origin.xy)\n"                    \
+    "                             / grid_origin.z));\n"                             \
+    "    int side = int(grid_origin.w);\n"                                          \
+    "    if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell,\n"         \
+    "                                         ivec2(side)))) {\n"                   \
+    "        return vec3(0.0);\n"                                                   \
+    "    }\n"                                                                       \
+    "    int at = (cell.y * side + cell.x) * 2;\n"                                  \
+    "    uint first = grid_cell[at];\n"                                             \
+    "    uint count = grid_cell[at + 1];\n"                                         \
+    "    if (u_lights_count < 0) { return vec3(float(count) * 60.0, 0.0, 0.0); }\n" \
+    "    vec3 sum = vec3(0.0);\n"                                                   \
+    "    for (uint k = 0u; k < count; k++) {\n"                                     \
+    "        PortLight l = port_light[grid_list[first + k]];\n"                     \
+    "        vec3 to_light = l.place.xyz - world;\n"                                \
+    "        float d = length(to_light);\n"                                         \
+    "        if (d >= l.place.w || d < 1e-3) { continue; }\n"                       \
+    "        vec3 dir = to_light / d;\n"                                            \
+    "        float turn = dot(n, dir);\n"                                           \
+    "        if (turn <= 0.0) { continue; }\n"                                      \
+    "        float near = d / l.place.w;\n"                                         \
+    "        float fall = clamp(1.0 - near * near, 0.0, 1.0);\n"                    \
+    "        fall *= fall;\n"                                                       \
+    "        if (l.color.w > 0.5) {\n"                                              \
+    "            fall *= smoothstep(l.extra.x, l.aim.w, dot(-dir, l.aim.xyz));\n"   \
+    "        }\n"                                                                   \
+    "        if (fall <= 0.0) { continue; }\n"                                      \
+    "        if (l.extra.y >= 0.0 && fall * turn > 0.02) {\n"                       \
+    "            vec3 lifted = world + dir * min(lift, 0.5 * d);\n"                 \
+    "            fall *= light_shadow(int(l.extra.y), lifted - l.place.xyz,\n"      \
+    "                                 lifted, n);\n"                                \
+    "        }\n"                                                                   \
+    "        sum += l.color.rgb * (turn * fall);\n"                                 \
+    "    }\n"                                                                       \
+    "    return sum;\n"                                                             \
+    "}\n"
+
 #endif /* PORT_GL_LIGHTS_H */

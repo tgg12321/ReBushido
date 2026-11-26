@@ -100,9 +100,9 @@ lessons still holds unless this section says otherwise.
   on `tmp/2v2-voices/` and eye on `tmp/2v2-mods/`.)
 - Replays across builds: done (a replay's lead-in from power on;
   PORT.md, "Across builds: the lead-in"); online fights carry no lead-in yet.
-- 17's leftovers: the foliage in the lights' cubes, a mist the fight
-  camera sees, the bamboo thicket's clumps as meshes (their culms placed
-  from the pieces' own faces).
+- 17's leftovers done (2026-11-26, PORT.md, "The dressing", "The fourth
+  pass": foliage in the lights' cubes, a mist the fight camera sees, the
+  bamboo's culms as meshes); the owner's eye on `tmp/stages17d/`.
 - 18's leftovers: more than 32 arenas, arenas larger than their host's
   room, pieces; dispute tooling; the kanabo's window model.
 - The fight's first frame: the driver's first-use work moved into the

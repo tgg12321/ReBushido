@@ -74,12 +74,15 @@ typedef ptrdiff_t GLintptr;
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_RGBA 0x1908
 #define GL_RGBA8 0x8058
+#define GL_RED 0x1903
+#define GL_R32F 0x822E
 #define GL_TEXTURE_MIN_FILTER 0x2801
 #define GL_TEXTURE_MAG_FILTER 0x2800
 #define GL_LINEAR 0x2601
 #define GL_TEXTURE_WRAP_S 0x2802
 #define GL_TEXTURE_WRAP_T 0x2803
 #define GL_CLAMP_TO_EDGE 0x812F
+#define GL_REPEAT 0x2901
 #define GL_TEXTURE0 0x84C0
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_SCISSOR_TEST 0x0C11
@@ -125,6 +128,7 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUniform1iv, (GLint, GLsizei, const GLint *))                    \
     GL(void, glUniform3fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
+    GL(void, glUniform1fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
@@ -183,6 +187,13 @@ PORT_GL_DRESSING_FUNCTIONS
 /* How far from the camera, in world units, the foliage begins to thin:
  * past it fewer things and fewer blades to a tuft. */
 #define FOLIAGE_THIN 7500.0f
+/* ... and as a light sees it, from the light (port_GlDressingDrawLightCasters):
+ * a few hundred units about a lantern is what its shadows are seen in */
+#define FOLIAGE_LIGHT_THIN 1500.0f
+/* the squares a block's foliage is kept in, for the lights' maps */
+#define SPAN_SIZE 1024.0f
+#define SPANS_MOST 4096
+#define SQUARES_MOST (256 * 256)
 /* ... and as the sun sees it (port_GlDressingDrawFoliageCasters) */
 #define FOLIAGE_CAST_THIN 3000.0f
 /* ... and how far towards the sun a blade reads the maps: a blade of grass
@@ -251,10 +262,21 @@ PORT_GL_DRESSING_FUNCTIONS
  * and the tile number its first's faces carry */
 #define PIECES_MOST 64
 #define PIECE_TILE_FIRST 512
+/* the most culms a piece's mesh is set at (culms); how far a column's
+ * faces may lie apart and still be one; how much wider than its column a
+ * round culm is, so that the column's corners stay inside it */
+#define CULMS_MOST 8
+#define CULM_JOIN 24.0f
+#define CULM_COVER 1.06f
 #define BEAM_LEAST 500.0f
 #define SHAFT_MOTE_SIZE 14.0f
 /* the texture unit the shafts read the fighters' depth from */
 #define SHAFT_FIGHTER_UNIT 11
+/* ... and the mist's look at the ground's depth */
+#define MIST_SCENE_UNIT 10
+/* ... and its tile of noise */
+#define MIST_NOISE_UNIT 5
+#define NOISE_SIDE 256
 #define SHAFT_MOTE_GAIN 2.0f
 /* the particles' program's own kinds, past PORT_PARTICLES_...: the rain's
  * splashes, a splash for every third drop, and a shaft's motes */
@@ -333,7 +355,21 @@ typedef struct {
      * over its width and depth */
     s32 map;
     float map_box[4];
+    /* a mist's box of air: its top and its bottom, y (port_DressGrowMist) */
+    float slab[2];
 } DressRun;
+
+/* A square of a block's foliage (SPAN_SIZE a side): its things, which are
+ * kept together in the buffer, and the box they reach into. What a light's
+ * map draws of the foliage is the squares within its reach
+ * (port_GlDressingDrawLightCasters). */
+typedef struct {
+    s32 run;
+    s32 first;
+    s32 count;
+    float lo[3];
+    float hi[3];
+} DressSpan;
 
 /* A shaft of light: a box from the opening (its middle `o`, half its width
  * `u` and half its height `v`) along the light's way (`d`, the whole
@@ -423,6 +459,14 @@ typedef struct {
     GLint fighter;
     GLint fighter_matrix;
     GLint fighter_a_b;
+    /* the mist's */
+    GLint slab;
+    GLint scene;
+    GLint noise;
+    /* the meshes' see-through */
+    GLint see_count;
+    GLint see_axis;
+    GLint see_radius;
 } DressAt;
 
 static struct {
@@ -438,6 +482,9 @@ static struct {
     GLuint particles;
     GLuint caster;
     GLuint shaft;
+    GLuint mist;
+    DressAt mist_at;
+    GLuint noise; /* the mist's tile of noise (port_DressMakeNoise) */
     GLint caster_at_sun;
     /* the foliage as the sun sees it */
     GLuint foliage_caster;
@@ -482,6 +529,11 @@ static struct {
     float piece_lo[PIECES_MOST][3];
     float piece_hi[PIECES_MOST][3];
     s32 piece_has[PIECES_MOST];
+    /* each piece's culms: the boxes of its upright columns that stand on its
+     * foot (port_DressFindCulms) */
+    float culm_lo[PIECES_MOST][CULMS_MOST][3];
+    float culm_hi[PIECES_MOST][CULMS_MOST][3];
+    s32 culm_count[PIECES_MOST];
     s32 *bin_list;
     /* what is grown from it */
     s32 grown_serial;
@@ -491,9 +543,14 @@ static struct {
     DressRun runs[PORT_DRESSING_MOST];
     DressThing *things;
     s32 thing_count;
+    DressSpan spans[SPANS_MOST];
+    s32 span_count;
     DressVertex *mesh_vertices;
     s32 mesh_vertex_count;
     u32 hidden[2];
+    /* the pieces standing as the last ground was drawn (PortGlDressingView) */
+    u32 standing[2];
+    u32 queued[2];
     float wind[4];
     /* the frame's */
     float pushers[PUSHERS_MOST][4];
@@ -644,8 +701,8 @@ static u32 port_DressSeedOf(const char *name, s32 stage, s32 kind) {
     "uniform mat3 u_light;\n"                                                        \
     "uniform mat3 u_color;\n"                                                        \
     "uniform vec3 u_back;\n"                                                         \
-    "uniform vec3 u_eye;\n" PORT_GL_SUN_SHADER                                       \
-        PORT_GL_LIGHTS_SHADER PORT_GL_TONE_SHADER                                    \
+    "uniform vec3 u_eye;\n" PORT_GL_SUN_SHADER PORT_GL_LIGHTS_SHADER                 \
+        PORT_GL_LIGHTS_LIFTED_SHADER PORT_GL_TONE_SHADER                             \
     "int slot_scaled(int scaled) {\n"                                                \
     "    int octave = scaled >> 11;\n"                                               \
     "    int fraction = (scaled & 2047) - 4096;\n"                                   \
@@ -687,6 +744,24 @@ static u32 port_DressSeedOf(const char *name, s32 stage, s32 kind) {
     "    }\n"                                                                        \
     "    base = color;\n"                                                            \
     "    if (u_lights_count != 0) { color += lights_add(place, n); }\n"              \
+    "    return color;\n"                                                            \
+    "}\n" /* the same, the sun's maps read at `sun_place` and the lights' at         \
+           * `place`, each light's `lift` units nearer to it (the foliage:           \
+           * port_GlDressingDrawLightCasters) */                                     \
+    "vec3 dress_light_lifted(vec3 sun_place, vec3 place, vec3 n, float lift,\n"      \
+    "                        out vec3 base) {\n"                                     \
+    "    vec3 ir = max(u_light * n, vec3(0.0)) * 4096.0;\n"                          \
+    "    vec3 color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"          \
+    "    if (u_sun_on != 0) {\n"                                                     \
+    "        float seen = sun_visible(sun_place, n);\n"                              \
+    "        if (seen < 1.0) {\n"                                                    \
+    "            vec3 to_sun = vec3(u_light[0][0], u_light[1][0], u_light[2][0]);\n" \
+    "            float turn = max(dot(to_sun, n), 0.0);\n"                           \
+    "            color = sun_shade(color, u_color[0] * turn * 256.0, seen);\n"       \
+    "        }\n"                                                                    \
+    "    }\n"                                                                        \
+    "    base = color;\n"                                                            \
+    "    if (u_lights_count != 0) { color += lights_add_lifted(place, n, lift); }\n" \
     "    return color;\n"                                                            \
     "}\n" /* a colour of 0 to 1 lit, in bytes: the texel times the light over        \
            * sixteen, as the mesh (a texel being five bits) */                       \
@@ -919,7 +994,48 @@ static const char g_dress_solid_fragment[] =
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out float o_slot;\n"
     "layout(location = 2) out float o_deep;\n"
+    /* a mesh between the camera and a fighter thinned as the ground's mesh
+     * thins the piece it stands in for (gl_stage.c, `see_through`): the
+     * fighters' upright cylinders, none for the foliage */
+    "uniform int u_see_count;\n"
+    "uniform vec4 u_see_axis[3];\n"
+    "uniform float u_see_radius[3];\n"
+    "float see_through() {\n"
+    "    vec3 normal = normalize(v_normal);\n"
+    "    if (abs(normal.y) > 0.7 && u_eye.y < v_place.y) { return 0.0; }\n"
+    "    vec3 sight = v_place - u_eye;\n"
+    "    float reach = length(sight);\n"
+    "    if (reach < 1.0) { return 0.0; }\n"
+    "    sight /= reach;\n"
+    "    float level = dot(sight.xz, sight.xz);\n"
+    "    if (level < 1e-4) { return 0.0; }\n"
+    "    float most = 0.0;\n"
+    "    for (int i = 0; i < 3; i++) {\n"
+    "        if (i >= u_see_count) { break; }\n"
+    "        vec2 axis = u_see_axis[i].xy;\n"
+    "        float t = dot(axis - u_eye.xz, sight.xz) / level;\n"
+    "        float apart = length(u_eye.xz + t * sight.xz - axis);\n"
+    "        float height = u_eye.y + t * sight.y;\n"
+    "        float r = u_see_radius[i];\n"
+    "        float inside = 1.0 - smoothstep(0.45 * r, r, apart);\n"
+    "        float upright = smoothstep(u_see_axis[i].z - 240.0,\n"
+    "                                   u_see_axis[i].z, height)\n"
+    "                      * (1.0 - smoothstep(u_see_axis[i].w - 80.0,\n"
+    "                                          u_see_axis[i].w + 20.0,\n"
+    "                                          height));\n"
+    "        float behind = smoothstep(80.0, 320.0, t - reach);\n"
+    "        most = max(most, inside * upright * behind);\n"
+    "    }\n"
+    "    return most;\n"
+    "}\n"
     "void main() {\n"
+    "    if (u_see_count > 0) {\n"
+    "        ivec2 at = ivec2(gl_FragCoord.xy) & 3;\n"
+    "        int order[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6,\n"
+    "                                3, 11, 1, 9, 15, 7, 13, 5);\n"
+    "        if ((float(order[at.y * 4 + at.x]) + 0.5) / 16.0\n"
+    "            < 0.8 * see_through()) { discard; }\n"
+    "    }\n"
     "    vec3 albedo = v_albedo;\n"
     "    if (v_card.z > 0.5) {\n"
     "        vec2 q = v_card.xy;\n"
@@ -940,7 +1056,8 @@ static const char g_dress_solid_fragment[] =
     "    vec3 n = normalize(v_normal);\n"
     "    if (dot(n, u_eye - v_place) < 0.0 && v_card.z < 0.5) { n = -n; }\n"
     "    vec3 base;\n"
-    "    vec3 lit = dress_light(v_place - u_sun_travel * u_lift, n, base);\n"
+    "    vec3 lit = dress_light_lifted(v_place - u_sun_travel * u_lift, v_place,\n"
+    "                                  n, u_lift, base);\n"
     "    vec3 color = dress_shade(albedo * v_shade, base, lit);\n"
     "    color = mix(color, u_fog_color.rgb * 255.0, dress_fog(v_depth));\n"
     "    o_color = vec4(color / 255.0, 1.0);\n"
@@ -1405,22 +1522,6 @@ static const char g_dress_particles_vertex[] =
     "        is_placed = true;\n"
     "        tint *= shade;\n"
     "        size = 0.0;\n"
-    "    } else if (u_kind == 10) {\n"
-    /* mist: banks drifting with the wind across the area, low */
-    "        vec2 span = u_area.zw - u_area.xy;\n"
-    "        float speed = 60.0 + 240.0 * u_wind.z;\n"
-    "        vec2 p = at_xz - u_area.xy + normalize(u_wind.xy + vec2(1e-4))\n"
-    "               * u_clock * speed * mix(0.7, 1.3, dress_random(s, 6u));\n"
-    "        p = mod(p, span);\n"
-    "        float edge = min(min(p.x, span.x - p.x), min(p.y, span.y - p.y));\n"
-    "        squash = 0.38;\n"
-    "        at = vec3(u_area.x + p.x,\n"
-    "                  u_ground - size * squash - mix(0.0, u_top, dress_random(s, 3u)),\n"
-    "                  u_area.y + p.y);\n"
-    "        float near = length(at - u_camera);\n"
-    "        alpha = 0.16 * u_glow * smoothstep(0.0, size, edge)\n"
-    "              * smoothstep(size * 0.4, size * 1.4, near);\n"
-    "        spin = (dress_random(s, 7u) - 0.5) * 0.4;\n"
     "    } else {\n"
     /* over an area: falling (leaves, snow, petals) or hovering (fireflies) */
     "        if (u_kind == 5) {\n"
@@ -1491,7 +1592,7 @@ static const char g_dress_particles_fragment[] =
     "        vec2 c = v_corner * vec2(1.0, 2.0);\n"
     "        float ring = 1.0 - smoothstep(0.0, 0.25, abs(length(c) - 0.75));\n"
     "        shape = v_corner.y < 0.1 ? ring : 0.0;\n"
-    "    } else if (u_kind == 7 || u_kind == 10 || u_kind == 9) {\n"
+    "    } else if (u_kind == 7 || u_kind == 9) {\n"
     "        shape = 1.0 - smoothstep(0.0, 1.0, r);\n"
     "        shape *= shape;\n"
     "    } else if (v_glow > 0.5 && (u_kind == 2 || u_kind == 5)) {\n"
@@ -1621,7 +1722,7 @@ static const char g_dress_shaft_fragment[] =
     "            float d = texture(u_fighter, uv).r;\n"
     "            if (d < 1.0) {\n"
     "                float z = u_fighter_a_b.y / (2.0 * d - 1.0 - u_fighter_a_b.x);\n"
-    "                te = min(te, z / max(v_depth, 1e-3));\n"
+    "                te = min(te, z * u_depth / 262144.0 / max(v_depth, 1e-3));\n"
     "            }\n"
     "        }\n"
     "    }\n"
@@ -1639,6 +1740,153 @@ static const char g_dress_shaft_fragment[] =
     "               * (1.0 - dress_fog(v_depth));\n"
     "    o_color = vec4(clamp(color, 0.0, 255.0) / 255.0, 1.0);\n"
     "    gl_FragDepth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
+    "}\n";
+
+/* The mist (`kind = mist`): the box of air over its area, from the ground
+ * up to `top` over its highest, each of its faces; in the fragment the mist
+ * gathered along the line of sight through it, up to the ground's or a
+ * fighter's depth there, thick near the ground under each point (the map
+ * of the ground's heights, port_DressGrowMist) and thinning with height,
+ * in banks that drift with the wind. Drawn at the picture's end, with the
+ * shafts (port_GlDressingDrawLate). */
+static const char g_dress_mist_vertex[] =
+    "#version 330 core\n" DRESS_COMMON "uniform vec4 u_area;\n"
+    "uniform vec2 u_slab;\n" /* the box's top and bottom, y */
+    "out vec3 v_place;\n"
+    "out float v_depth;\n"
+    "void main() {\n"
+    "    const int corner[36] = int[36](0, 4, 6, 0, 6, 2, 1, 3, 7, 1, 7, 5,\n"
+    "        0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 2, 3, 0, 3, 1,\n"
+    "        4, 5, 7, 4, 7, 6);\n"
+    "    int c = corner[gl_VertexID % 36];\n"
+    "    vec3 p = vec3((c & 1) != 0 ? u_area.z : u_area.x,\n"
+    "                  (c & 2) != 0 ? u_slab.y : u_slab.x,\n"
+    "                  (c & 4) != 0 ? u_area.w : u_area.y);\n"
+    "    v_place = p;\n"
+    "    gl_Position = dress_project(p, v_depth);\n"
+
+    "}\n";
+
+static const char g_dress_mist_fragment[] =
+    "#version 430 core\n" DRESS_FRAGMENT_COMMON "uniform float u_clock;\n"
+    "uniform vec4 u_wind;\n"
+    "uniform vec4 u_area;\n"
+    "uniform vec2 u_slab;\n"
+    "uniform float u_top;\n"  /* how high it lies over the ground */
+    "uniform float u_size;\n" /* a bank's size */
+    "uniform float u_glow;\n" /* how thick */
+    "uniform vec3 u_tint;\n"
+    "uniform vec3 u_sky_low;\n" /* the time's horizon, 0 to 1 */
+    /* the heights of the ground under the area (r, world y), x0 z0 and one
+     * over the width and depth it covers */
+    "uniform sampler2D u_map;\n"
+    "uniform vec4 u_map_box;\n"
+    /* the ground's depth a pixel, the world's units along the view
+     * (gl.h, PortGlPicture's ground_depth) */
+    "uniform sampler2D u_scene;\n"
+    "uniform sampler2D u_noise;\n"
+    "uniform int u_fighter_on;\n"
+    "uniform sampler2D u_fighter;\n"
+    "uniform mat4 u_fighter_matrix;\n"
+    "uniform vec2 u_fighter_a_b;\n"
+    "in vec3 v_place;\n"
+    "in float v_depth;\n"
+    "layout(location = 0) out vec4 o_color;\n"
+    /* how thick the mist is at a point: banks of a noise drifting with the
+     * wind, a slower one under them, thinning upwards from the ground under
+     * the point, their tops ragged; and less towards the area's edges */
+    "float m_thick(vec3 p) {\n"
+    "    vec2 drift = u_wind.xy * u_clock * (40.0 + 160.0 * u_wind.z);\n"
+    "    vec2 q = (p.xz - drift) / u_size;\n"
+    /* the noise's three octaves, and a slower one, from the tile made once
+     * (port_DressMakeNoise): eight of its cells across */
+    "    float n = texture(u_noise, q / 8.0).r;\n"
+    "    float slow = texture(u_noise, (p.xz + drift * 0.4) / (u_size * 3.1)\n"
+    "                                  / 8.0 + 0.37).g;\n"
+    "    float banks = smoothstep(0.34, 0.70, n * 0.7 + slow * 0.45);\n"
+    "    float ground = texture(u_map, (p.xz - u_map_box.xy) * u_map_box.zw).r;\n"
+    "    float h = ground - p.y;\n" /* how high over the ground; y runs down */
+    "    if (h < -40.0) { return 0.0; }\n"
+    "    float top = u_top * (0.45 + 0.85 * n);\n"
+    "    float rise = exp(-max(h, 0.0) / max(top * 0.45, 1.0))\n"
+    "               * (1.0 - smoothstep(top * 0.6, top * 1.25, h));\n"
+    "    vec2 edge = min(p.xz - u_area.xy, u_area.zw - p.xz);\n"
+    "    float inside = smoothstep(0.0, u_size * 0.8, min(edge.x, edge.y));\n"
+    "    return (0.12 + 0.88 * banks) * rise * inside;\n"
+    "}\n"
+    "void main() {\n"
+    "    vec3 ray = v_place - u_eye;\n"
+    "    vec3 lo = vec3(u_area.x, u_slab.x, u_area.y);\n"
+    "    vec3 hi = vec3(u_area.z, u_slab.y, u_area.w);\n"
+    "    vec3 inv = 1.0 / (ray + vec3(1e-7));\n"
+    "    vec3 t1 = (lo - u_eye) * inv;\n"
+    "    vec3 t2 = (hi - u_eye) * inv;\n"
+    "    vec3 tn = min(t1, t2);\n"
+    "    vec3 tf = max(t1, t2);\n"
+    "    float t0 = max(max(tn.x, tn.y), tn.z);\n"
+    "    float te = min(min(tf.x, tf.y), tf.z);\n"
+    /* this face is the first of the box seen: where the line of sight
+     * enters it, or where it leaves it with the eye inside */
+    "    if (t0 < 0.0) {\n"
+    "        if (abs(te - 1.0) > 0.02) { discard; }\n"
+    "        t0 = 0.0;\n"
+    "        te = 1.0;\n"
+    "    } else if (abs(t0 - 1.0) > 0.02) {\n"
+    "        discard;\n"
+    "    }\n"
+    /* not past the ground, nor a fighter (the view's depth runs along the
+     * line of sight: v_depth at this face, t of 1) */
+    "    float z = texelFetch(u_scene, ivec2(gl_FragCoord.xy), 0).r;\n"
+    "    if (z > 0.0) { te = min(te, z * u_depth / 262144.0 / max(v_depth, 1e-3)); }\n"
+    "    if (u_fighter_on != 0) {\n"
+    "        vec4 c = u_fighter_matrix * vec4(v_place, 1.0);\n"
+    "        vec2 uv = c.xy / max(c.w, 1e-3) * 0.5 + 0.5;\n"
+    "        if (c.w > 0.0 && uv == clamp(uv, 0.0, 1.0)) {\n"
+    "            float d = texture(u_fighter, uv).r;\n"
+    "            if (d < 1.0) {\n"
+    "                float fz = u_fighter_a_b.y / (2.0 * d - 1.0 - u_fighter_a_b.x);\n"
+    "                te = min(te, fz * u_depth / 262144.0 / max(v_depth, 1e-3));\n"
+    "            }\n"
+    "        }\n"
+    "    }\n"
+    /* not right at the eye: the camera is not wrapped in it */
+    "    float len = length(ray);\n"
+    "    t0 = max(t0, 250.0 / max(len, 1e-3));\n"
+    "    if (te <= t0) { discard; }\n"
+    /* six steps, the first shifted by the pixel so that the steps' bands
+     * become a fine grain */
+    "    float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy,\n"
+    "                                              vec2(0.06711056, 0.00583715))));\n"
+    "    float dt = (te - t0) / 6.0;\n"
+    "    float optical = 0.0;\n"
+    "    float weighted = 0.0;\n"
+    "    for (int i = 0; i < 6; i++) {\n"
+    "        float t = t0 + (float(i) + jitter) * dt;\n"
+    "        float k = m_thick(u_eye + ray * t);\n"
+    "        optical += k;\n"
+    "        weighted += k * t;\n"
+    "    }\n"
+    "    float seen = 1.0 - exp(-optical * dt * len * u_glow / 600.0);\n"
+    "    if (seen < 0.003) { discard; }\n"
+    /* its light: the stage's from above, the sun's through it brighter
+     * looking towards the sun (not the lamps': a quarter of a millisecond of
+     * the card's frame for the cemetery's two candles); far off, the colour
+     * of the time's horizon */
+    "    vec3 dir = ray / len;\n"
+    "    float t_mid = optical > 0.0 ? weighted / optical : 0.5 * (t0 + te);\n"
+    "    vec3 up = vec3(0.0, -1.0, 0.0);\n"
+    "    vec3 ir = max(u_light * up, vec3(0.0)) * 4096.0;\n"
+    "    vec3 base = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    vec3 to_sun = vec3(u_light[0][0], u_light[1][0], u_light[2][0]);\n"
+    "    float toward = max(dot(dir, normalize(to_sun + vec3(1e-5))), 0.0);\n"
+    "    vec3 sun = u_color[0] * 256.0 * (0.35 * pow(toward, 6.0) + 0.12);\n"
+    "    vec3 color = u_tint * (base * 1.45 + u_sky_low * 255.0 * 0.6\n"
+    "                           + max(sun, vec3(0.0)));\n"
+    "    float far_off = smoothstep(4000.0, 30000.0, t_mid * len);\n"
+    "    color = mix(color, u_sky_low * 255.0 * 0.85, far_off * 0.55);\n"
+    "    color = tone_map(color, color);\n"
+    "    color = mix(color, u_fog_color.rgb * 255.0, dress_fog(t_mid * v_depth));\n"
+    "    o_color = vec4(clamp(color, 0.0, 255.0) / 255.0, seen * 0.92);\n"
     "}\n";
 
 /* The foliage as the sun sees it: its depth alone, a leaf and a bloom cut
@@ -1785,8 +2033,94 @@ static void port_DressLocate(GLuint program, DressAt *at) {
     at->fighter = glGetUniformLocation(program, "u_fighter");
     at->fighter_matrix = glGetUniformLocation(program, "u_fighter_matrix");
     at->fighter_a_b = glGetUniformLocation(program, "u_fighter_a_b");
+    at->slab = glGetUniformLocation(program, "u_slab");
+    at->scene = glGetUniformLocation(program, "u_scene");
+    at->noise = glGetUniformLocation(program, "u_noise");
+    at->see_count = glGetUniformLocation(program, "u_see_count");
+    at->see_axis = glGetUniformLocation(program, "u_see_axis");
+    at->see_radius = glGetUniformLocation(program, "u_see_radius");
     port_GlSunLocate(program, &at->sun);
     port_GlLightsLocate(program, &at->lights);
+}
+
+static u8 port_DressByte(float value);
+
+/* A lattice value of the mist's noise: a hash of the cell, wrapping at
+ * `period` so that the tile repeats, 0 to 1. */
+static float port_DressLattice(s32 x, s32 z, s32 period, u32 seed) {
+    u32 h = (u32)((x % period + period) % period) * 1597334677u ^
+            (u32)((z % period + period) % period) * 3812015801u ^ seed;
+
+    h ^= h >> 16;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16;
+    return (float)(h >> 8) / 16777216.0f;
+}
+
+/* A value noise of `period` cells across the tile, at a texel. */
+static float port_DressValueNoise(s32 tx, s32 tz, s32 period, u32 seed) {
+    float fx = (float)tx * (float)period / NOISE_SIDE;
+    float fz = (float)tz * (float)period / NOISE_SIDE;
+    s32 ix = (s32)fx;
+    s32 iz = (s32)fz;
+    float u = fx - (float)ix;
+    float v = fz - (float)iz;
+    float a;
+    float b;
+
+    u = u * u * (3.0f - 2.0f * u);
+    v = v * v * (3.0f - 2.0f * v);
+    a = port_DressLattice(ix, iz, period, seed) +
+        (port_DressLattice(ix + 1, iz, period, seed) -
+         port_DressLattice(ix, iz, period, seed)) *
+            u;
+    b = port_DressLattice(ix, iz + 1, period, seed) +
+        (port_DressLattice(ix + 1, iz + 1, period, seed) -
+         port_DressLattice(ix, iz + 1, period, seed)) *
+            u;
+    return a + (b - a) * v;
+}
+
+/* The mist's tile of noise, made once: red three octaves of a value noise
+ * (8, 16 and 32 cells across), green another of the same, both repeating,
+ * so that the mist's banks are two reads of a texture a step and not
+ * sixteen hashes (it was 3 ms of the card's frame at 2,560 by 1,440). */
+static void port_DressMakeNoise(void) {
+    u8 *texels = (u8 *)malloc(NOISE_SIDE * NOISE_SIDE * 4);
+    s32 x;
+    s32 z;
+
+    if (texels == NULL) {
+        return;
+    }
+    for (z = 0; z < NOISE_SIDE; z++) {
+        for (x = 0; x < NOISE_SIDE; x++) {
+            u8 *t = &texels[(z * NOISE_SIDE + x) * 4];
+            float r = 0.55f * port_DressValueNoise(x, z, 8, 11u) +
+                      0.30f * port_DressValueNoise(x, z, 16, 23u) +
+                      0.15f * port_DressValueNoise(x, z, 32, 37u);
+            float g = 0.55f * port_DressValueNoise(x, z, 8, 51u) +
+                      0.30f * port_DressValueNoise(x, z, 16, 67u) +
+                      0.15f * port_DressValueNoise(x, z, 32, 79u);
+
+            t[0] = port_DressByte(r);
+            t[1] = port_DressByte(g);
+            t[2] = 0;
+            t[3] = 255;
+        }
+    }
+    glGenTextures(1, &g_dress.noise);
+    glBindTexture(GL_TEXTURE_2D, g_dress.noise);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, NOISE_SIDE, NOISE_SIDE, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, texels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    free(texels);
 }
 
 const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
@@ -1815,9 +2149,11 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         port_DressProgram(g_dress_shaft_vertex, g_dress_shaft_fragment);
     g_dress.foliage_caster = port_DressProgram(
         g_dress_foliage_vertex, g_dress_foliage_caster_fragment);
+    g_dress.mist =
+        port_DressProgram(g_dress_mist_vertex, g_dress_mist_fragment);
     if (g_dress.foliage == 0 || g_dress.mesh == 0 || g_dress.water == 0 ||
         g_dress.particles == 0 || g_dress.caster == 0 || g_dress.shaft == 0 ||
-        g_dress.foliage_caster == 0) {
+        g_dress.foliage_caster == 0 || g_dress.mist == 0) {
         return g_dress.problem;
     }
     port_DressLocate(g_dress.foliage_caster, &g_dress.foliage_caster_at);
@@ -1826,6 +2162,7 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
     g_dress.foliage_caster_at_sun =
         glGetUniformLocation(g_dress.foliage_caster, "u_sun");
     port_DressLocate(g_dress.shaft, &g_dress.shaft_at);
+    port_DressLocate(g_dress.mist, &g_dress.mist_at);
     glGenTextures(MAPS_MOST, g_dress.maps);
     g_dress.caster_at_sun = glGetUniformLocation(g_dress.caster, "u_sun");
     port_DressLocate(g_dress.foliage, &g_dress.foliage_at);
@@ -1881,6 +2218,7 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
+    port_DressMakeNoise();
     g_dress.grown_serial = -1;
     g_dress.seed = 0x9E3779B9u;
     g_dress.is_started = TRUE;
@@ -1941,10 +2279,109 @@ static void port_DressPieceGrow(s32 piece, const float *at) {
     g_dress.piece_has[piece] = TRUE;
 }
 
+/* A face of a piece, as the culms are found from it: its box, and whether
+ * it stands upright. */
+typedef struct {
+    s32 piece;
+    s32 is_upright;
+    float lo[3];
+    float hi[3];
+} DressPieceFace;
+
+/* How far from level a face's normal may be and the face still upright. */
+#define CULM_UPRIGHT 0.35f
+
+/* Each piece's culms (`culms`): its upright faces that reach down to the
+ * piece's foot, those whose boxes touch from above made one column; each
+ * column then as tall as every face of the piece over its footprint; kept
+ * where it is at least three times as tall as it is wide. A bamboo clump's
+ * culm is its one column of faces, its leaves the cards that hang about it
+ * high up and reach no foot. */
+static void port_DressFindCulms(const DressPieceFace *faces, s32 count) {
+    s32 i;
+    s32 c;
+
+    for (i = 0; i < count; i++) {
+        const DressPieceFace *f = &faces[i];
+        s32 p = f->piece;
+        s32 n;
+
+        if (!f->is_upright || !g_dress.piece_has[p] ||
+            f->hi[1] < g_dress.piece_hi[p][1] - CULM_JOIN) {
+            continue;
+        }
+        n = g_dress.culm_count[p];
+        for (c = 0; c < n; c++) {
+            float *lo = g_dress.culm_lo[p][c];
+            float *hi = g_dress.culm_hi[p][c];
+
+            if (f->lo[0] <= hi[0] + CULM_JOIN &&
+                f->hi[0] >= lo[0] - CULM_JOIN &&
+                f->lo[2] <= hi[2] + CULM_JOIN &&
+                f->hi[2] >= lo[2] - CULM_JOIN) {
+                break;
+            }
+        }
+        if (c == n) {
+            if (n >= CULMS_MOST) {
+                continue;
+            }
+            g_dress.culm_count[p]++;
+            memcpy(g_dress.culm_lo[p][c], f->lo, sizeof(f->lo));
+            memcpy(g_dress.culm_hi[p][c], f->hi, sizeof(f->hi));
+            continue;
+        }
+        for (n = 0; n < 3; n++) {
+            float *lo = g_dress.culm_lo[p][c];
+            float *hi = g_dress.culm_hi[p][c];
+
+            lo[n] = f->lo[n] < lo[n] ? f->lo[n] : lo[n];
+            hi[n] = f->hi[n] > hi[n] ? f->hi[n] : hi[n];
+        }
+    }
+    /* each column's top: any face of the piece over its footprint */
+    for (i = 0; i < count; i++) {
+        const DressPieceFace *f = &faces[i];
+        s32 p = f->piece;
+
+        for (c = 0; c < g_dress.culm_count[p]; c++) {
+            float *lo = g_dress.culm_lo[p][c];
+            const float *hi = g_dress.culm_hi[p][c];
+
+            if (f->lo[0] >= lo[0] - CULM_JOIN &&
+                f->hi[0] <= hi[0] + CULM_JOIN &&
+                f->lo[2] >= lo[2] - CULM_JOIN &&
+                f->hi[2] <= hi[2] + CULM_JOIN && f->lo[1] < lo[1]) {
+                lo[1] = f->lo[1];
+            }
+        }
+    }
+    /* only the tall: a column, not a block */
+    for (i = 0; i < PIECES_MOST; i++) {
+        s32 kept = 0;
+
+        for (c = 0; c < g_dress.culm_count[i]; c++) {
+            float *lo = g_dress.culm_lo[i][c];
+            float *hi = g_dress.culm_hi[i][c];
+            float wide =
+                hi[0] - lo[0] > hi[2] - lo[2] ? hi[0] - lo[0] : hi[2] - lo[2];
+
+            if (hi[1] - lo[1] >= 3.0f * wide && wide > 1.0f) {
+                memmove(g_dress.culm_lo[i][kept], lo, 3 * sizeof(float));
+                memmove(g_dress.culm_hi[i][kept], hi, 3 * sizeof(float));
+                kept++;
+            }
+        }
+        g_dress.culm_count[i] = kept;
+    }
+}
+
 void port_GlDressingNoteGround(
     const void *vertices, s32 stride, s32 count, s32 pieces_from) {
     const u8 *bytes = (const u8 *)vertices;
     const u16 *vram = g_port_gl_vram != NULL ? g_port_gl_vram : g_port_vram;
+    DressPieceFace *faces;
+    s32 face_count = 0;
     s32 kept = 0;
     s32 i;
     s32 b;
@@ -1999,6 +2436,12 @@ void port_GlDressingNoteGround(
         }
     }
     memset(g_dress.piece_has, 0, sizeof(g_dress.piece_has));
+    memset(g_dress.culm_count, 0, sizeof(g_dress.culm_count));
+    faces =
+        count > pieces_from
+            ? (DressPieceFace *)malloc((size_t)((count - pieces_from) / 3 + 1) *
+                                       sizeof(DressPieceFace))
+            : NULL;
     for (i = 0; i + 2 < count; i += 3) {
         const DressStageVertex *v[3];
         DressTri *t = &g_dress.tris[kept];
@@ -2020,6 +2463,25 @@ void port_GlDressingNoteGround(
                 port_DressPieceGrow(piece, &v[0]->x);
                 port_DressPieceGrow(piece, &v[1]->x);
                 port_DressPieceGrow(piece, &v[2]->x);
+                if (faces != NULL) {
+                    DressPieceFace *f = &faces[face_count++];
+
+                    f->piece = piece;
+                    f->is_upright = up > -CULM_UPRIGHT && up < CULM_UPRIGHT;
+                    for (k = 0; k < 3; k++) {
+                        f->lo[k] = f->hi[k] = (&v[0]->x)[k];
+                    }
+                    for (k = 0; k < 3; k++) {
+                        s32 c;
+
+                        for (c = 1; c < 3; c++) {
+                            float a = (&v[c]->x)[k];
+
+                            f->lo[k] = a < f->lo[k] ? a : f->lo[k];
+                            f->hi[k] = a > f->hi[k] ? a : f->hi[k];
+                        }
+                    }
+                }
             }
         }
         if (up > FACES_UP) {
@@ -2061,6 +2523,10 @@ void port_GlDressingNoteGround(
         kept++;
     }
     g_dress.tri_count = kept;
+    if (faces != NULL) {
+        port_DressFindCulms(faces, face_count);
+        free(faces);
+    }
     if (kept == 0) {
         return;
     }
@@ -2440,6 +2906,109 @@ static void port_DressGrowFoliage(
         run->count++;
     }
     run->ground_y = run->count > 0 ? (float)(ground_sum / run->count) : 0.0f;
+}
+
+/* A thing's square, as a number to sort by, and the thing's own number. */
+typedef struct {
+    u32 key;
+    s32 index;
+} DressSquareOf;
+
+/* A block's foliage put in the order of its squares, and a span made of
+ * each square (DressSpan), the box it reaches into grown by the tallest
+ * thing's height (a blade leans by less than its height). */
+static void port_DressSpanRun(const PortDressDef *def, s32 run_at) {
+    DressRun *run = &g_dress.runs[run_at];
+    DressSquareOf *order;
+    DressThing *copy;
+    float reach = (float)def->height[1] + TUFT_REACH;
+    s32 i;
+
+    if (run->count == 0) {
+        return;
+    }
+    order = (DressSquareOf *)malloc((size_t)run->count * sizeof(*order));
+    copy = (DressThing *)malloc((size_t)run->count * sizeof(*copy));
+    if (order == NULL || copy == NULL) {
+        free(order);
+        free(copy);
+        return;
+    }
+    for (i = 0; i < run->count; i++) {
+        const DressThing *t = &g_dress.things[run->first + i];
+        s32 sx = (s32)((t->root[0] - g_dress.lo[0]) / SPAN_SIZE);
+        s32 sz = (s32)((t->root[2] - g_dress.lo[1]) / SPAN_SIZE);
+
+        sx = sx < 0 ? 0 : sx > 255 ? 255 : sx;
+        sz = sz < 0 ? 0 : sz > 255 ? 255 : sz;
+        order[i].key = (u32)(sz * 256 + sx);
+        order[i].index = i;
+    }
+    /* in the order of the squares, each square's things in their own order:
+     * a count of each square, then each thing put after those before it
+     * (a sort by comparing took some milliseconds of the first frame) */
+    {
+        s32 *first = (s32 *)calloc(SQUARES_MOST + 1, sizeof(s32));
+        DressSquareOf *sorted =
+            (DressSquareOf *)malloc((size_t)run->count * sizeof(*sorted));
+
+        if (first == NULL || sorted == NULL) {
+            free(first);
+            free(sorted);
+            free(order);
+            free(copy);
+            return;
+        }
+        for (i = 0; i < run->count; i++) {
+            first[order[i].key + 1]++;
+        }
+        for (i = 0; i < SQUARES_MOST; i++) {
+            first[i + 1] += first[i];
+        }
+        for (i = 0; i < run->count; i++) {
+            sorted[first[order[i].key]++] = order[i];
+        }
+        memcpy(order, sorted, (size_t)run->count * sizeof(*order));
+        free(sorted);
+        free(first);
+    }
+    memcpy(
+        copy, &g_dress.things[run->first], (size_t)run->count * sizeof(*copy));
+    for (i = 0; i < run->count; i++) {
+        g_dress.things[run->first + i] = copy[order[i].index];
+    }
+    for (i = 0; i < run->count; i++) {
+        const DressThing *t = &g_dress.things[run->first + i];
+        DressSpan *span;
+        s32 k;
+
+        if (i == 0 || order[i].key != order[i - 1].key) {
+            if (g_dress.span_count < SPANS_MOST) {
+                span = &g_dress.spans[g_dress.span_count++];
+                span->run = run_at;
+                span->first = run->first + i;
+                span->count = 0;
+                for (k = 0; k < 3; k++) {
+                    span->lo[k] = t->root[k] - reach;
+                    span->hi[k] = t->root[k] + reach;
+                }
+            } else if (i == 0) {
+                /* no span left: the block casts into no light's map */
+                break;
+            }
+        }
+        /* with no span left, the rest of the block goes into its last */
+        span = &g_dress.spans[g_dress.span_count - 1];
+        span->count = run->first + i + 1 - span->first;
+        for (k = 0; k < 3; k++) {
+            span->lo[k] = t->root[k] - reach < span->lo[k] ? t->root[k] - reach
+                                                           : span->lo[k];
+            span->hi[k] = t->root[k] + reach > span->hi[k] ? t->root[k] + reach
+                                                           : span->hi[k];
+        }
+    }
+    free(order);
+    free(copy);
 }
 
 /* A water's map, a texel of each place over its areas, read by its
@@ -2888,6 +3457,98 @@ static void port_DressGrowShafts(
 
 /* The ground's height under a block's areas, for its particles: the mean of
  * a few places. */
+/* A mist's map: the height of the ground under each place of its first
+ * area (the ground's own faces, not a piece's, and within its `heights`
+ * where it says: a bridge over a gorge holds no mist, the gorge does),
+ * MIST_SIDE a side, where none is found the mean of those that are; and its box
+ * of air, from the lowest ground to `top` over the highest. */
+#define MIST_SIDE 160
+#define MIST_UNDER 120.0f
+
+static void port_DressGrowMist(const PortDressDef *def, DressRun *run) {
+    float *heights;
+    u8 *has;
+    float lo[2];
+    float hi[2];
+    float low = -1e30f; /* the lowest ground: the largest y */
+    float high = 1e30f; /* the highest: the least */
+    double sum = 0.0;
+    s32 found = 0;
+    s32 x;
+    s32 z;
+    s32 i;
+
+    run->map = -1;
+    if (def->area_count == 0) {
+        return;
+    }
+    heights = (float *)malloc(MIST_SIDE * MIST_SIDE * sizeof(float));
+    has = (u8 *)malloc(MIST_SIDE * MIST_SIDE);
+    if (heights == NULL || has == NULL) {
+        free(heights);
+        free(has);
+        return;
+    }
+    lo[0] = (float)def->area[0][0];
+    lo[1] = (float)def->area[0][1];
+    hi[0] = (float)def->area[0][2];
+    hi[1] = (float)def->area[0][3];
+    for (z = 0; z < MIST_SIDE; z++) {
+        for (x = 0; x < MIST_SIDE; x++) {
+            float px = lo[0] + ((float)x + 0.5f) * (hi[0] - lo[0]) / MIST_SIDE;
+            float pz = lo[1] + ((float)z + 0.5f) * (hi[1] - lo[1]) / MIST_SIDE;
+            float y;
+            float level;
+            float rgb[3];
+            s32 is_piece = FALSE;
+
+            i = z * MIST_SIDE + x;
+            has[i] =
+                port_DressGroundAt(px, pz, &y, &level, rgb, &is_piece) &&
+                !is_piece &&
+                (!def->has_heights ||
+                 (y >= (float)def->heights[0] && y <= (float)def->heights[1]));
+            heights[i] = has[i] ? y : 0.0f;
+            if (has[i]) {
+                sum += y;
+                found++;
+                low = y > low ? y : low;
+                high = y < high ? y : high;
+            }
+        }
+    }
+    if (found == 0) {
+        free(heights);
+        free(has);
+        return;
+    }
+    for (i = 0; i < MIST_SIDE * MIST_SIDE; i++) {
+        if (!has[i]) {
+            heights[i] = (float)(sum / found);
+        }
+    }
+    run->slab[0] = high - (float)def->top;
+    run->slab[1] = low + MIST_UNDER;
+    run->map =
+        g_dress.map_count < MAPS_MOST ? g_dress.map_count++ : MAPS_MOST - 1;
+    run->map_box[0] = lo[0];
+    run->map_box[1] = lo[1];
+    run->map_box[2] = 1.0f / (hi[0] - lo[0]);
+    run->map_box[3] = 1.0f / (hi[1] - lo[1]);
+    glActiveTexture(GL_TEXTURE0 + MAP_UNIT);
+    glBindTexture(GL_TEXTURE_2D, g_dress.maps[run->map]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, MIST_SIDE, MIST_SIDE, 0, GL_RED,
+                 GL_FLOAT, heights);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    free(heights);
+    free(has);
+}
+
 static void port_DressGrowParticles(
     const PortDressDef *def, DressRun *run, s32 stage) {
     u32 state = port_DressSeedOf(def->name, stage, def->kind);
@@ -2914,6 +3575,9 @@ static void port_DressGrowParticles(
     }
     if (found > 0) {
         run->ground_y = (float)(sum / found);
+    }
+    if (def->subkind == PORT_PARTICLES_MIST) {
+        port_DressGrowMist(def, run);
     }
 }
 
@@ -3100,6 +3764,73 @@ static s32 port_DressReadObj(const char *path, float *lo, float *hi) {
     return g_dress.mesh_vertex_count - first;
 }
 
+/* The mesh files read as a stage grows, kept as they were read: a stage
+ * that names one file for many pieces (the bamboo's seventeen culms, of
+ * three files) reads each once (OBJ_KEPT_MOST of them). */
+#define OBJ_KEPT_MOST 8
+
+static struct {
+    char path[512];
+    DressVertex *vertices;
+    s32 count;
+    float lo[3];
+    float hi[3];
+} g_obj_kept[OBJ_KEPT_MOST];
+
+static s32 g_obj_kept_count;
+
+static void port_DressForgetObjs(void) {
+    s32 i;
+
+    for (i = 0; i < g_obj_kept_count; i++) {
+        free(g_obj_kept[i].vertices);
+        g_obj_kept[i].vertices = NULL;
+    }
+    g_obj_kept_count = 0;
+}
+
+/* port_DressReadObj, or the vertices of the same file read before this
+ * growing copied in. */
+static s32 port_DressReadObjKept(const char *path, float *lo, float *hi) {
+    s32 first = g_dress.mesh_vertex_count;
+    s32 count;
+    s32 i;
+
+    for (i = 0; i < g_obj_kept_count; i++) {
+        if (strcmp(g_obj_kept[i].path, path) == 0) {
+            count = g_obj_kept[i].count;
+            if (first + count > MESH_VERTICES_MOST) {
+                return 0;
+            }
+            memcpy(&g_dress.mesh_vertices[first], g_obj_kept[i].vertices,
+                   (size_t)count * sizeof(DressVertex));
+            memcpy(lo, g_obj_kept[i].lo, sizeof(g_obj_kept[i].lo));
+            memcpy(hi, g_obj_kept[i].hi, sizeof(g_obj_kept[i].hi));
+            g_dress.mesh_vertex_count = first + count;
+            return count;
+        }
+    }
+    count = port_DressReadObj(path, lo, hi);
+    if (count > 0 && g_obj_kept_count < OBJ_KEPT_MOST &&
+        strlen(path) < sizeof(g_obj_kept[0].path)) {
+        DressVertex *copy =
+            (DressVertex *)malloc((size_t)count * sizeof(DressVertex));
+
+        if (copy != NULL) {
+            memcpy(copy, &g_dress.mesh_vertices[first],
+                   (size_t)count * sizeof(DressVertex));
+            snprintf(g_obj_kept[g_obj_kept_count].path,
+                     sizeof(g_obj_kept[0].path), "%s", path);
+            g_obj_kept[g_obj_kept_count].vertices = copy;
+            g_obj_kept[g_obj_kept_count].count = count;
+            memcpy(g_obj_kept[g_obj_kept_count].lo, lo, 3 * sizeof(float));
+            memcpy(g_obj_kept[g_obj_kept_count].hi, hi, 3 * sizeof(float));
+            g_obj_kept_count++;
+        }
+    }
+    return count;
+}
+
 /* A piece's box in the world, of all its faces (port_GlDressingNoteGround):
  * FALSE where the mesh has none of it. */
 static s32 port_DressPieceBox(s32 piece, float *lo, float *hi) {
@@ -3113,6 +3844,96 @@ static s32 port_DressPieceBox(s32 piece, float *lo, float *hi) {
         hi[k] = g_dress.piece_hi[piece][k];
     }
     return TRUE;
+}
+
+/* A mesh's vertices scaled and set in place, their normals turned with
+ * them, and coloured as its block says (`color`, `tint`). */
+static void port_DressPlaceMesh(
+    const PortDressDef *def, DressVertex *vertices, s32 count,
+    const float *scale, const float *offset) {
+    s32 i;
+    s32 k;
+
+    for (i = 0; i < count; i++) {
+        DressVertex *v = &vertices[i];
+        float n[3];
+        float length;
+
+        for (k = 0; k < 3; k++) {
+            v->place[k] = v->place[k] * scale[k] + offset[k];
+            n[k] = v->normal[k] / scale[k];
+        }
+        length = port_DressRoot(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        for (k = 0; k < 3; k++) {
+            v->normal[k] = length > 0.0f ? n[k] / length : 0.0f;
+        }
+        if (def->has_color) {
+            for (k = 0; k < 3; k++) {
+                v->color[k] = def->color[k];
+            }
+        }
+        for (k = 0; k < 3; k++) {
+            float tinted = (float)v->color[k] * (float)def->tint[k] /
+                           PORT_DRESSING_ONE / CHANNEL_MOST;
+
+            v->color[k] = port_DressByte(tinted);
+        }
+    }
+}
+
+/* A mesh set at each culm of its piece (`culms`, port_DressFindCulms): a
+ * copy of it for each, as tall as the culm's column, as wide as its wider
+ * side and a little more (CULM_COVER) both ways, so that a round culm
+ * keeps the column's own corners inside it; the piece is kept (a bamboo
+ * clump's leaves hang from it), its column hidden in the mesh. */
+static void port_DressGrowCulms(
+    const PortDressDef *def, DressRun *run, s32 count, const float *turned_lo,
+    const float *turned_hi) {
+    s32 culms = def->piece < PIECES_MOST ? g_dress.culm_count[def->piece] : 0;
+    s32 c;
+
+    if (culms == 0) {
+        snprintf(g_dress.news, sizeof(g_dress.news),
+                 "dressing: mesh %s: piece %d has no culms (upright columns "
+                 "on its foot)",
+                 def->name, def->piece);
+        g_dress.has_news = TRUE;
+        g_dress.mesh_vertex_count = run->first;
+        return;
+    }
+    if (run->first + count * culms > MESH_VERTICES_MOST) {
+        culms = (MESH_VERTICES_MOST - run->first) / count;
+    }
+    for (c = culms - 1; c >= 0; c--) {
+        DressVertex *copy = &g_dress.mesh_vertices[run->first + c * count];
+        const float *lo = g_dress.culm_lo[def->piece][c];
+        const float *hi = g_dress.culm_hi[def->piece][c];
+        float wide =
+            (hi[0] - lo[0] > hi[2] - lo[2] ? hi[0] - lo[0] : hi[2] - lo[2]) *
+            CULM_COVER;
+        float scale[3];
+        float offset[3];
+        s32 k;
+
+        if (c > 0) {
+            memcpy(copy, &g_dress.mesh_vertices[run->first],
+                   (size_t)count * sizeof(DressVertex));
+        }
+        for (k = 0; k < 3; k++) {
+            float own = turned_hi[k] - turned_lo[k];
+            float want = k == 1 ? hi[1] - lo[1] : wide;
+
+            scale[k] = own > 1e-3f ? want / own : 1.0f;
+            offset[k] =
+                k == 1 ? lo[1] - turned_lo[1] * scale[1]
+                       : 0.5f * (lo[k] + hi[k]) -
+                             0.5f * (turned_lo[k] + turned_hi[k]) * scale[k];
+        }
+        port_DressPlaceMesh(def, copy, count, scale, offset);
+    }
+    g_dress.mesh_vertex_count = run->first + count * culms;
+    run->count = count * culms;
+    run->ground_y = g_dress.culm_hi[def->piece][0][1];
 }
 
 /* A mesh block: its file read, turned, scaled and set in place -- at `at`,
@@ -3142,7 +3963,7 @@ static void port_DressGrowMesh(const PortDressDef *def, DressRun *run) {
         g_dress.has_news = TRUE;
         return;
     }
-    count = port_DressReadObj(path, lo, hi);
+    count = port_DressReadObjKept(path, lo, hi);
     if (count == 0) {
         return;
     }
@@ -3184,6 +4005,10 @@ static void port_DressGrowMesh(const PortDressDef *def, DressRun *run) {
                                rgb, &is_piece)) {
             offset[1] = y + (float)def->at[1];
         }
+    }
+    if (def->culms && def->piece >= 0) {
+        port_DressGrowCulms(def, run, count, turned_lo, turned_hi);
+        return;
     }
     if (def->piece >= 0) {
         float box_lo[3];
@@ -3228,31 +4053,8 @@ static void port_DressGrowMesh(const PortDressDef *def, DressRun *run) {
         }
         g_dress.hidden[def->piece >> 5] |= 1u << (def->piece & 31);
     }
-    for (i = run->first; i < run->first + count; i++) {
-        DressVertex *v = &g_dress.mesh_vertices[i];
-        float n[3];
-        float length;
-
-        for (k = 0; k < 3; k++) {
-            v->place[k] = v->place[k] * scale[k] + offset[k];
-            n[k] = v->normal[k] / scale[k];
-        }
-        length = port_DressRoot(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
-        for (k = 0; k < 3; k++) {
-            v->normal[k] = length > 0.0f ? n[k] / length : 0.0f;
-        }
-        if (def->has_color) {
-            for (k = 0; k < 3; k++) {
-                v->color[k] = def->color[k];
-            }
-        }
-        for (k = 0; k < 3; k++) {
-            float tinted = (float)v->color[k] * (float)def->tint[k] /
-                           PORT_DRESSING_ONE / CHANNEL_MOST;
-
-            v->color[k] = port_DressByte(tinted);
-        }
-    }
+    port_DressPlaceMesh(
+        def, &g_dress.mesh_vertices[run->first], count, scale, offset);
     run->count = count;
     run->ground_y = offset[1];
 }
@@ -3267,6 +4069,8 @@ static void port_DressGrow(const PortDressSet *set, s32 stage) {
     g_dress.grown_set = set;
     g_dress.run_count = 0;
     g_dress.thing_count = 0;
+    g_dress.span_count = 0;
+    port_DressForgetObjs();
     g_dress.mesh_vertex_count = 0;
     g_dress.map_count = 0;
     g_dress.beam_count = 0;
@@ -3301,6 +4105,7 @@ static void port_DressGrow(const PortDressSet *set, s32 stage) {
         case PORT_DRESS_REEDS:
         case PORT_DRESS_FLOWERS:
             port_DressGrowFoliage(def, run, stage);
+            port_DressSpanRun(def, g_dress.run_count);
             break;
         case PORT_DRESS_WATER:
             port_DressGrowWater(def, run);
@@ -3329,6 +4134,7 @@ static void port_DressGrow(const PortDressSet *set, s32 stage) {
         counts[def->kind] += run->count;
         g_dress.run_count++;
     }
+    port_DressForgetObjs();
     glBindBuffer(GL_ARRAY_BUFFER, g_dress.thing_buffer);
     glBufferData(
         GL_ARRAY_BUFFER,
@@ -3723,6 +4529,48 @@ static void port_DressThingFormat(s32 first) {
                           (GLsizei)sizeof(DressThing), one->color);
 }
 
+/* Whether a mesh casts now: not one of a piece the game has cut down or
+ * changed (PortGlDressingView's `standing`). */
+static s32 port_DressMeshStands(const PortDressDef *def) {
+    return def->piece < 0 || def->piece >= 64 ||
+           (g_dress.standing[def->piece >> 5] & (1u << (def->piece & 31))) != 0;
+}
+
+/* An ordering-table slot of a depth in the world's units over eight, as
+ * the mesh's shader works it out (gl_stage.c, `slot_scaled`). */
+static s32 port_DressSlotScaled(s32 scaled) {
+    s32 octave = scaled >> 11;
+    s32 fraction = (scaled & 2047) - 4096;
+
+    return (fraction >> (octave & 31)) & 4095;
+}
+
+/* ... and is in the picture: where the game queued its piece this frame,
+ * and as the ground's mesh draws the piece itself (gl_stage.c): not where
+ * the piece, sorted at its middle's depth, is nearer than the frame's
+ * cutoff, which the game leaves out (a bamboo culm right by the camera). */
+static s32 port_DressMeshShown(
+    const PortDressDef *def, const PortGlDressingView *view) {
+    float lo[3];
+    float hi[3];
+    float z = 0.0f;
+    s32 k;
+
+    if (def->piece < 0 || def->piece >= 64) {
+        return TRUE;
+    }
+    if ((g_dress.queued[def->piece >> 5] & (1u << (def->piece & 31))) == 0) {
+        return FALSE;
+    }
+    if (!port_DressPieceBox(def->piece, lo, hi)) {
+        return TRUE;
+    }
+    for (k = 0; k < 3; k++) {
+        z += view->rotation[6 + k] * (0.5f * (lo[k] + hi[k]) - view->camera[k]);
+    }
+    return z > 0.0f && port_DressSlotScaled((s32)z >> 3) >= view->cutoff;
+}
+
 void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     const PortDressSet *set = port_DressNow();
     s32 i;
@@ -3733,6 +4581,10 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     if (set == NULL) {
         return;
     }
+    g_dress.standing[0] = view->standing[0];
+    g_dress.standing[1] = view->standing[1];
+    g_dress.queued[0] = view->queued[0];
+    g_dress.queued[1] = view->queued[1];
     PORT_GPU_BEGIN(PORT_GPU_DRESS);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -3749,6 +4601,7 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     glUniform1i(g_dress.foliage_at.push_count, g_dress.pusher_count);
     glUniform1f(g_dress.foliage_at.thin, FOLIAGE_THIN);
     glUniform1f(g_dress.foliage_at.lift, FOLIAGE_SUN_LIFT);
+    glUniform1i(g_dress.foliage_at.see_count, 0);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
         const PortDressDef *def = &set->block[run->block];
@@ -3796,13 +4649,30 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     glUseProgram(g_dress.mesh);
     port_DressUniforms(&g_dress.mesh_at, view);
     glUniform1f(g_dress.mesh_at.lift, 0.0f);
+    {
+        PortSeeFighter fighters[PORT_SEE_FIGHTERS];
+        GLfloat axis[4 * PORT_SEE_FIGHTERS];
+        GLfloat radius[PORT_SEE_FIGHTERS];
+        s32 count = port_GlSeeFighters(fighters);
+
+        for (i = 0; i < PORT_SEE_FIGHTERS; i++) {
+            axis[4 * i] = i < count ? fighters[i].x : 0.0f;
+            axis[4 * i + 1] = i < count ? fighters[i].z : 0.0f;
+            axis[4 * i + 2] = i < count ? fighters[i].top : 0.0f;
+            axis[4 * i + 3] = i < count ? fighters[i].bottom : 0.0f;
+            radius[i] = i < count ? fighters[i].radius : 0.0f;
+        }
+        glUniform1i(g_dress.mesh_at.see_count, count);
+        glUniform4fv(g_dress.mesh_at.see_axis, PORT_SEE_FIGHTERS, axis);
+        glUniform1fv(g_dress.mesh_at.see_radius, PORT_SEE_FIGHTERS, radius);
+    }
     glBindVertexArray(g_dress.mesh_array);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
         const PortDressDef *def = &set->block[run->block];
 
         if (run->kind != PORT_DRESS_MESH || run->count == 0 ||
-            !port_DressShownNow(def)) {
+            !port_DressShownNow(def) || !port_DressMeshShown(def, view)) {
             continue;
         }
         glDrawArrays(GL_TRIANGLES, run->first, run->count);
@@ -3892,6 +4762,102 @@ u32 port_GlDressingDrawFoliageCasters(const float *matrix, const float *eye) {
     return triangles;
 }
 
+/* Whether a box is wholly outside a view (a face of a light's cube): all
+ * its corners past one of the view's sides. `m` a column after a column. */
+static s32 port_DressBoxOutside(
+    const float *m, const float *lo, const float *hi) {
+    s32 out[6] = {0, 0, 0, 0, 0, 0};
+    s32 c;
+
+    for (c = 0; c < 8; c++) {
+        float p[3];
+        float clip[4];
+        s32 r;
+
+        p[0] = (c & 1) ? hi[0] : lo[0];
+        p[1] = (c & 2) ? hi[1] : lo[1];
+        p[2] = (c & 4) ? hi[2] : lo[2];
+        for (r = 0; r < 4; r++) {
+            clip[r] =
+                m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r];
+        }
+        out[0] += clip[0] < -clip[3];
+        out[1] += clip[0] > clip[3];
+        out[2] += clip[1] < -clip[3];
+        out[3] += clip[1] > clip[3];
+        out[4] += clip[2] < -clip[3];
+        out[5] += clip[2] > clip[3];
+    }
+    for (c = 0; c < 6; c++) {
+        if (out[c] == 8) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+u32 port_GlDressingDrawLightCasters(const float *matrix, const float *place) {
+    const PortDressSet *set = port_DressNow();
+    const DressAt *at = &g_dress.foliage_caster_at;
+    u32 triangles = 0;
+    s32 last_run = -1;
+    s32 i;
+
+    if (set == NULL || !g_dress.is_on || g_dress.span_count == 0) {
+        return 0;
+    }
+    glUseProgram(g_dress.foliage_caster);
+    glUniform1i(g_dress.foliage_caster_at_cast, 1);
+    glUniformMatrix4fv(g_dress.foliage_caster_at_sun, 1, GL_FALSE, matrix);
+    /* thinned by the distance from the light, as the sun's by the camera's */
+    glUniform3f(at->camera, place[0], place[1], place[2]);
+    glUniform1f(at->clock, port_DressClock());
+    glUniform4f(at->wind, g_dress.wind[0], g_dress.wind[1], g_dress.wind[2],
+                g_dress.wind[3]);
+    glUniform4fv(at->push, g_dress.pusher_count, g_dress.pushers[0]);
+    glUniform4fv(at->push_way, g_dress.pusher_count, g_dress.push_ways[0]);
+    glUniform1i(at->push_count, g_dress.pusher_count);
+    glUniform1f(at->thin, FOLIAGE_LIGHT_THIN);
+    for (i = 0; i < g_dress.span_count; i++) {
+        const DressSpan *span = &g_dress.spans[i];
+        const DressRun *run = &g_dress.runs[span->run];
+        const PortDressDef *def = &set->block[run->block];
+        float near[3];
+        float d2 = 0.0f;
+        s32 k;
+        s32 vertices;
+
+        /* within the light's reach, and the face's view */
+        for (k = 0; k < 3; k++) {
+            near[k] = place[k] < span->lo[k]   ? span->lo[k]
+                      : place[k] > span->hi[k] ? span->hi[k]
+                                               : place[k];
+            d2 += (near[k] - place[k]) * (near[k] - place[k]);
+        }
+        if (d2 >= place[3] * place[3] || !port_DressShownNow(def) ||
+            port_DressBoxOutside(matrix, span->lo, span->hi)) {
+            continue;
+        }
+        vertices = run->kind == PORT_DRESS_BUSH      ? BUSH_VERTICES
+                   : run->kind == PORT_DRESS_REEDS   ? REEDS_VERTICES
+                   : run->kind == PORT_DRESS_FLOWERS ? FLOWER_VERTICES
+                                                     : GRASS_VERTICES;
+        if (span->run != last_run) {
+            last_run = span->run;
+            glUniform1i(at->kind, run->kind == PORT_DRESS_BUSH      ? 1
+                                  : run->kind == PORT_DRESS_REEDS   ? 2
+                                  : run->kind == PORT_DRESS_FLOWERS ? 3
+                                                                    : 0);
+            glUniform1f(at->sway, (float)def->sway / PORT_DRESSING_ONE);
+        }
+        port_DressThingFormat(span->first);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, vertices, span->count);
+        triangles += (u32)(span->count * vertices / 3);
+    }
+    glBindVertexArray(0);
+    return triangles;
+}
+
 u32 port_GlDressingDrawSunCasters(const float *matrix) {
     const PortDressSet *set = port_DressNow();
     u32 triangles = 0;
@@ -3907,7 +4873,8 @@ u32 port_GlDressingDrawSunCasters(const float *matrix) {
         const DressRun *run = &g_dress.runs[i];
 
         if (run->kind != PORT_DRESS_MESH || run->count == 0 ||
-            !port_DressShownNow(&set->block[run->block])) {
+            !port_DressShownNow(&set->block[run->block]) ||
+            !port_DressMeshStands(&set->block[run->block])) {
             continue;
         }
         glDrawArrays(GL_TRIANGLES, run->first, run->count);
@@ -3915,6 +4882,21 @@ u32 port_GlDressingDrawSunCasters(const float *matrix) {
     }
     glBindVertexArray(0);
     return triangles;
+}
+
+void port_GlDressingWarmCasters(void) {
+    if (!g_dress.is_started || !g_dress.is_on) {
+        return;
+    }
+    /* a triangle of three corners at nought: no texel of the map */
+    glUseProgram(g_dress.foliage_caster);
+    glUniform1i(g_dress.foliage_caster_at_cast, 1);
+    glBindVertexArray(g_dress.dust_array);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 3, 1);
+    glUseProgram(g_dress.caster);
+    glBindVertexArray(g_dress.empty_array);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
 }
 
 void port_GlDressingWarm(void) {
@@ -3986,6 +4968,24 @@ void port_GlDressingWarm(void) {
     port_GlSunBind(&g_dress.shaft_at.sun);
     port_GlLightsBind(&g_dress.shaft_at.lights);
     glDrawArrays(GL_TRIANGLES, 0, 36);
+    /* the mist, mixed over with no depth test */
+    glDisable(GL_DEPTH_TEST);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+    glUseProgram(g_dress.mist);
+    port_GlSunBind(&g_dress.mist_at.sun);
+    port_GlLightsBind(&g_dress.mist_at.lights);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    /* the foliage as the sun and the lights see it: its depth alone */
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glColorMaski(0, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glUseProgram(g_dress.foliage_caster);
+    glUniform1i(g_dress.foliage_caster_at_cast, 1);
+    glBindVertexArray(g_dress.dust_array);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 3, 1);
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
     glBindVertexArray(0);
@@ -4165,6 +5165,112 @@ static void port_DressDrawShafts(
     }
 }
 
+/* Whether a mist is shown now: a mist block grown with its map, at its
+ * times. */
+static s32 port_DressHasMist(const PortDressSet *set) {
+    s32 i;
+
+    for (i = 0; i < g_dress.run_count; i++) {
+        const DressRun *run = &g_dress.runs[i];
+        const PortDressDef *def = &set->block[run->block];
+
+        if (run->kind == PORT_DRESS_PARTICLES &&
+            def->subkind == PORT_PARTICLES_MIST && run->map >= 0 &&
+            port_DressShownNow(def)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* The mist: each block's box of air, the mist gathered through it mixed
+ * over the picture, its alpha left as it was (gl_post.h). Over everything
+ * the game painted, held by the ground's depth and the fighters' read in
+ * the fragment, as the depth test cannot: the eye may be inside the box,
+ * and the face it sees is then the box's far one. */
+static void port_DressDrawMist(
+    const PortDressSet *set, const PortGlDressingView *view) {
+    const DressAt *at = &g_dress.mist_at;
+    const PortGlTime *look = port_GlTime();
+    PortGlPicture picture;
+    s32 i;
+
+    if (!port_DressHasMist(set) || !port_GlGroundDepthIsWritten()) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    glDisable(GL_DEPTH_TEST);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+    glUseProgram(g_dress.mist);
+    port_DressUniforms(at, view);
+    if (look->on) {
+        glUniform3f(
+            at->sky_low, look->horizon[0], look->horizon[1], look->horizon[2]);
+    } else {
+        glUniform3f(
+            at->sky_low, NIGHT_HORIZON_R, NIGHT_HORIZON_G, NIGHT_HORIZON_B);
+    }
+    {
+        u32 texture = 0;
+        float matrix[16];
+        float a_b[2];
+        s32 on = port_GlPostFighterDepthNow(&texture, matrix, a_b);
+
+        glUniform1i(at->fighter_on, on);
+        if (on) {
+            glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glUniform1i(at->fighter, SHAFT_FIGHTER_UNIT);
+            glUniformMatrix4fv(at->fighter_matrix, 1, GL_FALSE, matrix);
+            glUniform2f(at->fighter_a_b, a_b[0], a_b[1]);
+        }
+    }
+    glActiveTexture(GL_TEXTURE0 + MIST_SCENE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, picture.ground_depth);
+    glUniform1i(at->scene, MIST_SCENE_UNIT);
+    glActiveTexture(GL_TEXTURE0 + MIST_NOISE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, g_dress.noise);
+    glUniform1i(at->noise, MIST_NOISE_UNIT);
+    glUniform1i(at->map, MAP_UNIT);
+    glActiveTexture(GL_TEXTURE0 + MAP_UNIT);
+    glBindVertexArray(g_dress.empty_array);
+    for (i = 0; i < g_dress.run_count; i++) {
+        const DressRun *run = &g_dress.runs[i];
+        const PortDressDef *def = &set->block[run->block];
+        float rgb[3];
+
+        if (run->kind != PORT_DRESS_PARTICLES ||
+            def->subkind != PORT_PARTICLES_MIST || run->map < 0 ||
+            !port_DressShownNow(def)) {
+            continue;
+        }
+        port_DressColorOf(def, 0.86f, 0.89f, 0.94f, rgb);
+        glUniform3f(at->tint, rgb[0], rgb[1], rgb[2]);
+        glUniform4f(at->area, (float)def->area[0][0], (float)def->area[0][1],
+                    (float)def->area[0][2], (float)def->area[0][3]);
+        glUniform2f(at->slab, run->slab[0], run->slab[1]);
+        glUniform1f(at->top, (float)def->top);
+        glUniform1f(at->size, (float)def->height[0]);
+        /* how thick: its `glow` */
+        glUniform1f(at->glow, (float)def->glow / PORT_DRESSING_ONE);
+
+        glUniform4f(at->map_box, run->map_box[0], run->map_box[1],
+                    run->map_box[2], run->map_box[3]);
+        glBindTexture(GL_TEXTURE_2D, g_dress.maps[run->map]);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        g_dress.triangles += 12;
+        g_dress.draws++;
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0 + MIST_SCENE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0 + MIST_NOISE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+}
+
 void port_GlDressingDrawMixed(const PortGlDressingView *view) {
     const PortDressSet *set = port_DressNow();
     const PortGlTime *look;
@@ -4237,7 +5343,9 @@ void port_GlDressingDrawMixed(const PortGlDressingView *view) {
             sub == PORT_PARTICLES_MOTES;
         float rgb[3];
 
-        if (run->kind != PORT_DRESS_PARTICLES || !port_DressShownNow(def)) {
+        /* the mist is drawn at the picture's end (port_GlDressingDrawLate) */
+        if (run->kind != PORT_DRESS_PARTICLES || sub == PORT_PARTICLES_MIST ||
+            !port_DressShownNow(def)) {
             continue;
         }
         if (is_glow) {
@@ -4303,7 +5411,7 @@ void port_GlDressingDrawMixed(const PortGlDressingView *view) {
     }
     /* the shafts of light, kept for the picture's end */
     g_dress.late_view = *view;
-    g_dress.has_late = g_dress.beam_count > 0;
+    g_dress.has_late = g_dress.beam_count > 0 || port_DressHasMist(set);
     g_dress.late_scissor_on = glIsEnabled(GL_SCISSOR_TEST);
     glGetIntegerv(GL_SCISSOR_BOX, g_dress.late_scissor);
     glBindVertexArray(0);
@@ -4344,6 +5452,8 @@ s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
     glEnable(GL_BLEND);
     glBlendEquation(GL_FUNC_ADD);
     glDisable(GL_CULL_FACE);
+    port_DressDrawMist(set, &g_dress.late_view);
+    glEnable(GL_DEPTH_TEST);
     port_DressDrawShafts(set, &g_dress.late_view);
     glBindVertexArray(0);
     glDisable(GL_BLEND);
@@ -4354,5 +5464,21 @@ s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
 }
 
 s32 port_GlDressingWantsFighters(void) {
-    return g_dress.is_on && g_dress.beam_count > 0 && port_DressNow() != NULL;
+    const PortDressSet *set;
+
+    if (!g_dress.is_on) {
+        return FALSE;
+    }
+    set = port_DressNow();
+    return set != NULL && (g_dress.beam_count > 0 || port_DressHasMist(set));
+}
+
+s32 port_GlDressingWantsDepth(void) {
+    const PortDressSet *set;
+
+    if (!g_dress.is_on) {
+        return FALSE;
+    }
+    set = port_DressNow();
+    return set != NULL && port_DressHasMist(set);
 }

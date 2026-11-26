@@ -45,6 +45,13 @@ typedef struct {
     s32 fog_levels;
     s32 fog_slot[32];
     s32 cutoff;
+    /* which of the stage's pieces stand as they were taken down, one bit a
+     * piece (PortStageView's `standing`): a mesh standing in for a piece,
+     * or set at its culms, goes when the game cuts the piece down */
+    u32 standing[2];
+    /* ... and which of them this frame queued (PortStageView's `pieces`):
+     * a mesh is drawn where its piece would be, and casts where it stands */
+    u32 queued[2];
 } PortGlDressingView;
 
 /* Loads the functions and makes the programs. Called where the backend
@@ -88,6 +95,10 @@ extern void port_GlDressingDrawMixed(const PortGlDressingView *view);
  * after the ground, held by the ground's depth. Nothing where the last
  * ground drew none; TRUE where it drew, the card's state then changed. */
 extern s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h);
+/* Whether the stage's mist is shown now: it reads the ground's depth a
+ * pixel, which the ground's mesh then writes beside its slots (gl_draw.c,
+ * port_GlGroundSlotsBegin), as for the lighting's passes. */
+extern s32 port_GlDressingWantsDepth(void);
 
 /* The meshes as the sun or a light sees them, through `matrix` (a column
  * after a column), into the depth map bound now (gl_sun.h, gl_lights.h):
@@ -99,12 +110,24 @@ extern u32 port_GlDressingDrawSunCasters(const float *matrix);
  * triangles drawn. */
 extern u32 port_GlDressingDrawFoliageCasters(
     const float *matrix, const float *eye);
+/* The foliage as a light sees it, through matrix (a face of its cube),
+ * from place (x y z, and its reach): the squares of foliage within the
+ * reach and the face's view, thinned by their distance from the light, into
+ * the face's depth map bound now (gl_lights.c, each picture, beside the
+ * fighters: the grass sways). The triangles drawn. */
+extern u32 port_GlDressingDrawLightCasters(
+    const float *matrix, const float *place);
 /* While the game loads (sdl_window.c): each of the dressing's programs
  * drawn once into the picture, in the state it is drawn in, through a
  * scissor of no pixel, so that the driver makes them ready for the card
  * then (the particles' alone were 38 ms of a dressed fight's first frame
  * with the driver's cache of shaders empty, RTX 3090). Once a run. */
 extern void port_GlDressingWarm(void);
+/* The same for the programs that draw into the sun's and the lights' maps,
+ * with a map's framebuffer bound (gl_sun.c, port_GlSunWarm): the foliage
+ * and the meshes as a light sees them, drawn into a light's cube each
+ * picture. */
+extern void port_GlDressingWarmCasters(void);
 /* The pieces a mesh stands in for this frame, a bit each (as the mesh's
  * u_pieces): the ground's mesh leaves them out. */
 extern void port_GlDressingHiddenPieces(u32 *words, s32 count);

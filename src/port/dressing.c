@@ -551,6 +551,11 @@ static const char *port_DressingSetShared(
                    ? NULL
                    : "`sit` is yes or no";
     }
+    if (port_DressingWordIs(name, name_length, "culms")) {
+        return port_DressingYesOrNo(value, end, &block->culms)
+                   ? NULL
+                   : "`culms` is yes or no";
+    }
     if (port_DressingWordIs(name, name_length, "solid")) {
         return port_DressingYesOrNo(value, end, &block->solid)
                    ? NULL

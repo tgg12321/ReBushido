@@ -811,7 +811,8 @@ void port_GlLightsPrepare(void) {
                     g_lights.kept_mesh[which] = mesh;
                     g_lights.stage_redrawn++;
                 }
-                /* the stage's depth, then the fighters over it */
+                /* the stage's depth, then the dressing's foliage, which
+                 * the wind sways, and the fighters over it */
                 glCopyImageSubData(
                     g_lights.stage_map, GL_TEXTURE_2D_ARRAY, 0, 0, 0, slot,
                     g_lights.map, GL_TEXTURE_2D_ARRAY, 0, 0, 0, slot,
@@ -819,6 +820,8 @@ void port_GlLightsPrepare(void) {
                 for (face = 0; face < LIGHT_FACES; face++) {
                     glBindFramebuffer(
                         GL_FRAMEBUFFER, g_lights.framebuffer[slot + face]);
+                    port_GlDressingDrawLightCasters(
+                        g_lights.face[slot + face], c->place);
                     port_GlShadowDrawSunCasters(g_lights.face[slot + face]);
                 }
             }

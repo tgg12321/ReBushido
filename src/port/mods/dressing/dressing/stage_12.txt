@@ -66,3 +66,13 @@ piece = 10
 [mesh trunk_11]
 file = orange_trunk
 piece = 11
+
+# a morning mist over the orchard's grass
+[particles mist]
+kind = mist
+area = -13000 -14000 13000 23000
+size = 3000
+top = 450
+glow = 0.85
+color = #E0DCD4
+times = dawn

@@ -2864,6 +2864,10 @@ static void port_GlStageDressingView(
             (i < view->fog_levels) ? view->fog_slot[i] : 0x7FFFFFFF;
     }
     out->cutoff = view->ot_cutoff;
+    for (i = 0; i < PORT_STAGE_PIECE_WORDS && i < 2; i++) {
+        out->standing[i] = view->standing[i];
+        out->queued[i] = view->pieces[i] & view->standing[i];
+    }
 }
 
 static void port_GlStageDrawMesh(

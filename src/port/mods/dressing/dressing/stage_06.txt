@@ -51,3 +51,13 @@ level = 0.2
 count = 60
 height = 380 640
 color = #2E4A22
+
+# a ground mist along the path at night and at dawn
+[particles mist]
+kind = mist
+area = -23000 -10000 21000 12000
+size = 2800
+top = 380
+glow = 0.7
+color = #C4CCD8
+times = night dawn

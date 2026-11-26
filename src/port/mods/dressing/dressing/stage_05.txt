@@ -21,3 +21,15 @@ count = 144
 size = 67
 top = 4000
 color = #7C6A34
+
+# mist lying in the gorge at dawn and at night, over the river far below
+# the bridge (only the ground below the deck: the bridge holds none)
+[particles mist]
+kind = mist
+heights = 3000 9000
+area = -6000 -14000 6000 18000
+size = 3200
+top = 1100
+glow = 1.2
+color = #C8D2DC
+times = dawn night

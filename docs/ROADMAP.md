@@ -396,8 +396,17 @@ the stage").
     own to mirror the fighters in; the shafts held by the fighters'
     depth; the foliage casting into the sun's nearest map; gulls over the
     ship; the ferry dock's bollards and the orange trees' trunks as
-    meshes. Left: the foliage in the lights' cubes, a mist the fight
-    camera sees, the bamboo's clumps as meshes. The skies (the
+    meshes. The fourth pass (2026-11-26; PORT.md, "The dressing", "The
+    fourth pass"): the grass, flowers, reeds and bushes casting into the
+    lights' cubes as into the sun's map, swaying there; a mist drawn as a
+    volume the fight camera looks through, lying on the ground under each
+    place in banks that drift with the wind, held by the ground's and the
+    fighters' depth, lit by the time of day (5, 6, 12, 14, 15, 31); the
+    bamboo thicket's seventeen culms as round culms with nodes, each set
+    at its piece's own column found from the piece's faces, the piece's
+    leaves kept, gone when the game cuts the culm down; the shafts' hold by
+    the fighters' depth, which overshot by the tiles' scale, mended. The
+    skies (the
     owner, 2026-11-25: "I want striking skyboxes. With beautiful
     volumetric clouds, sunsets and moon shots etc"; PORT.md, "The sky"):
     the air worked out as sunlight scattered through it, with each time's
