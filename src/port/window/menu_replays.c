@@ -3,7 +3,8 @@
  * with what it was (the date, the mode, the fighters and their weapons,
  * the stage, how long), and Enter or Cross to play one. A replay this
  * program cannot play says why instead (another build, another disc,
- * other gameplay mods). Only the build with a window has this file. */
+ * other gameplay mods); one of another build's that it plays from power
+ * on says so. Only the build with a window has this file. */
 #include <stdio.h>
 #include <string.h>
 
@@ -53,8 +54,9 @@ void port_ReplaysDescribe(
         snprintf(value, value_room, "cannot be played");
         return;
     }
-    snprintf(value, value_room, "%u:%02u", seconds / SECONDS_PER_MINUTE,
-             seconds % SECONDS_PER_MINUTE);
+    snprintf(value, value_room, "%u:%02u%s", seconds / SECONDS_PER_MINUTE,
+             seconds % SECONDS_PER_MINUTE,
+             info->from_boot ? ", another build's" : "");
 }
 
 void port_ReplaysDetail(s32 item, char *out, u32 room) {
@@ -80,6 +82,11 @@ const char *port_ReplaysHelp(s32 item) {
         snprintf(g_help, sizeof(g_help), "Not by this program: %s",
                  g_rows[item].why);
         return g_help;
+    }
+    if (g_rows[item].from_boot) {
+        return "Another build's: Enter / Cross plays its session again from "
+               "power on to the fight first (it stops where this build's game "
+               "goes otherwise).   Square / Delete: a film";
     }
     return "Enter / Cross: watch it.   Square / Delete: make a film of it "
            "(films/)";

@@ -14,10 +14,22 @@ tools/port_stage_select.py, whose fights are won on the stage select's
 kinds of stage, an arena, versus the CPU through two fights, and training.
 Every fight is a file. Then every file is played back headlessly by both
 programs with `--replay-check`: the program that recorded it must play it
-to its end with every state hash the one recorded, and the other must
-refuse it as another build's. The two sizes must have recorded as many
-fights, each as long and with the same inputs. What each file holds is
-printed: its frames, its size and its start's.
+from its start to its end with every state hash the one recorded, and
+again from power on (`--replay-from-boot`, its lead-in) with every hash;
+the other, a build of another size of pointer and so of another core,
+must play it from power on to its end with every console hash the one
+recorded where the file has its lead-in, and refuse it as another
+build's where it has none (a plan that pokes the game's memory). The two
+sizes must have recorded as many fights, each as long and with the same
+inputs. What each file holds is printed: its frames, its size and its
+start's.
+
+And for port_game's first fight: played from power on with one input
+changed (`--replay-differ`, as a game that went otherwise would), it must
+stop at the first hash that differs and say that the game went otherwise
+there, with exit 1 and no crash; the file with its lead-in taken out (as
+a replay of before 2026-11-26 is) must still play on its own build and be
+refused by the other.
 
 `--window` records port_game's fight with the window's program (the
 Linux one, or from Windows' Python the Windows one) and plays it with two
@@ -86,13 +98,60 @@ def describe(path):
                len(chunks.get('INPT', b'')), len(chunks.get('HASH', b'')), runs))
 
 
-def check_replay(program, path, extra, env=None):
-    """`--replay-check` of one file: (exit code, what it said)."""
+def check_replay(program, path, extra, env=None, from_boot=None):
+    """`--replay-check` of one file: (exit code, what it said last). With
+    `from_boot` a list, whether it was played from power on is appended
+    to it."""
     cmd = [program, '--image', playtest.RETAIL_CUE, '--no-cards'] + extra + ['--replay-check', path]
     done = subprocess.run(cmd, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                           stdin=subprocess.DEVNULL, timeout=SECONDS, env=env)
     said = [line for line in done.stderr.decode('utf-8', 'replace').splitlines() if line.startswith('replay:')]
+    if from_boot is not None:
+        from_boot.append(any(': from power on (' in line for line in said))
     return done.returncode, said[-1] if said else '(nothing said)'
+
+
+# The command line's switches a replay's lead-in holds (its setup): the
+# other build plays from power on without them, as a player with other
+# settings would. The gameplay mods (--mods) stay: they are held to be the
+# same, not held.
+SETUP_SWITCHES = {'--stage-select': 0, '--unlock-all': 0, '--fight-music': 1, '--match': 1, '--teams': 1,
+                  '--time-of-day': 1, '--menu': 1}
+
+
+def without_setup(extra):
+    """`extra` but for the switches a lead-in's setup holds."""
+    out, i = [], 0
+    while i < len(extra):
+        if extra[i] in SETUP_SWITCHES:
+            i += 1 + SETUP_SWITCHES[extra[i]]
+            continue
+        out.append(extra[i])
+        i += 1
+    return out
+
+
+def has_lead(path):
+    """Whether a replay keeps its run from power on (its lead-in)."""
+    return read_replay(path)[1].get('lead') == '1'
+
+
+def strip_lead(path, out):
+    """A copy of a replay without its lead-in, as a file of before it."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    parts, at = [data[:12]], 12
+    while at + 8 <= len(data):
+        tag, size = data[at:at + 4], struct.unpack('<I', data[at + 4:at + 8])[0]
+        if tag == b'META':
+            body = data[at + 8:at + 8 + size].replace(b'\nlead 1\n', b'\nlead 0\nlead_why taken out\n')
+            parts.append(tag + struct.pack('<I', len(body)) + body)
+        elif tag not in (b'LEAD', b'CARD'):
+            parts.append(data[at:at + 8 + size])
+        at += 8 + size
+    with open(out, 'wb') as f:
+        f.write(b''.join(parts))
+    return out
 
 
 def record_port_game(report, out):
@@ -120,10 +179,11 @@ def check_window(report, out):
     """A replay of the window's program played by builds whose window
     alone differs (tools/port_sdl_build.py --padded: room between the
     game's object and the window's files): with a little, every hash the
-    one recorded; with much, which moves the game's variables, refused as
-    another build's, never a crash. Windows' program from Windows, the
-    Linux one elsewhere; the three are built first (make port-sdl
-    PADDED=1, through tools/build.sh)."""
+    one recorded; with much, which moves the game's variables, played from
+    power on (its lead-in) to its end, every console hash the one
+    recorded, never a crash. Windows' program from Windows, the Linux one
+    elsewhere; the three are built first (make port-sdl PADDED=1, through
+    tools/build.sh)."""
     windows = os.name == 'nt'
     folder = os.path.join(REPO, 'build', 'port-sdl', 'windows' if windows else 'linux')
     exe = '.exe' if windows else ''
@@ -151,42 +211,62 @@ def check_window(report, out):
     report.check(files != [], 'window: fights were recorded (%d files)' % len(files))
     for path in files:
         print('    ' + describe(path), flush=True)
-        for name, plays in (('', True), ('-pad-small', True), ('-pad-large', False)):
-            code, said = check_replay(os.path.join(folder, 'rebushido' + name + exe), path, [], env)
-            print('    rebushido%s: exit %d: %s' % (name, code, said), flush=True)
-            if plays:
-                report.check(code == 0 and 'DESYNC' not in said,
-                             'window: %s: played by rebushido%s to its end, every hash the one recorded'
-                             % (os.path.basename(path), name))
-            else:
-                report.check(code == 1 and 'another build' in said,
-                             "window: %s: refused by rebushido%s, whose game's variables lie elsewhere, as another "
-                             "build's" % (os.path.basename(path), name))
+        for name, boot in (('', False), ('-pad-small', False), ('-pad-large', True)):
+            from_boot = []
+            code, said = check_replay(os.path.join(folder, 'rebushido' + name + exe), path, [], env, from_boot)
+            print('    rebushido%s: exit %d%s: %s' % (name, code, ' from power on' if from_boot[0] else '', said),
+                  flush=True)
+            report.check(code == 0 and 'DESYNC' not in said and from_boot[0] == boot,
+                         'window: %s: played by rebushido%s to its end %s, every hash the one recorded'
+                         % (os.path.basename(path), name,
+                            "from power on (its game's variables lie elsewhere)" if boot else 'from its start'))
     return len(files)
 
 
 def check_folder(report, name, replays, extra):
     """Every replay of a folder played back by both sizes: by the one that
-    recorded it with every hash the same, refused by the other; and as
-    many fights of each size, alike."""
+    recorded it from its start and again from power on, every hash the
+    same; by the other from power on, every console hash the same, where
+    the file keeps its lead-in, and refused where it does not; and as many
+    fights of each size, alike."""
     files = sorted(os.path.join(replays, f) for f in os.listdir(replays) if f.endswith('.rbr'))
     report.check(files != [], '%s: fights were recorded (%d files)' % (name, len(files)))
     by_bits = {64: [], 32: []}
     for path in files:
         print('    ' + describe(path), flush=True)
+        lead = has_lead(path)
+        base = os.path.basename(path)
         played = []
         for bits, program in sorted(PROGRAMS.items()):
-            code, said = check_replay(os.path.join(REPO, program), path, extra)
-            if code == 0:
+            from_boot = []
+            code, said = check_replay(os.path.join(REPO, program), path, extra, from_boot=from_boot)
+            if from_boot[0] and without_setup(extra) != extra:
+                # ... and without the recording's switches, which its
+                # setup holds
+                from_boot = []
+                code, said = check_replay(os.path.join(REPO, program), path, without_setup(extra),
+                                          from_boot=from_boot)
+            print('    %d-bit%s: exit %d: %s' % (bits, ' from power on' if from_boot[0] else '', code, said))
+            if code == 0 and not from_boot[0]:
                 played.append(bits)
-                print('    %d-bit: %s' % (bits, said))
+                if lead:
+                    again, said_again = check_replay(os.path.join(REPO, program), path,
+                                                     extra + ['--replay-from-boot'])
+                    print('    %d-bit from power on, asked: exit %d: %s' % (bits, again, said_again))
+                    report.check(again == 0 and 'DESYNC' not in said_again,
+                                 '%s: %s: played from power on by the program that recorded it, every hash the '
+                                 'same' % (name, base))
+            elif lead:
+                report.check(code == 0 and from_boot[0] and 'DESYNC' not in said,
+                             "%s: %s: the %d-bit port, another build, plays it from power on to its end, every "
+                             "console hash the one recorded" % (name, base, bits))
             else:
-                report.check('another build' in said,
-                             '%s: %s: the %d-bit port refuses it as another build\'s (%s)'
-                             % (name, os.path.basename(path), bits, said))
+                report.check(code == 1 and 'another build' in said,
+                             "%s: %s: the %d-bit port refuses it as another build's: it keeps no lead-in (%s)"
+                             % (name, base, bits, read_replay(path)[1].get('lead_why')))
         report.check(len(played) == 1 and 'DESYNC' not in said,
                      '%s: %s: played to its end by the program that recorded it, every hash the same'
-                     % (name, os.path.basename(path)))
+                     % (name, base))
         if len(played) == 1:
             by_bits[played[0]].append(path)
     report.check(len(by_bits[64]) == len(by_bits[32]),
@@ -196,6 +276,35 @@ def check_folder(report, name, replays, extra):
         report.check(a['INPT'] == b['INPT'], '%s: %s and %s: the same inputs'
                      % (name, os.path.basename(first), os.path.basename(second)))
     return len(files)
+
+
+def check_differ(report, out, replays):
+    """port_game's first fight from power on with an input of the run
+    changed (--replay-differ: as another game, which went otherwise
+    there): the playback stops at the next hash and says so, exit 1, no
+    crash. And the file without its lead-in, as one of before it: played
+    by its own build, refused by the other."""
+    files = sorted(os.path.join(replays, f) for f in os.listdir(replays) if f.endswith('.rbr'))
+    if not files or not has_lead(files[0]):
+        report.check(False, 'port_game: a fight with its lead-in to change')
+        return
+    path = files[0]
+    start = int(read_replay(path)[1]['start_count'])
+    for at, where in ((start // 2, 'before the fight'), (start + 100, 'at frame')):
+        code, said = check_replay(os.path.join(REPO, PROGRAMS[64]), path,
+                                  ['--replay-from-boot', '--replay-differ', str(at)])
+        print('    input %d changed: exit %d: %s' % (at, code, said))
+        report.check(code == 1 and 'went otherwise' in said and where in said,
+                     'port_game: input %d of the run changed: the playback stops %s, the game gone otherwise, '
+                     'exit 1' % (at, where))
+    old = strip_lead(path, os.path.join(out, 'port_game', 'without_lead.rbr'))
+    results = {}
+    for bits, program in sorted(PROGRAMS.items()):
+        results[bits] = check_replay(os.path.join(REPO, program), old, [])
+        print('    without its lead-in, %d-bit: exit %d: %s' % ((bits,) + results[bits]))
+    report.check(sorted(code for code, said in results.values()) == [0, 1] and
+                 any('nothing from power on' in said for code, said in results.values()),
+                 'port_game: without its lead-in: played by its own build, refused by the other')
 
 
 def main(argv):
@@ -228,7 +337,9 @@ def main(argv):
     wanted = lambda name: not args.only or name in args.only  # noqa: E731
     count = 0
     if wanted('port_game'):
-        count += check_folder(report, 'port_game', record_port_game(report, out), [])
+        replays = record_port_game(report, out)
+        count += check_folder(report, 'port_game', replays, [])
+        check_differ(report, out, replays)
     mods = port_stage_select.make_mods(out)
     values = {'host': port_stage_select.ARENA_HOST, 'all': port_stage_select.ALL_UNLOCKS,
               'default': port_stage_select.DEFAULT_UNLOCKS, 'rooftop': port_stage_select.ROOFTOP}

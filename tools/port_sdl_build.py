@@ -553,12 +553,12 @@ def link_blob(target, objects):
     if proc.returncode != 0:
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
         return None
-    # what it still asks for: the host's functions and the game's stack
-    # pointer it keeps (port_host.h), the two ends of its own
-    # variables (given at the link, below), and on Windows what the compiler
-    # and the linker themselves call
+    # what it still asks for: the host's functions (port_host.h), the two
+    # ends of its own variables (given at the link, below), the code's sum
+    # (code_sum), on Windows what the compiler and the linker themselves
+    # call, and in a 32-bit program libgcc's division of 64-bit numbers
     allowed = re.compile(r'^_{0,3}(port_Host\w+|g_port_data_(start|end)|g_port_code_sum|chkstk_ms|main|alloca'
-                         r'|pei386_runtime_relocator)$')
+                         r'|pei386_runtime_relocator|u?divdi3|u?moddi3)$')
     strangers = [name for name in undefined_of(target, blob) if not allowed.match(name)]
     if strangers:
         print("port-sdl: the game's object asks for names that are not the host's: %s" % ' '.join(strangers))

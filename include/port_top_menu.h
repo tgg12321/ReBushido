@@ -190,6 +190,11 @@ extern void port_TopMenuPlaySound(s32 sound);
  * left. */
 extern void port_AskMenuSound(s32 sound);
 extern s32 port_TakeMenuSound(void);
+/* Whether a page of the window's covers the top menu (`covered`), asked
+ * likewise and taken in as the game takes its next input, which a
+ * replay keeps it with: -1 before the window asks. */
+extern void port_AskTopMenuCover(s32 on);
+extern s32 port_AskedTopMenuCover(void);
 
 /* ---- the run's switches, outside the state (play_switches.c) ---- */
 

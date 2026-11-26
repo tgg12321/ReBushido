@@ -90,6 +90,7 @@
 #include "port_gpu.h"
 #include "port_host.h"
 #include "port_movie.h"
+#include "port_replay.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -699,6 +700,9 @@ static void port_ApplyPokes(u32 now) {
         if (poke->last == 0 || now < poke->first || now > poke->last) {
             continue;
         }
+        /* nothing a replay keeps: its fights play only on this build's
+         * core after it */
+        port_ReplayLeadBreak("a play test's plan wrote into the game's memory");
         if (poke->size == 1) {
             *(u8 *)ADDR(poke->address) = (u8)poke->value;
         } else if (poke->size == 2) {

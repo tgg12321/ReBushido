@@ -311,9 +311,9 @@ s32 port_LoadKind(void) {
 }
 
 /* A page of the window's over ReBushido's top menu (port_top_menu.h):
- * written at a blank's turn, where the game is still, as the Bug fixes
- * below. */
-void port_SetTopMenuCovered(s32 on) { g_port_top_menu.covered = (u8)(on != 0); }
+ * asked, and taken in by the game with its next input (pad.c), which a
+ * replay keeps it with. */
+void port_SetTopMenuCovered(s32 on) { port_AskTopMenuCover(on); }
 
 /* The game's own Bug fixes setting, for the settings menu (menu.h). The
  * one thing here that writes the game: the menu sets it while the game is
@@ -326,6 +326,7 @@ void port_SetBugfixes(s32 on) {
         /* no input made the change: a fight being recorded cannot be
          * played back the same */
         port_ReplayAbandon("Bug fixes was changed in the settings menu");
+        port_ReplayLeadBreak("Bug fixes was changed in the settings menu");
     }
     g_rb_settings.bugfixes = (u8)(on != 0);
 }

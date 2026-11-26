@@ -44,6 +44,30 @@ s32 port_TakeMenuSound(void) { return -1; }
 
 void port_TopMenuPlaySound(s32 sound) { (void)sound; }
 
+/* ... nor a page over the top menu, nor a movie's reads kept; and the
+ * game's stack is the test's own (fiber.c) */
+PortTopMenu g_port_top_menu;
+
+s32 port_AskedTopMenuCover(void) { return -1; }
+
+s32 port_ReplayCoverAt(u32 index) {
+    (void)index;
+    return -1;
+}
+
+s32 port_ReplayMovieRead(u32 read, u32 *word) {
+    (void)read;
+    (void)word;
+    return 0;
+}
+
+void port_ReplayTookMovieRead(u32 read, u32 word) {
+    (void)read;
+    (void)word;
+}
+
+void port_FiberClearDeadStack(void) {}
+
 s32 g_port_rerun;
 
 /* Run-ahead (src/port/step.c): no frame is run ahead here. */

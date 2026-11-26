@@ -88,6 +88,14 @@ s32 port_TakeMenuSound(void) {
     return sound;
 }
 
+/* Whether a page of the window's covers the top menu, as the window last
+ * asked (port_top_menu.h): -1 before it asks. */
+static s32 g_port_cover_asked = -1;
+
+void port_AskTopMenuCover(s32 on) { g_port_cover_asked = on != 0; }
+
+s32 port_AskedTopMenuCover(void) { return g_port_cover_asked; }
+
 s32 port_GetTopMenuSwitch(void) { return g_port_play_switches.top_menu; }
 
 s32 port_GetBugfixesSwitch(void) { return g_port_play_switches.bugfixes; }
@@ -216,6 +224,14 @@ void port_HoldFightMusic(u32 bits) {
      * on both */
     g_port_fight_music_asked.row =
         row < PORT_FIGHT_MUSIC_ROW_FIRST_EXTRA ? row : PORT_FIGHT_MUSIC_ROW_OWN;
+    g_port_fight_music_asked.held = TRUE;
+}
+
+void port_HoldFightMusicExactly(u32 bits) {
+    g_port_fight_music_asked.held = FALSE;
+    port_SetFightMusic((s32)(bits & FIGHT_MUSIC_BYTE));
+    g_port_fight_music_asked.row =
+        (s32)(bits >> FIGHT_MUSIC_ROW_SHIFT & FIGHT_MUSIC_BYTE);
     g_port_fight_music_asked.held = TRUE;
 }
 

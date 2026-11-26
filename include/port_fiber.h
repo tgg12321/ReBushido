@@ -69,6 +69,11 @@ typedef __UINTPTR_TYPE__ PortAddress;
 /* The switch itself, written in assembly in src/port/fiber.c. */
 extern void port_FiberSwitch(PortAddress *save, PortAddress load);
 
+/* What lies below the stack pointer as it is called, from
+ * `bottom` up, cleared (fiber.c): assembly, so that nothing of its own
+ * is below the pointer while it clears. */
+extern void port_FiberClearBelow(PortAddress bottom);
+
 /* Makes the game's stack ready to call `function` (which must not
  * return) from its first frame below `top`, the words `tib` being the
  * thread's record a switch takes back (PORT_FIBER_TIB_WORDS of them;
