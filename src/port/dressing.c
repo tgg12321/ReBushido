@@ -72,7 +72,7 @@ static const char * const g_dress_kind_names[PORT_DRESS_KINDS] = {
 
 static const char * const g_particles_kind_names[PORT_PARTICLES_KINDS] = {
     "dust", "leaves", "embers", "snow",  "petals", "fireflies",
-    "rain", "smoke",  "motes",  "spray", "mist"};
+    "rain", "smoke",  "motes",  "spray", "mist",   "gulls"};
 
 static const char * const g_dress_on_names[PORT_DRESS_ON_KINDS] = {
     "any", "green", "earth", "sand", "stone", "snow", "blue"};

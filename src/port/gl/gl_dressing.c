@@ -258,8 +258,10 @@ PORT_GL_DRESSING_FUNCTIONS
 #define SHAFT_MOTE_GAIN 2.0f
 /* the particles' program's own kinds, past PORT_PARTICLES_...: the rain's
  * splashes, a splash for every third drop, and a shaft's motes */
-#define PARTICLES_SPLASHES 11
-#define PARTICLES_SHAFT_MOTES 12
+#define PARTICLES_SPLASHES 20
+#define PARTICLES_SHAFT_MOTES 21
+/* a gull: a body, a tail and two wings of an inner and an outer part */
+#define GULL_VERTICES 24
 #define RAIN_SPLASH_SIZE 38.0f
 #define RAIN_SPLASH_SHARE 3
 
@@ -1179,8 +1181,9 @@ static const char g_dress_water_fragment[] =
 
 /* The particles: quads facing the camera. Over an area each is worked out
  * from its number and the clock alone; the dust from its own event. The
- * kinds are PORT_PARTICLES_..., and two of the program's own: 11 the
- * rain's splashes on the ground, 12 the motes in a shaft of light. */
+ * kinds are PORT_PARTICLES_..., and two of the program's own: 20 the
+ * rain's splashes on the ground, 21 the motes in a shaft of light. A gull
+ * (11) is no quad but GULL_VERTICES of its own shape, in the world. */
 static const char g_dress_particles_vertex[] =
     "#version 330 core\n"
     "layout(location = 0) in vec4 a_at;\n"  /* the dust's: x y z, begun */
@@ -1218,6 +1221,8 @@ static const char g_dress_particles_vertex[] =
     "    float spin = 0.0;\n"
     "    float squash = 1.0;\n"
     "    vec3 streak = vec3(0.0);\n" /* a streak's way and length */
+    "    vec3 placed = vec3(0.0);\n" /* a gull's corner, in the world */
+    "    bool is_placed = false;\n"
     "    v_glow = 0.0;\n"
     "    vec3 tint = u_tint;\n"
     "    vec2 drift = u_wind.xy * u_wind.z;\n"
@@ -1275,7 +1280,7 @@ static const char g_dress_particles_vertex[] =
     "        at = vec3(at_xz.x, u_ground - u_top, at_xz.y) + vel * age;\n"
     "        streak = normalize(vel) * length(vel) * 0.026;\n"
     "        alpha = 0.55 * u_glow;\n"
-    "    } else if (u_kind == 11) {\n"
+    "    } else if (u_kind == 20) {\n"
     /* a drop's splash: a small crown thrown up where it lands */
     "        float period = mix(0.35, 0.9, dress_random(s, 3u));\n"
     "        float age = fract(u_clock / period + dress_random(s, 5u)) * period;\n"
@@ -1305,7 +1310,7 @@ static const char g_dress_particles_vertex[] =
     "        alpha = u_glow * (0.6 + 0.4 * sin(u_clock * mix(1.0, 2.6,\n"
     "                                          dress_random(s, 5u)) + wob));\n"
     "        v_glow = 2.0;\n"
-    "    } else if (u_kind == 12) {\n"
+    "    } else if (u_kind == 21) {\n"
     /* a shaft's motes: inside its box, brightest by the opening */
     "        float a = dress_random(s, 1u) * 2.0 - 1.0;\n"
     "        float b = dress_random(s, 2u) * 2.0 - 1.0;\n"
@@ -1342,6 +1347,64 @@ static const char g_dress_particles_vertex[] =
     "        size *= 1.0 + 2.5 * t / life;\n"
     "        alpha = 0.6 * u_glow * (1.0 - t / life) * smoothstep(0.0, 0.08, t);\n"
     "        if (at.y > u_ground) { alpha = 0.0; }\n"
+    "    } else if (u_kind == 11) {\n"
+    /* a gull: circling a place of the area at its own height and pace, some
+     * clockwise, banked into the turn; flapping a few seconds and gliding
+     * the rest, its wings an M seen from ahead */
+    "        float radius = mix(1600.0, 4200.0, dress_random(s, 3u));\n"
+    "        float way = dress_random(s, 5u) < 0.5 ? -1.0 : 1.0;\n"
+    "        float pace = mix(650.0, 1000.0, dress_random(s, 6u)) / radius;\n"
+    "        float turn = wob + way * pace * u_clock;\n"
+    "        vec3 middle = vec3(at_xz.x, u_ground - mix(0.45, 1.0, dress_random(s, 7u)) * u_top,\n"
+    "                           at_xz.y);\n"
+    "        at = middle + vec3(cos(turn), 0.0, sin(turn)) * radius\n"
+    "           + vec3(0.0, sin(u_clock * 0.37 + wob) * 160.0, 0.0);\n"
+    "        vec3 ahead = way * vec3(-sin(turn), 0.0, cos(turn));\n"
+    "        vec3 inward = -vec3(cos(turn), 0.0, sin(turn));\n"
+    "        const vec3 UP = vec3(0.0, -1.0, 0.0);\n"
+    "        float bank = 0.35;\n"
+    "        vec3 up = normalize(UP * cos(bank) + inward * sin(bank));\n"
+    "        vec3 side = normalize(cross(ahead, up));\n"
+    "        float cycle = mix(5.0, 9.0, dress_random(s, 8u));\n"
+    "        float in_cycle = fract(u_clock / cycle + dress_random(s, 9u)) * cycle;\n"
+    "        float flapping = smoothstep(0.0, 0.3, in_cycle)\n"
+    "                       * (1.0 - smoothstep(2.2, 2.6, in_cycle));\n"
+    "        float flap = sin(u_clock * 7.5 + wob) * 0.65 * flapping;\n"
+    "        float inner = 0.18 + flap;\n"
+    "        float outer = inner - 0.45 - 0.25 * flapping * sin(u_clock * 7.5 + wob + 0.8);\n"
+    "        int v = gl_VertexID % 24;\n"
+    "        int part = v / 3;\n"
+    "        int k = v % 3;\n"
+    "        float m = part >= 5 ? -1.0 : 1.0;\n" /* the left wing, mirrored */
+    "        int wing = part >= 5 ? part - 3 : part;\n"
+    "        vec2 elbow = vec2(0.5 * cos(inner), 0.5 * sin(inner));\n"
+    "        vec2 tip = elbow + vec2(0.5 * cos(outer), 0.5 * sin(outer));\n"
+    "        vec3 c;\n"
+    "        float shade = 1.0;\n"
+    "        if (part == 0) {\n"
+    /* the body twisted about its length, so that it has some width seen
+     * from the side as from below */
+    "            c = k == 0 ? vec3(0.0, 0.0, 0.55)\n"
+    "                       : vec3(k == 1 ? -0.09 : 0.09, k == 1 ? 0.06 : -0.06, -0.35);\n"
+    "        } else if (part == 1) {\n"
+    "            c = k == 0 ? vec3(0.0, 0.0, -0.3) : vec3(k == 1 ? -0.13 : 0.13, 0.0, -0.62);\n"
+    "            shade = 0.9;\n"
+    "        } else if (wing == 2 || wing == 3) {\n"
+    /* the inner wing: from the body to the elbow, a quad of two */
+    "            int q4 = wing == 2 ? (k == 0 ? 0 : k == 1 ? 1 : 2) : (k == 0 ? 0 : k == 1 ? 2 : 3);\n"
+    "            c = q4 == 0 ? vec3(0.06, 0.0, 0.24) : q4 == 1 ? vec3(0.06, 0.0, -0.16)\n"
+    "              : q4 == 2 ? vec3(elbow.x + 0.06, elbow.y, -0.06) : vec3(elbow.x + 0.06, elbow.y, 0.16);\n"
+    "        } else {\n"
+    /* the outer wing to its tip, darker */
+    "            c = k == 0 ? vec3(elbow.x + 0.06, elbow.y, 0.16)\n"
+    "              : k == 1 ? vec3(elbow.x + 0.06, elbow.y, -0.06) : vec3(tip.x + 0.06, tip.y, -0.2);\n"
+    "            shade = k == 2 ? 0.35 : 0.85;\n"
+    "        }\n"
+    "        c.x *= m;\n"
+    "        placed = at + (side * c.x + up * c.y + ahead * c.z) * size;\n"
+    "        is_placed = true;\n"
+    "        tint *= shade;\n"
+    "        size = 0.0;\n"
     "    } else if (u_kind == 10) {\n"
     /* mist: banks drifting with the wind across the area, low */
     "        vec2 span = u_area.zw - u_area.xy;\n"
@@ -1385,7 +1448,10 @@ static const char g_dress_particles_vertex[] =
     "        }\n"
     "    }\n"
     "    vec3 p;\n"
-    "    if (u_kind == 6) {\n"
+    "    if (is_placed) {\n"
+    "        p = placed;\n"
+    "        q = vec2(0.0);\n"
+    "    } else if (u_kind == 6) {\n"
     /* a streak: along its fall, across the line of sight */
     "        vec3 along = normalize(streak);\n"
     "        vec3 side = normalize(cross(along, at - u_camera));\n"
@@ -1420,7 +1486,7 @@ static const char g_dress_particles_fragment[] =
     "        shape = (1.0 - smoothstep(0.2, 1.0, r));\n"
     "    } else if (u_kind == 6) {\n"
     "        shape = (1.0 - abs(v_corner.x)) * smoothstep(1.0, 0.2, abs(v_corner.y));\n"
-    "    } else if (u_kind == 11) {\n"
+    "    } else if (u_kind == 20) {\n"
     /* a crown: a ring's upper half and a few drops above it */
     "        vec2 c = v_corner * vec2(1.0, 2.0);\n"
     "        float ring = 1.0 - smoothstep(0.0, 0.25, abs(length(c) - 0.75));\n"
@@ -1451,7 +1517,7 @@ static const char g_dress_particles_fragment[] =
     "        color = v_color.rgb * (added * 1.6 + base * 0.22);\n"
     "    } else if (v_glow > 0.5) {\n"
     "        color = v_color.rgb * 255.0 * (1.0 + 1.5 * (1.0 - smoothstep(0.0, 0.3, r)));\n"
-    "    } else if (u_kind == 6 || u_kind == 11) {\n"
+    "    } else if (u_kind == 6 || u_kind == 20) {\n"
     /* the rain: thousands of thin streaks, lit by the stage's light
      * alone, with no look into the sun's maps or the lights' list */
     "        vec3 ir = max(u_light * vec3(0.0, -1.0, 0.0), vec3(0.0)) * 4096.0;\n"
@@ -4102,8 +4168,14 @@ void port_GlDressingDrawMixed(const PortGlDressingView *view) {
                             ? 0
                             : flame_count);
             glBindVertexArray(g_dress.empty_array);
-            glDrawArraysInstanced(GL_TRIANGLES, 0, 6, run->count);
-            g_dress.triangles += (u32)(run->count * 2);
+            if (sub == PORT_PARTICLES_GULLS) {
+                glDrawArraysInstanced(
+                    GL_TRIANGLES, 0, GULL_VERTICES, run->count);
+                g_dress.triangles += (u32)(run->count * GULL_VERTICES / 3);
+            } else {
+                glDrawArraysInstanced(GL_TRIANGLES, 0, 6, run->count);
+                g_dress.triangles += (u32)(run->count * 2);
+            }
             if (sub == PORT_PARTICLES_RAIN) {
                 /* and where the drops land, their splashes */
                 glUniform1i(g_dress.particles_at.kind, PARTICLES_SPLASHES);
