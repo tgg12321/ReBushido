@@ -6,13 +6,23 @@ lessons still holds unless this section says otherwise.
 
 ## The state
 
-- `main` holds every agent branch of the session, pushed at `e7da37638`;
-  the gate passed on it and baselines are stored for it. No agent
-  worktree is left (three empty folders in `.claude/worktrees/` were
-  held open by the session; remove them when nothing holds them).
+- `main` holds every finished agent branch of the session, pushed; the
+  gate passed on it (the bench once alone on a quiet machine) and
+  baselines are stored for `cf2896ad5`. One agent runs: the skies
+  (ROADMAP 17, the owner's note of 2026-11-25), in its own worktree.
+  Four empty folders in `.claude/worktrees/` (a4d5f58d..., a5f830d5...,
+  a847cf0c..., aa448d47...) are held open by the session; remove them
+  when nothing holds them.
+- **The gate builds the provers' programs** (`port-gl`,
+  `port-gl-windows`) since `cf2896ad5`: the replays' code sum had broken
+  their link unseen, and the baseline store found it.
 - **The lobby on the VPS is version 4** (four PCs, 2026-11-25), session
-  protocol now 18 (16 the CPU for a leaver, 17 the arenas' sum, 18 the
-  partners' picks; none needed a lobby change). Versions 1 to 3 are kept on the VPS as
+  protocol now 20 (16 the CPU for a leaver, 17 the arenas' sum, 18 the
+  partners' picks, 20 the partners' voices; 19 unused; none needed a
+  lobby change). The ladder's store is schema 2 (the `settled` table),
+  migrated on the VPS on 2026-11-26 with a copy kept beside it, and
+  `tools/relay/disputes.py` is deployed (0 disputes open); the version 4
+  source before it is `/root/rebushido-relay-src.v4-backup`. Versions 1 to 3 are kept on the VPS as
   `/root/rebushido-relay-src.v{1,2,3}-backup`; the ladder's store is
   `/var/lib/private/rebushido-relay` (daily backups). The internet test
   passed on version 4 (82 hashes alike, punch and relay). No release is
@@ -62,7 +72,8 @@ lessons still holds unless this section says otherwise.
    (`tmp/stages17c/`): the water's reflections now seen (the stream,
    the sea, the river, the floors and puddles), the foliage's shadows,
    gulls over the ship, the dock's bollards and the orange trees' trunks
-   as meshes, the shafts held by the fighters.
+   as meshes, the shafts held by the fighters. The skies, when their
+   agent is merged: `tmp/skies/`.
 3. **Fighters from the disc for all**, which the blended joints need
    but which changes their shading.
 4. **The release zip** with the upscaler (62 MB) or without (29 MB, the
@@ -74,7 +85,10 @@ lessons still holds unless this section says otherwise.
    size, the preview cropped to the map's frame); films at 59.826 a
    second, from the fight's first frame, ~21 MB a 16 s fight at 1080p
    (over Discord's free 10 MB; 720p is 9.6 MB; `tmp/replay-export/`);
-   four characters in 2v2 (`tmp/2v2-chars/`).
+   four characters in 2v2 (`tmp/2v2-chars/`); the CPU taking over for a
+   guest who leaves between fights; the partners' voices
+   (`tmp/2v2-voices/`) and mods' pages (`tmp/2v2-mods/`); the Replays
+   page (`tmp/replays-page/`).
 
 ## Next, what needs no owner
 
@@ -97,6 +111,13 @@ lessons still holds unless this section says otherwise.
   dressing built from the game's memory at the first frame (1 to 4 ms).
 
 ## Lessons of the session
+
+- **Open, no cause yet**: some Windows online window cases (`win-pages`
+  three times, `rooms-four-win` and `room` once each) fail only inside a
+  full gate on a loaded machine and pass alone every time (`win-pages`
+  6 of 6, five of them under load); the provers' stage counts are 66
+  primitives a stage fewer than stored baselines even on the baseline's
+  own code; `ra1-stress`'s `settled_p99` is over its limit on main too.
 
 - **The bench copies the disc-made mods** into `build/bench/mods/`
   instead of linking them (`ca10d3d4f`): on 2026-11-25 `tmp/mods/art`
