@@ -397,7 +397,12 @@ the stage").
     depth; the foliage casting into the sun's nearest map; gulls over the
     ship; the ferry dock's bollards and the orange trees' trunks as
     meshes. Left: the foliage in the lights' cubes, a mist the fight
-    camera sees, the bamboo's clumps as meshes.
+    camera sees, the bamboo's clumps as meshes. Next, the skies (the
+    owner, 2026-11-25: "I want striking skyboxes. With beautiful
+    volumetric clouds, sunsets and moon shots etc"): a procedural sky of
+    volumetric clouds lit by the sun or the moon, sunsets and dawns, a
+    moon and stars at night, following each stage's time of day (item
+    20), within the card's budget.
 18. **Custom arenas**: a stage authored in Blender as a render mesh and
     a collision mesh with each face's surface (firm, sand, wet,
     barrier), compiled into the game's ground (`MODS.md`, "Stages");
