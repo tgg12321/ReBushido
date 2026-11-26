@@ -9684,10 +9684,52 @@ four:
   four is what it was.
 - **The weapon.** The second's weapon and what he throws are asked for
   with the firsts' (`port_DuoAskWeapons`), from the one weapons file.
+- **The sounds: a second bank of sound memory.** The chip's 512 KB holds
+  the game's banks of two characters (the common bank, each slot's voice,
+  weapon and class, the stage's, and the stage's reverb's room: up to
+  0x5E760 bytes in `four` without the reverb), and a partner's voice alone is 51 to 59 KB, his weapon's 53:
+  four characters' do not fit. The port's chip has a second bank of sound
+  memory as large (`bank_ram`, spu.c; port_spu.h), which nothing of the
+  console's reads or writes, in the state with the chip. A partner of his
+  own has his own banks there where his are not his first's: his voice
+  (his model file's bank, opened as it is loaded), his weapon's sounds
+  where his weapon's sound kind is neither first's (the weapon file of the
+  two partners' kinds read once, `resource_PortReadWeaponSounds`, at once
+  from the player's image, `cdrom_PortReadNow`: a read of the drive's
+  would take a fight's load 36 blanks longer, and the fight that follows,
+  whose CPU draws from the blank, another), his
+  class's (his footsteps, out of the stage's file as it is read,
+  `port_DuoLoadStageClasses`; the stage is read again where a partner's
+  class changes, `port_DuoStageClassesChanged`). Each is a bank of
+  libsnd's the game never uses (`PORT_DUO_VAB`, ids 10 to 15) and none of
+  `g_snd_vabs`, so the game's banks are packed, counted and placed as
+  before; its head is at the end of his room of the area, its samples
+  sent to the second bank (`snd_PortOpenVab`: `port_SetSpuTransferBank`).
+  A fighter's sound the game asks for while a second is in the slot is
+  his (`port_DuoSound`, from `snd_Play`: his own bank's, or of a weapon or
+  class the other first has, that first's bank), and the voice it is
+  started on is told to read the second bank at its key on
+  (`port_SetSpuKeyBank`, `snd_StartQueuedSound`; the run's log gives such
+  a voice's address 0x80000 on). Of his first's character and weapon,
+  nothing of this happens: his sounds are his first's, as they are. One on
+  one never names the second bank, so its sound is the console's, voice
+  for voice (`port_sound`). Proved by `four`'s fight, `--wav` on both
+  sizes (the same file, byte for byte), against one on one of the same
+  characters and weapons and of the firsts (`tmp`'s script of the change,
+  2026-11-25): every tone a partner played starts in the second bank at
+  one constant offset from where the same character's starts in one on
+  one (0x7A200 for Tatsumi's voice, 0x7A230 Utsusemi's, 0x7A260 and
+  0x7A270 their weapons', 0x8D820 and 0x98280 their classes'), where his
+  first's tones are at offsets that differ tone by tone; and the samples
+  after each key on, cross-correlated with the same sound's in one on
+  one, median 0.47 and 0.68 for the two voices against 0.10 and 0.09 with
+  the firsts' (0.37 and 0.68 against 0.08 and 0.28 for the weapons; the
+  footsteps, short and under the rest, 0.18 against 0.14). Every plan of
+  `port_duo.py` gives the trace it gave before, byte for byte, on both
+  sizes: the game's fight is what it was, only its sound is not.
 
-What stays the slot's: the model's sound bank (a partner shouts with his
-first's voice) and the weapons' sounds (the file of the two firsts'
-kinds), the point light's target, the sounds a thrown thing makes. The
+What stays the slot's: the point light's target, the sounds a thrown
+thing makes. The
 remastered picture draws the second bank too: a polygon of it names its
 page and table 1024 lines further down (`PORT_VRAM_BANK_NAMED_Y`,
 remaster.c), the card's mirror of video memory has the bank's lines after

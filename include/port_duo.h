@@ -95,6 +95,37 @@ enum {
     ((PORT_DUO_AREA_END - PORT_DUO_MOTION_ADDR(2)) / 2 & ~0xFFFU)
 #define PORT_DUO_MODEL_ADDR(slot)                                              \
     (PORT_DUO_MOTION_ADDR(2) + (u32)(slot) * PORT_DUO_MODEL_BYTES)
+/* the last of a partner's room of his model: the heads of his own banks
+ * of sounds (below), PORT_DUO_HEAD_BYTES each */
+#define PORT_DUO_HEAD_BYTES 0x1000
+#define PORT_DUO_HEADS_BYTES (PORT_DUO_SOUND_PARTS * PORT_DUO_HEAD_BYTES)
+#define PORT_DUO_HEAD_ADDR(slot, part)                                         \
+    (PORT_DUO_MODEL_ADDR(slot) + PORT_DUO_MODEL_BYTES - PORT_DUO_HEADS_BYTES + \
+     (u32)(part) * PORT_DUO_HEAD_BYTES)
+
+/* Each team's second sounds as himself: his voice (his model's bank of
+ * sounds), his weapon's sounds and his class's (his footsteps, out of the
+ * stage's file) where they are not his first's. The
+ * sound chip's memory holds the game's banks of two characters, so a bank
+ * of a partner's own is opened as a bank of libsnd's that the game never
+ * uses (PORT_DUO_VAB: 10 to 15, none of g_snd_vabs, so that the game's
+ * banks are packed and counted as before), its head in his room of the
+ * area and its samples in the port's second bank of sound memory
+ * (port_spu.h), which the voice it is started on reads (snd.c,
+ * snd_StartQueuedSound). A fighter's sound the game asks for while a
+ * second is in the slot is his (port_DuoSound, snd.c's snd_Play): his own
+ * bank's, or of a weapon or class the other team's first has, that
+ * first's. */
+enum {
+    PORT_DUO_SOUND_VOICE = 0,  /* the model's bank: the first 16 sounds */
+    PORT_DUO_SOUND_WEAPON = 1, /* the weapon's: the next 16 */
+    PORT_DUO_SOUND_CLASS = 2,  /* the class's: the last 8 */
+    PORT_DUO_SOUND_PARTS = 3
+};
+
+#define PORT_DUO_VAB_FIRST 10
+#define PORT_DUO_VAB(slot, part)                                               \
+    (PORT_DUO_VAB_FIRST + (slot) * PORT_DUO_SOUND_PARTS + (part))
 /* the renderer's tables of a partner's meshes and shadows (RELOC_...),
  * the last of the renderer's that anything uses: a fighter's (the
  * remastered picture's port_RemasterNoteFighter, render_asm.c) */
@@ -143,6 +174,22 @@ extern void port_DuoModelsHome(void);
 /* The engine's state reset (model.c, model_ClearAll, at boot and after
  * the movie): the copies and their cloth are no longer anyone's. */
 extern void port_DuoForget(void);
+/* The sound the game asks for (snd.c, snd_Play): `def`, or where it is a
+ * fighter's and a team's second of sounds of his own is in the slot, his
+ * (above). */
+struct SoundDef;
+struct SoundVab;
+extern struct SoundDef *port_DuoSound(s32 sound, struct SoundDef *def);
+/* A partner's bank of sounds, open (PORT_DUO_VAB): its head; NULL if not. */
+extern struct SoundVab *port_DuoVab(s32 id);
+/* The stage's banks of sounds are to be loaded again (fight.c,
+ * fight_LoadStage): a team's second's class is not the one whose bank is
+ * loaded for him. */
+extern s32 port_DuoStageClassesChanged(void);
+/* The stage's file is at `file` (snd.c, snd_LoadStageVabs): the bank of
+ * each team's second's class, where it is neither first's, opened from it
+ * (its table's entry `class + 1`, at `file` plus the entry's offset). */
+extern void port_DuoLoadStageClasses(s32 file);
 /* The address is in the room of a copy's cloth (arena.c). */
 extern s32 port_DuoHoldsAddress(s32 address);
 /* A slot's model moved in the arena (resource.c): its copy follows. */

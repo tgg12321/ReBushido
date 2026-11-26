@@ -50,6 +50,12 @@ extern s32 ndata_GetArenaRoomAfter(s32 id);
 extern void ndata_ReadModel(s32 model, s32 dest_addr);
 extern void ndata_ReadStage(s32 stage, s32 dest_addr);
 extern void ndata_ReadWeapons(s32 weapon_set, s32 file, s32 dest_addr);
+#if RB_PORT
+/* (The native port.) The same read from the player's image at once, with
+ * no time of the drive's: two on two's partners' weapon sounds
+ * (resource.h), so that a fight's load takes the time it took. */
+extern void ndata_PortReadWeaponsNow(s32 weapon_set, s32 file, s32 dest_addr);
+#endif
 extern void ndata_ReadTinyModel(s32 tiny_model, s32 dest_addr);
 
 /* A chanbara pack is one entry holding several of the opponents' models, so

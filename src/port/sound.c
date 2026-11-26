@@ -232,7 +232,7 @@ s32 WaitEvent(s32 event) {
  * (so up to 63 bytes past `size` are moved too). Then the interrupt
  * that ends a transfer. */
 static void port_TransferSpu(u8 *memory, u32 size, s32 reading) {
-    u8 *ram = port_GetSpuRam();
+    u8 *ram = port_GetSpuTransferRam();
     u32 addr = (u32)_spu_tsa << _spu_mem_mode_plus;
     u32 bytes = (size / DMA_BLOCK_BYTES + (size % DMA_BLOCK_BYTES ? 1 : 0)) *
                 DMA_BLOCK_BYTES;
@@ -267,7 +267,7 @@ void _spu_FiDMA(void) {
 /* Writes to sound memory by hand, where Sony's feeds the chip 64 bytes
  * at a time. */
 static void _spu_FwriteByIO(u8 *addr, u32 size) {
-    u8 *ram = port_GetSpuRam();
+    u8 *ram = port_GetSpuTransferRam();
     u32 at = (u32)_spu_tsa << _spu_mem_mode_plus;
     u32 i;
 

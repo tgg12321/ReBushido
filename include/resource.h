@@ -68,6 +68,17 @@ extern void resource_SetWeaponSounds(s32 fighter, s32 sound_kind);
 extern void resource_LoadWeapons(s32 staging_addr);
 /* Makes the next resource_LoadWeapons read the file whatever is loaded. */
 extern void resource_ForgetWeapons(void);
+#if RB_PORT
+/* The native port's two on two (port_duo.h): the partners' weapon sound
+ * kinds. The bank of the two fighters' that has kind `kind`
+ * (SND_VAB_WEAPON_1 or _2), -1 if neither has; and the weapon file of the
+ * set asked for that has the kinds `first` and `second` (either -1 for
+ * none), read to `staging` in one go: the address of each one's pack of
+ * sounds (as snd_LoadVab takes it), 0 for none. FALSE if there are none. */
+extern s32 resource_PortWeaponSoundsBank(s32 kind);
+extern s32 resource_PortReadWeaponSounds(
+    s32 first, s32 second, s32 staging, s32 *first_pack, s32 *second_pack);
+#endif
 
 extern void resource_LoadWeaponFile(
     s32 weapon_set, s32 file, s16 *slots, s32 staging_addr);

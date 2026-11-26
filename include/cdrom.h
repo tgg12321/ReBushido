@@ -118,6 +118,13 @@ extern u32 cdrom_GetFileSize(s32 file_index);
 extern s32 cdrom_StartRead(s32 file_index, s32 dest);
 extern s32 cdrom_StartReadAt(
     s32 file_index, s32 dest, s32 sector_offset, s32 sector_count);
+#if RB_PORT
+/* (The native port.) The same sectors read from the player's image at
+ * once, with none of the drive's time and nothing of its state: FALSE if
+ * one could not be read. For the port's own reads alone (ndata.h). */
+extern s32 cdrom_PortReadNow(
+    s32 file_index, s32 dest, s32 sector_offset, s32 sector_count);
+#endif
 
 /* Starts playing a file as audio: stream `xa_channel` of an XA file, or the
  * file as CD audio if `xa_channel` is negative. Returns 0 if a request is

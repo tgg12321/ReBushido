@@ -2495,6 +2495,15 @@ before it plays a fight of four with each team two of one character, and
 its select screen has no second grid, so the two would part at the first
 partner's pick; 17 and 18 do not meet. The lobby is unchanged (version 4).
 
+**Protocol 20** (setup codes `P20-...`; 19 is another change's): a
+partner of his own sounds as himself (docs/PORT.md, "Two on two", "The
+sounds"). His banks of sounds are loaded by `fight_Init` on every machine
+alike, their heads into his room of the RAM and their samples into the
+port's second bank of sound memory, a part of the chip's state (spu.c,
+a state file), so saved, put back and hashed with it (the weapon file his
+sounds may need is read at once from each machine's image, taking no
+blank). The state is not 18's, so 18 and 20 do not meet.
+
 **How it is proved.**
 
 | Case | Programs | What runs | Result |

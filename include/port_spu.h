@@ -81,6 +81,18 @@ typedef struct {
 extern void port_AttachSpu(u16 *regs);
 /* Sound memory, PORT_SPU_RAM_BYTES of it. */
 extern u8 *port_GetSpuRam(void);
+/* A second bank of sound memory, as large, that the console has not:
+ * two on two's partners' own banks of sound (port_duo.h), as video memory
+ * has a second bank for their textures. Nothing of the console's reads or
+ * writes it, and one on one never names it. While port_SetSpuTransferBank
+ * is on, a transfer to sound memory writes the second bank (the memory
+ * port_GetSpuTransferRam gives); port_SetSpuKeyBank(voice, 1) has that
+ * voice's next key on read its waveform from the second bank, at the
+ * same addresses, until it is keyed on again (the latch is used up by the
+ * key on; 0 clears it). */
+extern u8 *port_GetSpuTransferRam(void);
+extern void port_SetSpuTransferBank(s32 is_on);
+extern void port_SetSpuKeyBank(s32 voice, s32 bank);
 /* The keys on and off that were written to the registers since the last
  * call take effect, and the two registers are cleared: what the chip
  * does at its next sample. port_RunSpu does this first; whoever writes
@@ -100,7 +112,8 @@ extern s32 g_port_spu_quiet;
 extern void port_RunSpu(
     const s16 *cd, const s16 *heard, s16 *out, s16 *heard_out, u32 frames);
 extern const PortSpuCounts *port_GetSpuCounts(void);
-/* Called as a voice is keyed on, if not NULL: for a run's log. */
+/* Called as a voice is keyed on, if not NULL: for a run's log. The
+ * address of a voice of the second bank is PORT_SPU_RAM_BYTES on. */
 extern void (*g_port_spu_key_on_hook)(s32 voice, u32 addr, u32 pitch);
 
 /* ---- the disc's sound (src/port/xa.c) ---- */

@@ -618,6 +618,8 @@ void fight_LoadStage(void) {
 #if RB_PORT
         /* another arena, or none, over the same host (port_stage_choice.h) */
         port_StageChoiceAtLoad(g_fight_mode) ||
+        /* two on two's seconds' classes' banks (port_duo.h) */
+        port_DuoStageClassesChanged() ||
 #endif
         g_fight_stage != g_fight_loaded_stage ||
         g_fighter_roster_classes[g_fight_config.roster[0]] !=

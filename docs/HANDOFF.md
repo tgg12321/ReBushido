@@ -76,8 +76,7 @@ lessons still holds unless this section says otherwise.
 
 ## Next, what needs no owner
 
-- ROADMAP 24's leftovers: a partner's own voice and weapon sounds (the
-  sound chip holds two characters' banks), mods' texture pages on the
+- ROADMAP 24's leftovers: mods' texture pages on the
   second video memory bank, the silent guest's 15 s takeover untested, a
   leave between fights of a match.
 - A replay played by a later window build that differs only in window

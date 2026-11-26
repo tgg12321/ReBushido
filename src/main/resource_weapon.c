@@ -186,6 +186,67 @@ void resource_LoadWeapons(s32 staging_addr) {
     }
 }
 
+#if RB_PORT
+/* (The native port.) Two on two's partners' weapon sounds (resource.h). */
+s32 resource_PortWeaponSoundsBank(s32 kind) {
+    if (kind < 0) {
+        return -1;
+    }
+    if (g_resource_weapon_sounds[0] == kind) {
+        return SND_VAB_WEAPON_1;
+    }
+    if (g_resource_weapon_sounds[1] == kind) {
+        return SND_VAB_WEAPON_2;
+    }
+    return -1;
+}
+
+/* (resource.h) The file of the two kinds, the lower first, as
+ * resource_LoadWeapons names it; a section of sounds for each kind of the
+ * two (one, if they are one), in the order of the kinds. */
+s32 resource_PortReadWeaponSounds(
+    s32 first, s32 second, s32 staging, s32 *first_pack, s32 *second_pack) {
+    s32 kinds = g_resource_weapon_set == 0 ? WEAPON_SET_0_SOUND_KINDS
+                                           : WEAPON_SET_1_SOUND_KINDS;
+    s32 *header = (s32 *)ADDR(staging);
+    s32 *table;
+    s32 sounds;
+    s32 last;
+    s32 lo = first < 0 ? second : first;
+    s32 hi = second < 0 ? first : second;
+
+    *first_pack = *second_pack = 0;
+    if (lo > hi) {
+        last = lo;
+        lo = hi;
+        hi = last;
+    }
+    if (lo < 0 || hi >= kinds || g_resource_weapon_set < 0) {
+        return FALSE;
+    }
+    /* the file of the pair (lo, hi): a section of sounds for each kind,
+     * the lower first, one if they are one */
+    ndata_PortReadWeaponsNow(
+        g_resource_weapon_set, math_UnorderedPairIndex(kinds, lo, hi), staging);
+    last = header[0];
+    if (last < 3) {
+        return FALSE;
+    }
+    sounds = staging + ALIGN4(header[last - 1]);
+    table = (s32 *)ADDR(sounds);
+    if (table[0] < (lo == hi ? 1 : 2)) {
+        return FALSE;
+    }
+    if (first >= 0) {
+        *first_pack = sounds + table[first == lo ? 1 : 2];
+    }
+    if (second >= 0) {
+        *second_pack = sounds + table[second == lo ? 1 : 2];
+    }
+    return TRUE;
+}
+#endif
+
 /* Empty, and nothing calls it. A guess from where it sits: it printed what
  * was loaded in development builds. */
 static void resource_DebugWeapons(void) {}
