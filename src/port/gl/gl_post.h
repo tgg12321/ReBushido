@@ -95,6 +95,13 @@ extern void port_GlPostFloorsEnd(void);
  * stage's pieces and the banks are seen in it (gl_dressing.h). */
 extern void port_GlPostWaterPlane(float height, float size);
 
+/* The depth of the fighters the game draws from its own primitives, of
+ * the drawing being drawn (port_GlPostFighterDepth, at the shadows'
+ * end): FALSE where there is none; else its texture, the world into its
+ * clip space (16, a column after a column), and the two numbers that take
+ * its depth back to the view's (z = b / (2 d - 1 - a)). */
+extern s32 port_GlPostFighterDepthNow(u32 *texture, float *matrix, float *a_b);
+
 /* The ground's mesh was drawn with this view (gl_stage.c): the rotation
  * (1.12, a row after a row), the camera, the projection's distance, the
  * screen's middle in video memory's pixels (offsets and a wider picture's

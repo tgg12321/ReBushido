@@ -55,6 +55,10 @@ extern const char *port_GlDressingStart(void *(*getproc)(const char *name));
  * off by default). */
 extern void port_GlDressingSetOn(s32 on);
 extern s32 port_GlDressingIsOn(void);
+/* Whether the shafts of light want the fighters' depth (gl_post.h,
+ * port_GlPostFighterDepthNow): a shaft is held by it where a fighter
+ * stands in front of it. */
+extern s32 port_GlDressingWantsFighters(void);
 
 /* The ground's mesh has been built (gl_stage.c, before its vertices go to
  * the card): its vertices, gl_stage.c's StageVertex of `stride` bytes,

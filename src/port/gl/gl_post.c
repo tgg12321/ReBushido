@@ -33,6 +33,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_bench.h"
+#include "gl_dressing.h"
 #include "gl_lights.h"
 #include "gl_post.h"
 #include "gl_shadow.h"
@@ -1109,6 +1110,8 @@ typedef struct {
     s32 has_fighters;
     float fighter_corner[2];
     float fighter_size[2];
+    /* the world into that buffer's clip space, a column after a column */
+    float fighter_matrix[16];
 } PostView;
 
 static struct {
@@ -1647,7 +1650,11 @@ void port_GlPostFighterDepth(void) {
     s32 k;
 
     view->has_fighters = FALSE;
-    if (!g_post.is_started || !g_post.is_reflect || !view->is_set) {
+    /* for the reflections, and for the dressing's shafts of light, which
+     * are held by it where a fighter stands in front of them */
+    if (!g_post.is_started ||
+        !(g_post.is_reflect || port_GlDressingWantsFighters()) ||
+        !view->is_set) {
         return;
     }
     port_GlGetPicture(&picture);
@@ -1739,11 +1746,26 @@ void port_GlPostFighterDepth(void) {
     glClear(GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+    memcpy(view->fighter_matrix, matrix, sizeof(view->fighter_matrix));
     view->has_fighters = port_GlShadowDrawSunCasters(matrix) > 0;
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
     port_GlForgetState();
+}
+
+s32 port_GlPostFighterDepthNow(u32 *texture, float *matrix, float *a_b) {
+    const PostView *view = &g_post.live;
+    float near_to_far = PORT_GL_DEPTH_RANGE - POST_FIGHTER_NEAR;
+
+    if (!g_post.is_started || !view->is_set || !view->has_fighters) {
+        return FALSE;
+    }
+    *texture = g_post.fighter_depth[view->fighter_slot & 1];
+    memcpy(matrix, view->fighter_matrix, sizeof(view->fighter_matrix));
+    a_b[0] = (PORT_GL_DEPTH_RANGE + POST_FIGHTER_NEAR) / near_to_far;
+    a_b[1] = -2.0f * PORT_GL_DEPTH_RANGE * POST_FIGHTER_NEAR / near_to_far;
+    return TRUE;
 }
 
 void port_GlPostNewFrame(void) {

@@ -248,6 +248,8 @@ PORT_GL_DRESSING_FUNCTIONS
 #define PIECE_TILE_FIRST 512
 #define BEAM_LEAST 500.0f
 #define SHAFT_MOTE_SIZE 14.0f
+/* the texture unit the shafts read the fighters' depth from */
+#define SHAFT_FIGHTER_UNIT 11
 #define SHAFT_MOTE_GAIN 2.0f
 /* the particles' program's own kinds, past PORT_PARTICLES_...: the rain's
  * splashes, a splash for every third drop, and a shaft's motes */
@@ -409,6 +411,10 @@ typedef struct {
     GLint beam_inverse;
     GLint beam_floor;
     GLint beam_color;
+    GLint fighter_on;
+    GLint fighter;
+    GLint fighter_matrix;
+    GLint fighter_a_b;
 } DressAt;
 
 static struct {
@@ -1472,6 +1478,11 @@ static const char g_dress_shaft_fragment[] =
     "uniform mat3 u_beam_inverse;\n"
     "uniform float u_beam_floor;\n"
     "uniform vec3 u_beam_color;\n" /* bytes of light a unit of thickness */
+    /* the fighters' depth (gl_post.h, port_GlPostFighterDepthNow) */
+    "uniform int u_fighter_on;\n"
+    "uniform sampler2D u_fighter;\n"
+    "uniform mat4 u_fighter_matrix;\n"
+    "uniform vec2 u_fighter_a_b;\n"
     "in vec3 v_place;\n"
     "in float v_depth;\n"
     "layout(location = 0) out vec4 o_color;\n"
@@ -1516,6 +1527,19 @@ static const char g_dress_shaft_fragment[] =
     "        t0 = max(t0, (u_beam_floor - u_eye.y) / ray.y);\n"
     "    } else if (u_eye.y > u_beam_floor) {\n"
     "        discard;\n"
+    "    }\n"
+    /* not behind a fighter: his depth where the line of sight meets him
+     * (the view's depth runs along it, v_depth at this face) */
+    "    if (u_fighter_on != 0) {\n"
+    "        vec4 c = u_fighter_matrix * vec4(v_place, 1.0);\n"
+    "        vec2 uv = c.xy / max(c.w, 1e-3) * 0.5 + 0.5;\n"
+    "        if (c.w > 0.0 && uv == clamp(uv, 0.0, 1.0)) {\n"
+    "            float d = texture(u_fighter, uv).r;\n"
+    "            if (d < 1.0) {\n"
+    "                float z = u_fighter_a_b.y / (2.0 * d - 1.0 - u_fighter_a_b.x);\n"
+    "                te = min(te, z / max(v_depth, 1e-3));\n"
+    "            }\n"
+    "        }\n"
     "    }\n"
     "    if (te <= t0) { discard; }\n"
     "    float sum = 0.0;\n"
@@ -1658,6 +1682,10 @@ static void port_DressLocate(GLuint program, DressAt *at) {
     at->beam_inverse = glGetUniformLocation(program, "u_beam_inverse");
     at->beam_floor = glGetUniformLocation(program, "u_beam_floor");
     at->beam_color = glGetUniformLocation(program, "u_beam_color");
+    at->fighter_on = glGetUniformLocation(program, "u_fighter_on");
+    at->fighter = glGetUniformLocation(program, "u_fighter");
+    at->fighter_matrix = glGetUniformLocation(program, "u_fighter_matrix");
+    at->fighter_a_b = glGetUniformLocation(program, "u_fighter_a_b");
     port_GlSunLocate(program, &at->sun);
     port_GlLightsLocate(program, &at->lights);
 }
@@ -3761,6 +3789,23 @@ static void port_DressDrawShafts(
     glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
     glUseProgram(g_dress.shaft);
     port_DressUniforms(&g_dress.shaft_at, view);
+    {
+        u32 texture = 0;
+        float matrix[16];
+        float a_b[2];
+        s32 on = port_GlPostFighterDepthNow(&texture, matrix, a_b);
+
+        glUniform1i(g_dress.shaft_at.fighter_on, on);
+        if (on) {
+            glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glActiveTexture(GL_TEXTURE0);
+            glUniform1i(g_dress.shaft_at.fighter, SHAFT_FIGHTER_UNIT);
+            glUniformMatrix4fv(
+                g_dress.shaft_at.fighter_matrix, 1, GL_FALSE, matrix);
+            glUniform2f(g_dress.shaft_at.fighter_a_b, a_b[0], a_b[1]);
+        }
+    }
     glBindVertexArray(g_dress.empty_array);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
@@ -3784,6 +3829,9 @@ static void port_DressDrawShafts(
             g_dress.draws++;
         }
     }
+    glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
     /* the motes in them */
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ZERO, GL_ONE);
     glUseProgram(g_dress.particles);
@@ -3998,4 +4046,8 @@ s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
     glEnable(GL_SCISSOR_TEST);
     PORT_GPU_END();
     return TRUE;
+}
+
+s32 port_GlDressingWantsFighters(void) {
+    return g_dress.is_on && g_dress.beam_count > 0 && port_DressNow() != NULL;
 }
