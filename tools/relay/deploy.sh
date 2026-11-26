@@ -7,7 +7,7 @@
 #   bash deploy.sh uninstall --purge   ... and remove the store and its backups too
 #
 # Run it from a copy of tools/relay/ (it installs the rebushido_relay.py,
-# ladder.py and rebushido-relay.service beside it). It touches nothing but
+# ladder.py, disputes.py and rebushido-relay.service beside it). It touches nothing but
 # its own unit, its folder /opt/rebushido-relay, the service's state folder
 # (/var/lib/private/rebushido-relay, which systemd makes and keeps: the
 # ranked ladder's SQLite file, its daily backups and disputed replays) and,
@@ -21,7 +21,7 @@ DIR=/opt/rebushido-relay
 UNIT=/etc/systemd/system/$NAME.service
 # the state folder systemd keeps for the DynamicUser service (StateDirectory=)
 STATE=/var/lib/private/$NAME
-FILES="rebushido_relay.py ladder.py"
+FILES="rebushido_relay.py ladder.py disputes.py"
 MARK=$DIR/ufw-rule-added
 PYTHON=/usr/bin/python3
 SRC=$(cd "$(dirname "$0")" && pwd)

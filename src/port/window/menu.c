@@ -1012,7 +1012,22 @@ s32 port_MenuWord(const char *word) {
 #define LOOK_VALUE_X 556
 #define LOOK_ROW_Y 67
 #define LOOK_ROW_PITCH 12
-#define LOOK_ROWS_SHOWN 10
+#define LOOK_ROWS_HIGH 120
+/* the Replays page's rows are two lines each: the fighters, and under
+ * them in smaller letters when, the mode and the stage */
+#define LOOK_TWO_LINE_PITCH 20
+#define LOOK_DETAIL_DROP 9
+/* the least between a row's name and its value, and the share of the
+ * row a name keeps however long the value is (in hundredths) */
+#define LOOK_VALUE_GAP 12
+#define LOOK_LABEL_KEEPS 45
+#define LOOK_RESTART_GAP 8
+#define LOOK_AFTER_RESTART "(after a restart)"
+/* the line about the cursor's row, when it is too long for one: two of
+ * the smaller letters, the second beside the version */
+#define LOOK_HELP_UP 2
+#define LOOK_HELP_SECOND 9
+#define LOOK_HELP_BYTES 320
 #define LOOK_HELP_Y 204
 #define LOOK_NOTE_Y 215
 #define LOOK_KEYS_Y 236
@@ -1035,6 +1050,107 @@ static void port_MenuTitle(char *out, u32 room) {
                                           : "Replays");
 }
 
+/* The rows' pitch on this page, and how many of them are shown. */
+static s32 port_MenuPitch(void) {
+    return g_menu.page == PAGE_REPLAYS ? LOOK_TWO_LINE_PITCH : LOOK_ROW_PITCH;
+}
+
+static s32 port_MenuRowsShown(void) {
+    return LOOK_ROWS_HIGH / port_MenuPitch();
+}
+
+/* A row's name and value in the panel's width, cut where the two would
+ * run into each other: the value first to what the name leaves it (the
+ * name keeps LOOK_LABEL_KEEPS of the row), then the name to what the value
+ * leaves. `shown` is the value as drawn (`is_arrows`: between "<" and
+ * ">"); `after` the room the name's note after it takes. Its width. */
+static s32 port_MenuFitRow(PortLook *look, char *label, const char *value,
+                           s32 is_arrows, s32 after, char *shown, u32 room) {
+    s32 whole = LOOK_VALUE_X - LOOK_LABEL_X;
+    s32 label_w =
+        port_LookMeasure(look, PORT_LOOK_SIZE_ROW, PORT_FACE_BOLD, label) +
+        after;
+    s32 value_w = 0;
+
+    shown[0] = 0;
+    if (value[0] != 0) {
+        char cut[VALUE_BYTES];
+        s32 keeps = whole * LOOK_LABEL_KEEPS / 100;
+        s32 arrows = is_arrows ? port_LookMeasure(look, PORT_LOOK_SIZE_TEXT + 1,
+                                                  PORT_FACE_TEXT, "<    >")
+                               : 0;
+
+        snprintf(cut, sizeof(cut), "%s", value);
+        port_LookFit(look, PORT_LOOK_SIZE_TEXT + 1, PORT_FACE_TEXT, cut,
+                     whole - LOOK_VALUE_GAP - arrows -
+                         (label_w < keeps ? label_w : keeps));
+        if (is_arrows) {
+            snprintf(shown, room, "<  %s  >", cut);
+        } else {
+            snprintf(shown, room, "%s", cut);
+        }
+        value_w = port_LookMeasure(
+                      look, PORT_LOOK_SIZE_TEXT + 1, PORT_FACE_TEXT, shown) +
+                  LOOK_VALUE_GAP;
+    }
+    return port_LookFit(look, PORT_LOOK_SIZE_ROW, PORT_FACE_BOLD, label,
+                        whole - value_w - after);
+}
+
+/* The line about the cursor's row under the rows: one line where it fits,
+ * else two in smaller letters, the second short of the version beside it
+ * (`version_w`), or the one cut where a note takes the second's place. */
+static void port_MenuDrawHelp(PortLook *look, s32 version_w) {
+    s32 whole = LOOK_VALUE_X - LOOK_LABEL_X;
+    char text[LOOK_HELP_BYTES];
+    char second[LOOK_HELP_BYTES];
+    u32 split = 0;
+    u32 i;
+
+    snprintf(text, sizeof(text), "%s", port_MenuHelp());
+    if (port_LookMeasure(look, PORT_LOOK_SIZE_TEXT, PORT_FACE_TEXT, text) <=
+        whole) {
+        port_LookText(look, LOOK_LABEL_X, LOOK_HELP_Y, PORT_LOOK_SIZE_TEXT,
+                      PORT_FACE_TEXT, text, PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+        return;
+    }
+    if (g_menu.note[0] != 0) {
+        port_LookFit(look, PORT_LOOK_SIZE_TEXT, PORT_FACE_TEXT, text, whole);
+        port_LookText(look, LOOK_LABEL_X, LOOK_HELP_Y, PORT_LOOK_SIZE_TEXT,
+                      PORT_FACE_TEXT, text, PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+        return;
+    }
+    /* the last space before which the first line fits */
+    for (i = 1; text[i] != 0; i++) {
+        if (text[i] == ' ') {
+            text[i] = 0;
+            if (port_LookMeasure(
+                    look, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, text) > whole) {
+                text[i] = ' ';
+                break;
+            }
+            text[i] = ' ';
+            split = i;
+        }
+    }
+    if (split == 0) {
+        port_LookFit(look, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, text, whole);
+        second[0] = 0;
+    } else {
+        text[split] = 0;
+        snprintf(second, sizeof(second), "%s", text + split + 1);
+        port_LookFit(look, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, second,
+                     whole - version_w - LOOK_VALUE_GAP);
+    }
+    port_LookText(
+        look, LOOK_LABEL_X, LOOK_HELP_Y - LOOK_HELP_UP, PORT_LOOK_SIZE_NOTE,
+        PORT_FACE_TEXT, text, PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+    port_LookText(
+        look, LOOK_LABEL_X, LOOK_HELP_Y - LOOK_HELP_UP + LOOK_HELP_SECOND,
+        PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, second, PORT_LOOK_WHITE,
+        PORT_LOOK_LEFT);
+}
+
 void port_MenuTick(void) {
     if (!g_menu.is_open) {
         return;
@@ -1050,6 +1166,9 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
     char value[VALUE_BYTES];
     s32 i;
     s32 y;
+    s32 pitch;
+    s32 shown_rows;
+    s32 version_w;
 
     if (g_menu.page == PAGE_REPLAYS) {
         port_MenuFollowFilm();
@@ -1071,11 +1190,13 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
                       PORT_LOOK_RIGHT);
     }
     /* the rows, scrolled to keep the cursor's in view */
+    pitch = port_MenuPitch();
+    shown_rows = port_MenuRowsShown();
     if (g_menu.cursor < g_menu.first) {
         g_menu.first = g_menu.cursor;
     }
-    if (g_menu.cursor >= g_menu.first + LOOK_ROWS_SHOWN) {
-        g_menu.first = g_menu.cursor - LOOK_ROWS_SHOWN + 1;
+    if (g_menu.cursor >= g_menu.first + shown_rows) {
+        g_menu.first = g_menu.cursor - shown_rows + 1;
     }
     if (g_menu.first > 0) {
         port_LookText(
@@ -1084,12 +1205,23 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
     }
     y = LOOK_ROW_Y;
     for (i = g_menu.first;
-         i < g_menu.row_count && i < g_menu.first + LOOK_ROWS_SHOWN; i++) {
+         i < g_menu.row_count && i < g_menu.first + shown_rows; i++) {
         const MenuRow *row = &g_menu.rows[i];
         s32 is_cursor = i == g_menu.cursor;
         s32 is_arrows;
         s32 width;
+        s32 restart_w = 0;
+        char shown[VALUE_BYTES + 8];
         u32 color = is_cursor ? port_LookPulse(g_menu.pulse) : PORT_LOOK_ROW;
+        /* a setting's value: white as the game's set value is, or gold
+         * where it is not the one built in */
+        s32 built_in = row->kind == ROW_CHOICE
+                           ? port_FindChoice(row->index)->built_in
+                           : -1;
+        u32 value_color =
+            built_in >= 0 && port_MenuChoiceValue(row->index) != built_in
+                ? PORT_LOOK_GOLD
+                : PORT_LOOK_WHITE;
 
         port_MenuDescribe(row, label, value, &is_arrows);
         if (g_menu.page == PAGE_MAIN && row->kind == ROW_ONLINE) {
@@ -1098,44 +1230,44 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
                          LOOK_VALUE_X - LOOK_LABEL_X, 1, PORT_LOOK_RULE_FAINT);
             y += LOOK_ROW_PITCH / 3;
         }
-        width = port_LookText(look, LOOK_LABEL_X, y, PORT_LOOK_SIZE_ROW,
-                              PORT_FACE_BOLD, label, color, PORT_LOOK_LEFT);
         if (row->kind == ROW_CHOICE &&
             port_FindChoice(row->index)->takes == PORT_TAKES_RESTART &&
             row->index < CHOICES_KEPT &&
             port_MenuChoiceValue(row->index) != g_menu.start[row->index]) {
             /* changed, and waiting on the program's next start */
-            port_LookText(look, LOOK_LABEL_X + width + 8, y,
-                          PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
-                          "(after a restart)", PORT_LOOK_WARN, PORT_LOOK_LEFT);
+            restart_w = LOOK_RESTART_GAP +
+                        port_LookMeasure(look, PORT_LOOK_SIZE_NOTE,
+                                         PORT_FACE_TEXT, LOOK_AFTER_RESTART);
         }
-        if (value[0] != 0) {
-            char shown[VALUE_BYTES + 8];
-            /* a setting's value: white as the game's set value is, or
-             * gold where it is not the one built in */
-            s32 built_in = row->kind == ROW_CHOICE
-                               ? port_FindChoice(row->index)->built_in
-                               : -1;
-            u32 value_color =
-                built_in >= 0 && port_MenuChoiceValue(row->index) != built_in
-                    ? PORT_LOOK_GOLD
-                    : PORT_LOOK_WHITE;
-
-            if (is_cursor && is_arrows) {
-                snprintf(shown, sizeof(shown), "<  %s  >", value);
-            } else {
-                snprintf(shown, sizeof(shown), "%s", value);
-            }
-            if (is_cursor && g_menu.is_capturing) {
-                snprintf(shown, sizeof(shown), "press a key or a button...");
-                value_color = PORT_LOOK_WARN;
-            }
+        if (is_cursor && g_menu.is_capturing && value[0] != 0) {
+            snprintf(value, VALUE_BYTES, "press a key or a button...");
+            value_color = PORT_LOOK_WARN;
+            is_arrows = FALSE;
+        }
+        port_MenuFitRow(look, label, value, is_cursor && is_arrows, restart_w,
+                        shown, sizeof(shown));
+        width = port_LookText(look, LOOK_LABEL_X, y, PORT_LOOK_SIZE_ROW,
+                              PORT_FACE_BOLD, label, color, PORT_LOOK_LEFT);
+        if (restart_w != 0) {
+            port_LookText(look, LOOK_LABEL_X + width + LOOK_RESTART_GAP, y,
+                          PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
+                          LOOK_AFTER_RESTART, PORT_LOOK_WARN, PORT_LOOK_LEFT);
+        }
+        if (shown[0] != 0) {
             port_LookText(look, LOOK_VALUE_X, y, PORT_LOOK_SIZE_TEXT + 1,
                           PORT_FACE_TEXT, shown, value_color, PORT_LOOK_RIGHT);
         }
-        y += LOOK_ROW_PITCH;
+        if (row->kind == ROW_REPLAY) {
+            port_ReplaysDetail(row->index, label, LABEL_BYTES);
+            port_LookFit(look, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, label,
+                         LOOK_VALUE_X - LOOK_LABEL_X);
+            port_LookText(
+                look, LOOK_LABEL_X, y + LOOK_DETAIL_DROP, PORT_LOOK_SIZE_NOTE,
+                PORT_FACE_TEXT, label, PORT_LOOK_GREY, PORT_LOOK_LEFT);
+        }
+        y += pitch;
     }
-    if (g_menu.first + LOOK_ROWS_SHOWN < g_menu.row_count) {
+    if (g_menu.first + shown_rows < g_menu.row_count) {
         port_LookText(
             look, PORT_LOOK_GAME_W / 2, y, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
             "more below", PORT_LOOK_GREY, PORT_LOOK_CENTRE);
@@ -1143,9 +1275,9 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
     /* the line about the cursor's row, and a note or the value built in */
     port_LookBox(look, LOOK_LABEL_X, LOOK_HELP_Y - 11,
                  LOOK_VALUE_X - LOOK_LABEL_X, 1, PORT_LOOK_RULE_FAINT);
-    port_LookText(
-        look, LOOK_LABEL_X, LOOK_HELP_Y, PORT_LOOK_SIZE_TEXT, PORT_FACE_TEXT,
-        port_MenuHelp(), PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+    version_w = port_LookMeasure(
+        look, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, port_GetVersionText());
+    port_MenuDrawHelp(look, version_w);
     if (g_menu.note[0] != 0) {
         port_LookText(
             look, LOOK_LABEL_X, LOOK_NOTE_Y, PORT_LOOK_SIZE_TEXT,

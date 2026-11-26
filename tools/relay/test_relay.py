@@ -8,10 +8,12 @@ more servers, each with one limit set low, test the limits. Prints OK and
 exits 0, or names the first check that failed and exits 1.
 """
 
+import json
 import os
 import shutil
 import socket
 import sqlite3
+import struct
 import subprocess
 import sys
 import tempfile
@@ -1664,6 +1666,241 @@ def test_ranked_limits(state):
         shutil.rmtree(other_state, ignore_errors=True)
 
 
+# --- the owner's disputes.py -------------------------------------------------
+
+DISPUTES = os.path.join(HERE, "disputes.py")
+
+# The port's --replay-check as disputes.py runs it, for a test with no disc:
+# it reads the replay's META and says what the port says, the winner "by its
+# state" being META's `truth` (a test's own key; the port's is its playback),
+# and a DESYNC where META says `broken 1`.
+FAKE_PORT = r'''
+import struct, sys
+path = sys.argv[sys.argv.index("--replay-check") + 1]
+data = open(path, "rb").read()
+meta, at = {}, 12
+while at + 8 <= len(data):
+    tag, size = data[at:at + 4], struct.unpack_from("<I", data, at + 4)[0]
+    if tag == b"META":
+        for line in data[at + 8:at + 8 + size].decode().splitlines():
+            meta[line.split(" ", 1)[0]] = line.split(" ", 1)[1]
+    at += 8 + size
+if meta.get("broken") == "1":
+    sys.stderr.write("replay: %s: DESYNC at frame 30: the state's hash is 1, recorded 2\n" % path)
+    sys.exit(1)
+sys.stderr.write("replay: %s: %s frames played, %d hashes the same as recorded, the winner by its state %s\n"
+                 % (path, meta["frames"], int(meta["frames"]) // 30 + 1, meta.get("truth", meta["winner"])))
+'''
+
+
+def replay_file(fight, winner, truth=None, broken=False, start=None):
+    """A replay as the port writes one (RBREPLAY, META, HASH, END), with
+    the test's own keys for FAKE_PORT."""
+    meta = "date 2026-11-25 20:%02d:00\nwinner %d\nframes 900\nstart_count %d\nstart_hash %s\nonline 2\n" \
+           "unfinished 0\n" % (fight, winner, 1000 * fight, start or "%016X" % (0xABC000 + fight))
+    if truth is not None:
+        meta += "truth %d\n" % truth
+    if broken:
+        meta += "broken 1\n"
+    hashes = struct.pack("<II", 31, 30) + struct.pack("<Q", 0x5EED + fight) * 31
+
+    def chunk(tag, data):
+        return tag + struct.pack("<I", len(data)) + data
+
+    return b"RBREPLAY" + struct.pack("<I", 2) + chunk(b"META", meta.encode()) + chunk(b"HASH", hashes) + \
+        chunk(b"END ", b"")
+
+
+def upload_all(player, match, files):
+    """A side's replays uploaded whole, in chunks."""
+    blob = rc.upload_blob(files)
+    have = 0
+    for _ in range(len(blob) // ladder.UPLOAD_CHUNK + 5):
+        player.client.drain()
+        player.client.send(rc.upload(player.me, player.token, match, have, len(blob),
+                                     blob[have:have + ladder.UPLOAD_CHUNK]))
+        u = rc.parse_ranked(player.client.recv(ladder.K_RANKED))
+        check(u["status"] == 1, "%s's UPLOAD: %r" % (player.name, u["name"]))
+        have = u["have"]
+        if have >= len(blob):
+            return
+    raise Failure("%s's upload stopped at %d of %d" % (player.name, have, len(blob)))
+
+
+def disputes(state, *words, ok=True):
+    """disputes.py run as the owner runs it: its output."""
+    done = subprocess.run([sys.executable, DISPUTES, "--state", state] + list(words), stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, timeout=120)
+    text = done.stdout.decode("utf-8", "replace")
+    check((done.returncode == 0) == ok, "disputes.py %s ended %d: %s" % (" ".join(words), done.returncode, text))
+    return text
+
+
+def disputed_match(server, first, second, winners):
+    """Two new players, a match between them reported with different
+    winners: disputed, its number and their Players."""
+    a, b = Player(server, first), Player(server, second)
+    for p in (a, b):
+        r = p.say(ladder.A_NAME)
+        check(r["status"] == 1, "%s's name: %s" % (p.name, ladder.ERROR_NAMES.get(r["status"], r["status"])))
+    ma, mb = matched_pair(a, b)
+    a.report(ma["match"], winners[0])
+    r = b.report(mb["match"], winners[1])
+    check(r["state"] == ladder.M_DISPUTED, "%s and %s's reports: %r" % (first, second, r))
+    return ma["match"], a, b
+
+
+def test_disputes(server, state):
+    """disputes.py beside the running server: a dispute listed, both sides'
+    replays checked (the port stood in for), settled as the replays show
+    (rated, the server telling the players so) and another settled void
+    from an export's folder; neither settled twice."""
+    work = os.path.join(state, "disputes-test")
+    os.makedirs(work)
+    port = os.path.join(work, "fake_port.py")
+    with open(port, "w") as f:
+        f.write(FAKE_PORT)
+    image = os.path.join(work, "disc.cue")
+    with open(image, "w") as f:
+        f.write("a disc's stand-in\n")
+    # Ivo (the first) won 3 to 1 by the game's state; Ryu's report says he
+    # won, his files' META says so too, but their playback does not
+    number, ivo, ryu = disputed_match(server, "Ivo", "Ryu", (ladder.WON_FIRST, ladder.WON_SECOND))
+    states = [0, 1, 0, 0]
+    upload_all(ivo, number, [("fight-%d.rbr" % (i + 1), replay_file(i + 1, w)) for i, w in enumerate(states)])
+    upload_all(ryu, number, [("fight-%d.rbr" % (i + 1), replay_file(i + 1, 1, truth=w)) for i, w in
+                             enumerate(states)])
+    listed = disputes(state, "list")
+    check("match %d" % number in listed and "Ivo's replays: match-%d-a.rbu" % number in listed and
+          "the reports name different winners" in listed, "list: %s" % listed)
+    before = (ivo.hello()["rating"], ryu.hello()["rating"])
+    verdict_path = os.path.join(work, "verdict.json")
+    said = disputes(state, "check", str(number), "--image", image, "--program", port, "--save", verdict_path)
+    verdict = json.load(open(verdict_path))
+    check(verdict["sides"]["a"]["wins"] == [3, 1] and verdict["sides"]["b"]["wins"] == [3, 1] and
+          verdict["suggest"]["winner"] == "first" and verdict["reports"]["a"]["borne_out"] is True and
+          verdict["reports"]["b"]["borne_out"] is False and verdict["same_fights"]["alike"] == 4,
+          "the check of match %d: %s" % (number, said))
+    check("Ryu's report (decided, winner second): NOT borne out" in said and "the file says 1" in said,
+          "the check's words: %s" % said)
+    # settled as the replays show, while the server runs
+    done = disputes(state, "resolve", str(number), "--winner", "replays", "--verdict", verdict_path, "--reason",
+                    "both sides' replays show Ivo winning 3 to 1", "--yes")
+    want = expected(before[0], 350, before[1], 350, 1.0)
+    got = ivo.outcome(number)
+    check(got is not None and got["state"] == ladder.M_RATED and got["winner"] == ladder.WON_FIRST and
+          got["after"] == want[0], "the server's word on settled match %d: %r (%s)" % (number, got, done))
+    check(ryu.hello()["rating"] == want[1] and ivo.hello()["wins"] == 1 and ryu.hello()["losses"] == 1,
+          "the ratings after settling: %r, not %r" % ((ivo.hello()["rating"], ryu.hello()["rating"]), want))
+    shown = disputes(state, "show", str(number))
+    check("settled" in shown and "both sides' replays show Ivo" in shown and "Ivo's replays show: 3 to 1" in shown,
+          "show: %s" % shown)
+    disputes(state, "resolve", str(number), "--void", "--reason", "again", "--yes", ok=False)
+    # another, void: Sen uploaded nothing, Tae's replays do not hold
+    number2, sen, tae = disputed_match(server, "Sen", "Tae", (ladder.WON_SECOND, ladder.WON_FIRST))
+    upload_all(tae, number2, [("fight-1.rbr", replay_file(1, 1)), ("fight-2.rbr", replay_file(2, 1, broken=True))])
+    out = os.path.join(work, "export-%d" % number2)
+    disputes(state, "export", str(number2), "--out", out)
+    check(sorted(os.listdir(out)) == ["b.rbu", "match.json"], "the export: %r" % os.listdir(out))
+    said = disputes(state, "check", "--from", out, "--image", image, "--program", port)
+    check("DOES NOT HOLD: DESYNC" in said and "Sen's replays: none uploaded" in said and "void" in said,
+          "the check of an export: %s" % said)
+    disputes(state, "resolve", str(number2), "--winner", "replays", "--image", image, "--program", port, "--reason",
+             "x", "--yes", ok=False)
+    disputes(state, "resolve", str(number2), "--void", "--reason", "Sen sent nothing, Tae's replays desync",
+             "--yes")
+    got = sen.outcome(number2)
+    check(got is not None and got["state"] == ladder.M_VOID, "settled void: %r" % got)
+    check(sen.hello()["rating"] == 1500 and tae.hello()["rating"] == 1500, "a void match rated")
+    db = sqlite3.connect(os.path.join(state, "ladder.sqlite"), timeout=5)
+    try:
+        rows = db.execute("SELECT match, state, winner, reason, was FROM settled ORDER BY match").fetchall()
+    finally:
+        db.close()
+    check([(r[0], r[1], r[2]) for r in rows] == [(number, ladder.M_RATED, ladder.WON_FIRST),
+                                                 (number2, ladder.M_VOID, ladder.WON_NONE)] and
+          rows[1][3].startswith("Sen sent nothing") and rows[0][4] == "the reports name different winners",
+          "the store's settlings: %r" % rows)
+    listed = disputes(state, "list", "--all")
+    check("match %d" % number not in listed.split("settled")[0] and "2 settled" in listed, "list --all: %s" % listed)
+    shutil.rmtree(work)
+
+
+def schema_one_store(folder):
+    """A store as the server of schema 1 made it: its tables, a player each
+    side of a disputed match with its replays' row."""
+    os.makedirs(os.path.join(folder, "disputes"))
+    db = sqlite3.connect(os.path.join(folder, "ladder.sqlite"))
+    db.executescript(ladder.TABLES)
+    db.execute("INSERT INTO meta VALUES ('schema', '1')")
+    db.execute("INSERT INTO meta VALUES ('nonce_secret', ?)", ("ab" * 32,))
+    now = int(time.time()) - 3600
+    a, b = rc.Identity(), rc.Identity()
+    for key, name in ((a.public, "Old"), (b.public, "Older")):
+        db.execute("INSERT INTO players (key, name, folded, rating, rd, volatility, created, seen) "
+                   "VALUES (?, ?, ?, 1500, 350, 0.06, ?, ?)", (key, name, ladder.fold(name), now, now))
+    db.execute("INSERT INTO matches (id, a, b, created, state, why, rule, count, stage) VALUES (5, ?, ?, ?, ?, "
+               "'the reports name different winners', ?, 3, 4)", (a.public, b.public, now, ladder.M_DISPUTED,
+                                                                  ladder.RULE_FIRST_TO))
+    db.commit()
+    db.close()
+
+
+def test_schema_migration():
+    """A store of schema 1 (the server of lobby 4's): disputes.py will not
+    touch it; the server migrates it as it starts, a copy kept before, every
+    row kept; disputes.py then settles its dispute; a store of a newer
+    schema is refused."""
+    state = tempfile.mkdtemp(prefix="rebushido-schema-")
+    try:
+        schema_one_store(state)
+        said = disputes(state, "list", ok=False)
+        check("schema 1" in said and "migrates it" in said, "disputes.py on a store of schema 1: %s" % said)
+        server = ranked_server(state)
+        try:
+            check(any("migrated from schema 1 to 2" in line for line in server.lines),
+                  "no migration line: %r" % server.lines[:4])
+            p = Player(server, "Old")
+            check(p.hello()["status"] == 1, "the server on a migrated store")
+            server.stop()
+        finally:
+            server.kill()
+        db = sqlite3.connect(os.path.join(state, "ladder.sqlite"))
+        try:
+            schema = db.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()[0]
+            players = db.execute("SELECT COUNT(*) FROM players").fetchone()[0]
+            match = db.execute("SELECT state, why FROM matches WHERE id = 5").fetchone()
+            secret = db.execute("SELECT value FROM meta WHERE key = 'nonce_secret'").fetchone()[0]
+        finally:
+            db.close()
+        check(schema == "2" and players == 2 and match == (ladder.M_DISPUTED, "the reports name different winners")
+              and secret == "ab" * 32, "the store after migrating: %r" % ((schema, players, match, secret),))
+        copies = [n for n in os.listdir(os.path.join(state, "backups")) if n.startswith("before-schema-2-from-1-")]
+        check(len(copies) == 1, "the copy before migrating: %r" % os.listdir(os.path.join(state, "backups")))
+        db = sqlite3.connect(os.path.join(state, "backups", copies[0]))
+        try:
+            check(db.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()[0] == "1" and
+                  db.execute("SELECT COUNT(*) FROM matches").fetchone()[0] == 1, "the copy is not the store before")
+        finally:
+            db.close()
+        said = disputes(state, "resolve", "5", "--winner", "second", "--reason", "by hand, after migrating", "--yes")
+        check("Older won" in said and "settled: rated" in said, "settling on a migrated store: %s" % said)
+        store = ladder.Store(state, server=False)
+        try:
+            check(store.match(5)["state"] == ladder.M_RATED and store.settled(5)["reason"] ==
+                  "by hand, after migrating", "the settling on a migrated store")
+            store.db.execute("UPDATE meta SET value = '3' WHERE key = 'schema'")
+        finally:
+            store.close()
+        try:
+            ladder.Store(state).close()
+            raise Failure("a store of a newer schema was opened")
+        except SystemExit as refused:
+            check("newer schema (3)" in str(refused), "the refusal: %s" % refused)
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+
 def test_ranked_off():
     """No --state: ranked play is off, and says so."""
     server = Server(v6=False)
@@ -1693,6 +1930,7 @@ def ranked_server_tests():
             test_ranked_pair_limit(server, a, c)
             test_ranked_leaver(server, state)
             test_ranked_ladder_pages(server, ayame)
+            test_disputes(server, state)
             time.sleep(1.2)
             server.stop()
         finally:
@@ -1701,6 +1939,7 @@ def ranked_server_tests():
         test_ranked_restart(state)
         test_ranked_limits(state)
         test_ranked_off()
+        test_schema_migration()
     finally:
         shutil.rmtree(state, ignore_errors=True)
 

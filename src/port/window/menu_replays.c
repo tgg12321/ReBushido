@@ -24,13 +24,12 @@ s32 port_ReplaysItems(void) {
     return g_row_count;
 }
 
-/* A fighter as the row has it: its name, and its weapon where it is not
- * its own (every one of the roster has one). */
+/* A fighter as the row has it: its name, and whether the CPU played it
+ * (the weapons are on the line under). */
 static void port_ReplayFighter(
     const PortReplayInfo *info, s32 side, char *out, u32 room) {
-    snprintf(out, room, "%s%s (%s)", port_NameRoster(info->roster[side]),
-             info->is_cpu[side] ? ", CPU" : "",
-             port_NameWeapon(info->weapon[side]));
+    snprintf(out, room, "%s%s", port_NameRoster(info->roster[side]),
+             info->is_cpu[side] ? ", CPU" : "");
 }
 
 void port_ReplaysDescribe(
@@ -49,16 +48,27 @@ void port_ReplaysDescribe(
     port_ReplayFighter(info, 0, first, sizeof(first));
     port_ReplayFighter(info, 1, second, sizeof(second));
     seconds = info->frames / FRAMES_PER_SECOND;
-    snprintf(
-        label, label_room, "%.16s   %s  vs  %s", info->date, first, second);
+    snprintf(label, label_room, "%s  vs  %s", first, second);
     if (!info->playable) {
         snprintf(value, value_room, "cannot be played");
         return;
     }
-    snprintf(value, value_room, "%s%s, %s, %u:%02u",
-             info->online != 0 ? "online " : "", port_NameMode(info->mode),
-             port_NameStage(info->stage), seconds / SECONDS_PER_MINUTE,
+    snprintf(value, value_room, "%u:%02u", seconds / SECONDS_PER_MINUTE,
              seconds % SECONDS_PER_MINUTE);
+}
+
+void port_ReplaysDetail(s32 item, char *out, u32 room) {
+    const PortReplayInfo *info;
+
+    if (item < 0 || item >= g_row_count) {
+        out[0] = 0;
+        return;
+    }
+    info = &g_rows[item];
+    snprintf(out, room, "%s and %s     %.16s     %s (%s%s)",
+             port_NameWeapon(info->weapon[0]), port_NameWeapon(info->weapon[1]),
+             info->date, port_NameStage(info->stage),
+             info->online != 0 ? "online " : "", port_NameMode(info->mode));
 }
 
 const char *port_ReplaysHelp(s32 item) {

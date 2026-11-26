@@ -19,7 +19,9 @@ newer), as the server is. What it is:
   each match a rating period of its own, the time since a player's last one
   counted in days (`glicko2`);
 - the store: SQLite in write-ahead mode, written in transactions, backed up
-  once a day with a few kept (`Store`).
+  once a day with a few kept, migrated from an older schema as the server
+  starts (`Store`, `MIGRATIONS`); a dispute settled by the owner's
+  disputes.py (`Store.settle`).
 
     python3 tools/relay/ladder.py --self-test      Ed25519's and Glicko-2's
                                                    published cases
@@ -476,9 +478,32 @@ def rank_bytes(action, version, key=bytes(32), nonce=bytes(16), name="", setup="
                      bytes(8))
 
 
+def periods(player, now):
+    """The rating periods (days) from a player's last rated match to `now`."""
+    if not player["rated_at"]:
+        return 0.0
+    return max(0.0, (now - player["rated_at"]) / SECONDS_A_DAY)
+
+
 # --- the store -----------------------------------------------------------------
 
-SCHEMA = 1
+# The store's schema: TABLES are those of its first, MIGRATIONS what each
+# later one adds (a new store is made of the first and every migration). A
+# store of an older schema is copied whole into backups/ (a name the daily
+# copies' rotation leaves alone) and then migrated in one transaction, as
+# the server starts; a store of a newer schema than this file's is refused.
+SCHEMA = 2
+MIGRATIONS = {
+    # 2: a dispute settled by the owner (tools/relay/disputes.py): the
+    # decision, why, what the dispute was, and what the replays said
+    2: """
+CREATE TABLE IF NOT EXISTS settled (
+    match INTEGER PRIMARY KEY,
+    decided INTEGER NOT NULL,
+    state INTEGER NOT NULL, winner INTEGER NOT NULL,
+    reason TEXT NOT NULL, was TEXT NOT NULL, verdict TEXT NOT NULL DEFAULT '');
+""",
+}
 TABLES = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS players (
@@ -516,30 +541,81 @@ class Store:
     at all. Holds no address of anyone's: keys, names, ratings, results, the
     signed reports and the disputed replays alone."""
 
-    def __init__(self, folder, keep_backups=7):
+    def __init__(self, folder, keep_backups=7, server=True):
+        """The server's store (`server`): made where there is none, migrated
+        where it is of an older schema. A tool's (`server` False): the
+        store that is there, of this schema, or SystemExit saying why."""
         self.folder = folder
         self.keep_backups = keep_backups
-        os.makedirs(folder, exist_ok=True)
-        os.makedirs(os.path.join(folder, "backups"), exist_ok=True)
-        os.makedirs(os.path.join(folder, "disputes"), exist_ok=True)
         self.path = os.path.join(folder, "ladder.sqlite")
-        self.db = sqlite3.connect(self.path, isolation_level=None)
+        if server:
+            os.makedirs(folder, exist_ok=True)
+            os.makedirs(os.path.join(folder, "backups"), exist_ok=True)
+            os.makedirs(os.path.join(folder, "disputes"), exist_ok=True)
+        elif not os.path.isfile(self.path):
+            raise SystemExit("no ladder at %s" % self.path)
+        self.db = sqlite3.connect(self.path, isolation_level=None, timeout=30)
+        try:
+            self.open(server)
+        except BaseException:
+            self.db.close()
+            raise
+
+    def open(self, server):
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.executescript(TABLES)
+        if server:
+            self.db.executescript(TABLES)
         with self.transaction():
             have = self.db.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()
-            if have is None:
-                self.db.execute("INSERT INTO meta VALUES ('schema', ?)", (str(SCHEMA),))
-            elif int(have[0]) > SCHEMA:
-                raise SystemExit("ladder: %s is of a newer schema (%s) than this server's (%d)" %
-                                 (self.path, have[0], SCHEMA))
+            fresh = have is None
+            if fresh:
+                self.db.execute("INSERT INTO meta VALUES ('schema', '1')")
+        have = 1 if fresh else int(have[0])
+        if have > SCHEMA:
+            raise SystemExit("ladder: %s is of a newer schema (%d) than this program's (%d)" %
+                             (self.path, have, SCHEMA))
+        if have < SCHEMA:
+            if not server:
+                raise SystemExit("ladder: %s is of schema %d, this program's %d: the server of this version "
+                                 "migrates it as it starts (tools/relay/README.md)" % (self.path, have, SCHEMA))
+            if not fresh:
+                self.copy_before(have)
+            with self.transaction():
+                for version in range(have + 1, SCHEMA + 1):
+                    for statement in MIGRATIONS[version].split(";"):
+                        if statement.strip():
+                            self.db.execute(statement)
+                self.db.execute("UPDATE meta SET value = ? WHERE key = 'schema'", (str(SCHEMA),))
+            self.migrated = (have, SCHEMA, fresh)
+        else:
+            self.migrated = None
+        with self.transaction():
             secret = self.db.execute("SELECT value FROM meta WHERE key = 'nonce_secret'").fetchone()
             if secret is None:
+                if not server:
+                    raise SystemExit("ladder: %s has no nonce secret: not a store the server made" % self.path)
                 secret = (secrets.token_hex(32),)
                 self.db.execute("INSERT INTO meta VALUES ('nonce_secret', ?)", secret)
         self.nonce_secret = bytes.fromhex(secret[0])
+
+    def copy_before(self, have):
+        """The whole store copied before a migration, into backups/ under a
+        name the daily copies' rotation never removes: kept until the owner
+        does."""
+        stamp = time.strftime("%Y-%m-%d-%H%M%S", time.gmtime())
+        path = os.path.join(self.folder, "backups", "before-schema-%d-from-%d-%s.sqlite" % (SCHEMA, have, stamp))
+        part = path + ".part"
+        copy = sqlite3.connect(part)
+        try:
+            self.db.backup(copy)
+        finally:
+            copy.close()
+        with open(part, "r+b") as f:
+            os.fsync(f.fileno())
+        os.replace(part, path)
+        self.copied_before = path
 
     def transaction(self):
         return _Transaction(self.db)
@@ -650,6 +726,63 @@ class Store:
                              after.get(m["b"]), number))
             return True
 
+    def rate(self, a, b, winner, now, tau=TAU):
+        """Both players of a match rated by Glicko-2 for its result, as of
+        `now`: {key: (rating, rd, volatility, score)} for `decide`. Each is
+        rated against the other's rating with the other's RD widened for
+        the days since its last match."""
+        pa, pb = self.player(a), self.player(b)
+        seen_a = idle(pa["rd"], pa["volatility"], periods(pa, now))
+        seen_b = idle(pb["rd"], pb["volatility"], periods(pb, now))
+        score_a = 1.0 if winner == WON_FIRST else 0.0 if winner == WON_SECOND else 0.5
+        new_a = glicko2(pa["rating"], pa["rd"], pa["volatility"], [(pb["rating"], seen_b, score_a)], tau,
+                        periods(pa, now))
+        new_b = glicko2(pb["rating"], pb["rd"], pb["volatility"], [(pa["rating"], seen_a, 1.0 - score_a)], tau,
+                        periods(pb, now))
+        return {a: new_a + (score_a,), b: new_b + (1.0 - score_a,)}
+
+    def disputed(self):
+        """The matches held disputed, oldest first."""
+        return [self.match(r[0]) for r in
+                self.db.execute("SELECT id FROM matches WHERE state = ? ORDER BY created", (M_DISPUTED,))]
+
+    def replays_of(self, number):
+        """A match's kept uploads: {side: (file's path, bytes, when kept)}."""
+        return {side: (os.path.join(self.folder, "disputes", name), size, received) for side, size, name, received in
+                self.db.execute("SELECT side, bytes, file, received FROM replays WHERE match = ?", (number,))}
+
+    def settled(self, number=None):
+        """The disputes the owner settled (all, newest first, or one's)."""
+        columns = ("match", "decided", "state", "winner", "reason", "was", "verdict")
+        if number is not None:
+            row = self.db.execute("SELECT %s FROM settled WHERE match = ?" % ", ".join(columns), (number,)).fetchone()
+            return dict(zip(columns, row)) if row else None
+        return [dict(zip(columns, row)) for row in
+                self.db.execute("SELECT %s FROM settled ORDER BY decided DESC" % ", ".join(columns))]
+
+    def settle(self, number, state, winner, reason, verdict, now, tau=TAU):
+        """A disputed match settled by the owner, in one transaction: rated
+        for `winner` (both players' ratings moved as of now) or void, the
+        decision kept with its reason, what the dispute was and what the
+        replays said (`verdict`, text). The match, or None where it is not
+        held disputed (settled already, or never disputed)."""
+        if state not in (M_RATED, M_VOID) or (state == M_RATED) != (winner in (WON_FIRST, WON_SECOND, WON_DRAW)):
+            raise ValueError("a match is settled rated with a winner, or void with none")
+        with self.transaction():
+            m = self.match(number)
+            if m is None or m["state"] != M_DISPUTED:
+                return None
+            ratings = None
+            if state == M_RATED:
+                if self.player(m["a"]) is None or self.player(m["b"]) is None:
+                    raise ValueError("a player of match %d is no longer kept: it can only be void" % number)
+                ratings = self.rate(m["a"], m["b"], winner, now, tau)
+            self.db.execute("UPDATE matches SET state = ? WHERE id = ?", (M_PLAYING, number))
+            self.decide(number, state, winner, ("settled by the owner: " + reason)[:200], now, ratings)
+            self.db.execute("INSERT INTO settled VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (number, now, state, winner, reason, m["why"], verdict or ""))
+            return self.match(number)
+
     def recent(self, key, count):
         if key is None:
             rows = self.db.execute("SELECT id FROM matches WHERE state != ? ORDER BY created DESC LIMIT ?",
@@ -706,6 +839,8 @@ class Store:
             removed += self.db.execute("DELETE FROM matches WHERE created < ? AND state != ?",
                                        (gone, M_PLAYING)).rowcount
             removed += self.db.execute("DELETE FROM players WHERE seen < ?", (gone,)).rowcount
+            # a settling is kept as long as its match
+            removed += self.db.execute("DELETE FROM settled WHERE match NOT IN (SELECT id FROM matches)").rowcount
         return removed
 
     def backup(self, now):
@@ -913,9 +1048,7 @@ class Ladder:
 
     def periods(self, player):
         """The rating periods (days) since a player's last rated match."""
-        if not player["rated_at"]:
-            return 0.0
-        return max(0.0, (self.wall() - player["rated_at"]) / SECONDS_A_DAY)
+        return periods(player, self.wall())
 
     # the datagram
 
@@ -1242,21 +1375,12 @@ class Ladder:
         self.finish(live, state, winner, why, now)
 
     def finish(self, live, state, winner, why, now):
-        ratings = None
         a, b = live.keys
-        if state == M_RATED:
-            pa, pb = self.store.player(a), self.store.player(b)
-            # each against the other's rating as uncertain as it is now: its
-            # RD widened for the days since its last match
-            seen_a = idle(pa["rd"], pa["volatility"], self.periods(pa))
-            seen_b = idle(pb["rd"], pb["volatility"], self.periods(pb))
-            score_a = 1.0 if winner == WON_FIRST else 0.0 if winner == WON_SECOND else 0.5
-            new_a = glicko2(pa["rating"], pa["rd"], pa["volatility"], [(pb["rating"], seen_b, score_a)], self.o.tau,
-                            self.periods(pa))
-            new_b = glicko2(pb["rating"], pb["rd"], pb["volatility"], [(pa["rating"], seen_a, 1.0 - score_a)],
-                            self.o.tau, self.periods(pb))
-            ratings = {a: new_a + (score_a,), b: new_b + (1.0 - score_a,)}
-        self.store.decide(live.number, state, winner, why, self.wall(), ratings)
+        # the ratings read and written in one transaction: the owner's
+        # disputes.py may rate the same players beside the server
+        with self.store.transaction():
+            ratings = self.store.rate(a, b, winner, self.wall(), self.o.tau) if state == M_RATED else None
+            self.store.decide(live.number, state, winner, why, self.wall(), ratings)
         self.decided[live.number] = now
         live.ended = now
         for key in live.keys:
@@ -1491,6 +1615,14 @@ def show(folder):
         out["recent"].append({"match": m["id"], "a": store.name_of(m["a"]), "b": store.name_of(m["b"]),
                               "state": STATE_NAMES[m["state"]], "winner": m["winner"], "why": m["why"],
                               "when": time.strftime("%Y-%m-%d %H:%M", time.gmtime(m["created"]))})
+    out["disputed"] = [m["id"] for m in store.disputed()]
+    try:
+        out["settled"] = [{"match": s["match"], "state": STATE_NAMES[s["state"]], "winner": s["winner"],
+                           "reason": s["reason"], "was": s["was"],
+                           "when": time.strftime("%Y-%m-%d %H:%M", time.gmtime(s["decided"]))}
+                          for s in store.settled()]
+    except sqlite3.OperationalError:
+        out["settled"] = []  # a store of schema 1, before the server of 2 migrated it
     store.close()
     return out
 

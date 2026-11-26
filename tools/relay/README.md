@@ -31,6 +31,8 @@ the one thing it writes to disk, in the folder `--state` names; with no
 | a player: public key, name, rating, RD, volatility, record, when made, last seen (to the hour), last rated | two years after last seen; the name held 180 days after |
 | a match: the two keys, when, its state, winner and why, rule and stage, both signed reports, the ratings before and after | two years |
 | a disputed match's replays | 60 days, at most 4 MB a side and 1 GB in all |
+| a dispute the owner settled: when, rated for whom or void, the reason, what the dispute was, what the replays said | as long as its match (two years) |
+| the store as it was before a migration (`backups/before-schema-N-from-M-DATE.sqlite`) | until the owner removes it |
 
 No address is ever written (the limits by address are in memory). The file
 is SQLite in write-ahead mode with full synchronisation, each change one
@@ -41,13 +43,84 @@ full disk) is logged and the lobby and relay go on.
 For the owner:
 
     python3 /opt/rebushido-relay/ladder.py --show /var/lib/private/rebushido-relay   the ladder as JSON (read only)
+    python3 /opt/rebushido-relay/disputes.py list                         the disputes open ("Disputes", below)
     python3 tools/relay/ladder.py --unpack match-7-a.rbu DIR               a dispute's replays
     rebushido --image DISC.cue --replay-check DIR/FIGHT.rbr               ... each played back
     python3 tools/relay/ladder.py --self-test                             RFC 8032's and Glicko-2's cases
 
-A disputed match stays unrated; to settle one by hand, stop the service,
-copy the store, and change the match's row with `sqlite3` (there is no tool
-for it yet).
+The store's **schema** is 2 (schema 1 was the first ladder's; 2 adds the
+table of settled disputes). The server migrates an older store as it
+starts: a whole copy into `backups/` first (`before-schema-2-from-1-...`,
+which the daily copies' rotation leaves alone), then the new table and the
+schema's number in one transaction, and a line in its log
+(`ranked: the ladder's store migrated from schema 1 to 2`). A store of a
+newer schema than the server's is refused, so going back to an older
+server means putting the copy back (or setting `meta.schema` to 1: the
+added table is harmless to it). `disputes.py` never migrates: on a store of
+an older schema it says to deploy the server first.
+
+## Disputes
+
+A match whose reports disagree is held disputed, unrated, and both sides
+are asked for the replays of its fights (`disputes/match-N-a.rbu` from the
+first player, its host, and `-b.rbu` from the second). `disputes.py`
+(standard library only, installed beside the server) settles them, run by
+the owner as root over ssh, beside the running service (SQLite lets the two
+write the store one at a time; a file SQLite makes as root is given back to
+the store's owner):
+
+    python3 /opt/rebushido-relay/disputes.py list [--all]       open disputes (and those settled)
+    python3 /opt/rebushido-relay/disputes.py show 7             one, its reports and replays, how it was settled
+    python3 /opt/rebushido-relay/disputes.py export 7 --out /root/dispute-7
+    python3 /opt/rebushido-relay/disputes.py resolve 7 --winner replays --verdict /root/verdict-7.json \
+        --reason "both sides' replays show Chie winning 3 to 1"
+    python3 /opt/rebushido-relay/disputes.py resolve 7 --void --reason "neither side's replays hold"
+
+`--state` names the ladder's folder (the service's own,
+`/var/lib/private/rebushido-relay`, by default).
+
+**Checking the replays** needs the port and the disc image, which the VPS
+has neither of: `export` copies the dispute's two uploads and what the
+store says of it (`match.json`) into a folder; copy that to the PC and run
+
+    scp -r root@BOX:/root/dispute-7 tmp/
+    python tools/relay/disputes.py check --from tmp/dispute-7 --image "Bushido Blade 2 (USA).cue" \
+        --program build/port-sdl/windows/rebushido-headless.exe --save tmp/verdict-7.json
+    scp tmp/verdict-7.json root@BOX:/root/
+
+(`rebushido.exe` does as well; the program must be of the build the match
+was played with: the players' setup code says which, and a replay says
+"not this program's" to any other). On a machine with both the store and
+the port, `check 7 --state DIR --image ... --program ...` reads the store
+itself, and `resolve 7 --winner replays --image ... --program ...` checks
+and settles at once. Each side's replays are unpacked and played back with
+`--replay-check`, and the check says:
+
+- for each fight, whether every hash of the replay holds (a file changed
+  or a game not this build's does not), and who won it by the game's own
+  state as the playback leaves it (the port prints it; the winner the file
+  says of itself is shown beside it where they differ);
+- what each side's replays show: the fights won by each player, and the
+  match's winner where one reached the ladder's First to N;
+- the fights in both uploads (the same start), and whether their hashes
+  are alike: two honest programs record the same game;
+- each report against that: borne out, NOT borne out, or not decided by
+  the replays;
+- what to do: rate it for the winner the replays show (when every side
+  whose replays hold shows the same one), or, where they show none or two,
+  look at them (`rebushido --replay FILE`) and settle by hand.
+
+**Settling** (`resolve`) says what it will write (the ratings before and
+after) and asks `yes` (or `--yes`): `--winner replays` (the check's
+winner: `--verdict FILE` or a check run there), `--winner first|second|draw`
+(the owner's word), or `--void` (unrated, as if never played); `--reason`
+is kept with it. One transaction: the match rated by Glicko-2 as of the
+moment it is settled (both players' current ratings, as a match reported
+then would be) or made void, and a row of `settled` with the time, the
+decision, the reason, why it was disputed and the check's verdict. A match
+settled already, or not disputed, is refused. The players see it as any
+decided match: a program still asking about the match is told the result,
+and the ladder's pages show it.
 
 ## The protocol
 
@@ -142,7 +215,12 @@ by the host's sockets, guests placed and paired one by one, a locked room,
 seats expiring), rooms of several with matches of four, and the ladder
 (identities and forged signatures, names, the queue, agreeing and disputed
 results, leavers, limits, a restart, the backup, Glicko-2's worked example),
-in about a minute:
+and `disputes.py` beside the running server (a dispute listed, its replays
+checked by a stand-in for the port, settled rated as they show and the
+players told, another exported, checked from the export and settled void,
+neither settled twice; a store of schema 1 refused by the tool, migrated by
+the server with its copy kept and every row, then settled; a store of a
+newer schema refused), in about a minute and a quarter:
 
     python tools/relay/test_relay.py          # Windows
     python3 tools/relay/test_relay.py         # WSL, Linux
@@ -180,6 +258,30 @@ then, from the repository's root (the box is the one in the owner's notes):
 
 The ladder's store is untouched by the update (its format did not change),
 and the service's restart drops the rooms in memory, as any update does.
+
+**The disputes tool and the store's schema 2.** The lobby stays version 4
+(no datagram changed: every program of version 4 goes on as it was); the
+store goes to schema 2, which the server of this version migrates as it
+starts. A schema 2 store is refused by the server before it, so put the
+old one back only with the copy the migration made. On this PC, first:
+
+    python tools/relay/test_relay.py
+
+then, from the repository's root (the box is the one in the owner's notes):
+
+    ssh root@BOX mkdir -p /root/rebushido-relay-src
+    scp tools/relay/rebushido_relay.py tools/relay/ladder.py tools/relay/disputes.py tools/relay/relay_client.py \
+        tools/relay/deploy.sh tools/relay/rebushido-relay.service root@BOX:/root/rebushido-relay-src/
+    ssh root@BOX bash /root/rebushido-relay-src/deploy.sh             # installs disputes.py, restarts
+    ssh root@BOX journalctl -u rebushido-relay -n 5 --no-pager
+        # "rebushido-relay 4 listening on ...", "ranked: the ladder is ...", and
+        # "ranked: the ladder's store migrated from schema 1 to 2 (the copy before: before-schema-2-from-1-....sqlite)"
+    ssh root@BOX python3 /opt/rebushido-relay/disputes.py list
+    ssh root@BOX ls -l /var/lib/private/rebushido-relay/backups/
+
+The daily backup from before the update is in `backups/` as well. The
+restart drops the rooms and the queue in memory, as any update does; a
+ranked match being played is reported after it, as across any restart.
 
 Install is idempotent: run it again after changing the server and it
 replaces what changed and restarts the service, and says nothing changed

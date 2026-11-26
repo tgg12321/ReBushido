@@ -1341,7 +1341,8 @@ and F12 are the window's as ever.
 
 **From the command line**: `rebushido --replay FILE` plays one and ends
 there; `--replay-check FILE` plays it as fast as it runs, showing and
-playing nothing, and says whether it played the same as it was recorded.
+playing nothing, and says whether it played the same as it was recorded
+and who won the fight.
 
 **A replay plays only in a build whose game is the one that recorded
 it**, from the same disc image, with the same gameplay mods (stages,
