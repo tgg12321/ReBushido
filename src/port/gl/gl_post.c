@@ -33,6 +33,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_bench.h"
+#include "gl_dressing.h"
 #include "gl_lights.h"
 #include "gl_post.h"
 #include "gl_shadow.h"
@@ -223,6 +224,9 @@ static const PostFloor g_post_floors[POST_STAGES] = {
     {0, 0},   /* 37: a model of a castle town */
 };
 
+/* How rough the dressing's water is, mirrored (port_GlPostRough). */
+#define POST_WATER_ROUGH 0.45f
+
 /* How level a face has to be to reflect: its normal's upward part. */
 #define POST_LEVEL 0.94f
 
@@ -263,6 +267,10 @@ static struct {
     float area[POST_PLANE_HEIGHTS];
     s32 is_set;
     float plane;
+    /* the plane is the dressing's water's (port_GlPostWaterPlane), and how
+     * much of it there is */
+    s32 is_water;
+    float water_size;
 } g_post_plane;
 
 /* A square root by Newton's steps (the window's C library is not asked
@@ -335,6 +343,19 @@ void port_GlPostFloorsEnd(void) {
     }
     g_post_plane.is_set = best >= 0;
     g_post_plane.plane = best >= 0 ? g_post_plane.height[best] : 0.0f;
+}
+
+void port_GlPostWaterPlane(float height, float size) {
+    /* a stage whose floor reflects keeps its floor's plane; of the water,
+     * the most of it */
+    if (g_post_plane.is_set &&
+        (!g_post_plane.is_water || size <= g_post_plane.water_size)) {
+        return;
+    }
+    g_post_plane.is_set = TRUE;
+    g_post_plane.is_water = TRUE;
+    g_post_plane.water_size = size;
+    g_post_plane.plane = height;
 }
 
 /* ---- the shaders ---- */
@@ -1089,6 +1110,8 @@ typedef struct {
     s32 has_fighters;
     float fighter_corner[2];
     float fighter_size[2];
+    /* the world into that buffer's clip space, a column after a column */
+    float fighter_matrix[16];
 } PostView;
 
 static struct {
@@ -1207,6 +1230,9 @@ static struct {
      * picture shown may be either. */
     PostView live;
     PostView kept;
+    /* the view `live` was when the ground's mesh began to be drawn again
+     * (port_GlPostBeforeMesh), until the new one is noted */
+    PostView was;
     /* the ground's mesh drawn since the frame began (port_GlPostNewFrame) */
     s32 is_noted;
     /* the depth the passes read (gl.h) */
@@ -1549,6 +1575,12 @@ void port_GlPostNoteView(const float *rotation, const float *camera, float h,
                          float middle_x, float middle_y, s32 top) {
     PostView *view = &g_post.live;
 
+    if (g_post.was.is_set && g_post.was.top != top) {
+        g_post.kept = g_post.was;
+    }
+    g_post.was.is_set = FALSE;
+    /* the fighters' depth of the drawing kept stays its own */
+    view->fighter_slot = 1 - g_post.kept.fighter_slot;
     memcpy(view->rotation, rotation, sizeof(view->rotation));
     memcpy(view->camera, camera, sizeof(view->camera));
     view->h = h;
@@ -1585,12 +1617,17 @@ static s32 port_GlPostShows(
 
 void port_GlPostBeforeMesh(const PortGlPicture *picture) {
     (void)picture;
-    if (g_post.live.is_set) {
-        g_post.kept = g_post.live;
-    }
+    /* Which view the drawing before becomes is known when this one's is
+     * noted: a drawing of the other part of video memory keeps it as the
+     * one before (the game draws one frame while it shows the last), and
+     * a drawing over the same part replaces it. A picture between two
+     * frames (gl_tween.h) draws the frame on show again, over its own
+     * part: kept as the one before, it pushed out the view of the part the
+     * game's own picture shows next, and that picture -- the one shown
+     * where no picture between two frames can be drawn, at a cut -- had
+     * none of these passes. */
+    g_post.was = g_post.live;
     g_post.live.is_set = FALSE;
-    /* the fighters' depth of the drawing kept stays its own */
-    g_post.live.fighter_slot = 1 - g_post.kept.fighter_slot;
     g_post.live.has_fighters = FALSE;
 }
 
@@ -1613,7 +1650,11 @@ void port_GlPostFighterDepth(void) {
     s32 k;
 
     view->has_fighters = FALSE;
-    if (!g_post.is_started || !g_post.is_reflect || !view->is_set) {
+    /* for the reflections, and for the dressing's shafts of light, which
+     * are held by it where a fighter stands in front of them */
+    if (!g_post.is_started ||
+        !(g_post.is_reflect || port_GlDressingWantsFighters()) ||
+        !view->is_set) {
         return;
     }
     port_GlGetPicture(&picture);
@@ -1705,11 +1746,26 @@ void port_GlPostFighterDepth(void) {
     glClear(GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+    memcpy(view->fighter_matrix, matrix, sizeof(view->fighter_matrix));
     view->has_fighters = port_GlShadowDrawSunCasters(matrix) > 0;
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
     port_GlForgetState();
+}
+
+s32 port_GlPostFighterDepthNow(u32 *texture, float *matrix, float *a_b) {
+    const PostView *view = &g_post.live;
+    float near_to_far = PORT_GL_DEPTH_RANGE - POST_FIGHTER_NEAR;
+
+    if (!g_post.is_started || !view->is_set || !view->has_fighters) {
+        return FALSE;
+    }
+    *texture = g_post.fighter_depth[view->fighter_slot & 1];
+    memcpy(matrix, view->fighter_matrix, sizeof(view->fighter_matrix));
+    a_b[0] = (PORT_GL_DEPTH_RANGE + POST_FIGHTER_NEAR) / near_to_far;
+    a_b[1] = -2.0f * PORT_GL_DEPTH_RANGE * POST_FIGHTER_NEAR / near_to_far;
+    return TRUE;
 }
 
 void port_GlPostNewFrame(void) {
@@ -1905,6 +1961,12 @@ static void port_GlPostMirror(const PostFrame *frame, GLuint picture_texture,
 static float port_GlPostRough(void) {
     s32 stage = port_RemasterStageNumber();
 
+    /* water mirrored is broken by its waves: the grain of its own
+     * picture turns the mirror aside, and what stands farther from it is
+     * blurred, as on a floor this rough */
+    if (g_post_plane.is_water) {
+        return POST_WATER_ROUGH;
+    }
     return stage >= 0 && stage < POST_STAGES
                ? (float)g_post_floors[stage].rough / 100.0f
                : 0.5f;

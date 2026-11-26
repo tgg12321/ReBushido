@@ -42,3 +42,27 @@ size = 18
 top = 900
 color = #C8FF7A
 times = dusk night
+
+# the orange trees' trunks (pieces 7 to 11, square columns) as round trunks
+# flared at the roots and bending as they rise, made by
+# tools/port_dressing.py meshes and fitted into the pieces' own boxes; the
+# game's own leaves and fruit above them stay
+[mesh trunk_7]
+file = orange_trunk
+piece = 7
+
+[mesh trunk_8]
+file = orange_trunk
+piece = 8
+
+[mesh trunk_9]
+file = orange_trunk
+piece = 9
+
+[mesh trunk_10]
+file = orange_trunk
+piece = 10
+
+[mesh trunk_11]
+file = orange_trunk
+piece = 11

@@ -58,9 +58,11 @@ lessons still holds unless this section says otherwise.
 1. **The online test** from a GitHub release (the last one, at
    3035423cd, opened a room nobody joined; the relay's log agrees).
 2. **Looks to judge**: the dressing (`tmp/stages17b/`, all 38 stages
-   before and after, day and night, and `closeup-*.png`); **the water's
-   reflections have never been seen** (a hidden window's pictures hold
-   none of the reflection pass): look in a visible window.
+   before and after, day and night, and `closeup-*.png`); its third pass
+   (`tmp/stages17c/`): the water's reflections now seen (the stream,
+   the sea, the river, the floors and puddles), the foliage's shadows,
+   gulls over the ship, the dock's bollards and the orange trees' trunks
+   as meshes, the shafts held by the fighters.
 3. **Fighters from the disc for all**, which the blended joints need
    but which changes their shading.
 4. **The release zip** with the upscaler (62 MB) or without (29 MB, the
@@ -82,10 +84,11 @@ lessons still holds unless this section says otherwise.
   the silent guest and a leave between fights are done, 2026-11-25:
   NETPLAY.md, section 19; MODS.md, "A fighter's pages"; the owner's ear
   on `tmp/2v2-voices/` and eye on `tmp/2v2-mods/`.)
-- Replays across builds of different game code (an agent is on it; a
-  build whose window alone differs plays a replay since 94a1f68b4).
-- 17's leftovers: foliage in the sun's maps, gulls over the ship, more
-  pieces as meshes, the shafts drawn over a fighter in front of them.
+- Replays across builds: done (a replay's lead-in from power on;
+  PORT.md, "Across builds: the lead-in"); online fights carry no lead-in yet.
+- 17's leftovers: the foliage in the lights' cubes, a mist the fight
+  camera sees, the bamboo thicket's clumps as meshes (their culms placed
+  from the pieces' own faces).
 - 18's leftovers: more than 32 arenas, arenas larger than their host's
   room, pieces; dispute tooling; the kanabo's window model.
 - The ra2 fight's first-frame stall (21 to 25 ms, older than the
@@ -112,6 +115,14 @@ lessons still holds unless this section says otherwise.
   (`befebbeb7`). Online window cases can still miss a timed press on a
   loaded machine (`room`'s leave): rerun the one case before doubting
   the change.
+- **`--tap-window` took the game's own frame**, not the picture shown:
+  with `frame_rate` other than `original` that frame is never shown and
+  had no reflection, occlusion or bloom (fixed in this session). Any
+  window picture tapped before it, at a frame rate of the display's, is
+  missing the post's passes.
+- **2560x1440 taps are 15 MB each**: a sweep of a few hundred filled
+  the disk once this session (59 GB of raw taps in a worktree's `tmp/`);
+  convert and delete as they come.
 - The dressing's shots tool read the window's bytes as BGR until
   `6842ba9c3`: pictures of the first pass in `tmp/stages17/` have red
   and blue swapped.

@@ -55,6 +55,10 @@ extern const char *port_GlDressingStart(void *(*getproc)(const char *name));
  * off by default). */
 extern void port_GlDressingSetOn(s32 on);
 extern s32 port_GlDressingIsOn(void);
+/* Whether the shafts of light want the fighters' depth (gl_post.h,
+ * port_GlPostFighterDepthNow): a shaft is held by it where a fighter
+ * stands in front of it. */
+extern s32 port_GlDressingWantsFighters(void);
 
 /* The ground's mesh has been built (gl_stage.c, before its vertices go to
  * the card): its vertices, gl_stage.c's StageVertex of `stride` bytes,
@@ -89,6 +93,12 @@ extern s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h);
  * after a column), into the depth map bound now (gl_sun.h, gl_lights.h):
  * the triangles drawn. */
 extern u32 port_GlDressingDrawSunCasters(const float *matrix);
+/* The foliage as the sun sees it, through `matrix`, thinned by its
+ * distance from `eye` (the camera, the world's): into the sun's nearer
+ * maps (gl_sun.c), where its shadows are larger than a texel. The
+ * triangles drawn. */
+extern u32 port_GlDressingDrawFoliageCasters(
+    const float *matrix, const float *eye);
 /* The pieces a mesh stands in for this frame, a bit each (as the mesh's
  * u_pieces): the ground's mesh leaves them out. */
 extern void port_GlDressingHiddenPieces(u32 *words, s32 count);

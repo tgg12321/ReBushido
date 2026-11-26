@@ -87,6 +87,20 @@ extern float port_GlPostReflectance(s32 stage, const float *normal);
 extern void port_GlPostFloorsBegin(void);
 extern void port_GlPostFloorAdd(const float *a, const float *b, const float *c);
 extern void port_GlPostFloorsEnd(void);
+/* The dressing's water that reflects lies at `height` (the world's; where
+ * the picture's depth is at it: the stage's own water under a level
+ * surface, or the ground a water laid on the ground's faces lies on),
+ * `size` how much of it there is: where the stage has no floor that
+ * reflects, the largest is the plane mirrored, so the fighters, the
+ * stage's pieces and the banks are seen in it (gl_dressing.h). */
+extern void port_GlPostWaterPlane(float height, float size);
+
+/* The depth of the fighters the game draws from its own primitives, of
+ * the drawing being drawn (port_GlPostFighterDepth, at the shadows'
+ * end): FALSE where there is none; else its texture, the world into its
+ * clip space (16, a column after a column), and the two numbers that take
+ * its depth back to the view's (z = b / (2 d - 1 - a)). */
+extern s32 port_GlPostFighterDepthNow(u32 *texture, float *matrix, float *a_b);
 
 /* The ground's mesh was drawn with this view (gl_stage.c): the rotation
  * (1.12, a row after a row), the camera, the projection's distance, the

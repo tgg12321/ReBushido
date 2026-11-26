@@ -58,6 +58,7 @@ enum {
     PORT_PARTICLES_MOTES = 8,     /* hanging in the air, seen in the light */
     PORT_PARTICLES_SPRAY = 9,     /* thrown up where the waves break */
     PORT_PARTICLES_MIST = 10,     /* banks drifting low with the wind */
+    PORT_PARTICLES_GULLS = 11,    /* circling over an area, flapping, gliding */
     PORT_PARTICLES_KINDS
 };
 

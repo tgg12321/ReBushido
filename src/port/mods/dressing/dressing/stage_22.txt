@@ -18,3 +18,22 @@ waves = 1.8
 kind = dust
 on = stone
 color = #B8B4AC
+
+# the dock's four mooring bollards (pieces 0, 1, 2 and 5, blocks of eight
+# sides) as round iron bollards with flared heads, made by
+# tools/port_dressing.py meshes and fitted into the pieces' own boxes
+[mesh bollard_0]
+file = bollard
+piece = 0
+
+[mesh bollard_1]
+file = bollard
+piece = 1
+
+[mesh bollard_2]
+file = bollard
+piece = 2
+
+[mesh bollard_5]
+file = bollard
+piece = 5

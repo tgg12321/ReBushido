@@ -9037,22 +9037,100 @@ first pass's three) gives the same state at every blank with the dressing
 on and off, and each replay made with it on plays back with it off to the
 same hashes.
 
-**What is left.** The foliage takes the sun's shadows and does not cast
-any (the meshes cast into the sun's maps and the lights' cubes,
-`port_GlDressingDrawSunCasters`). The water's reflections are the
-post's, so they are only as good as the picture's own (`reflections`
-on; where the post's ray meets nothing, the sky the picture shows); and
-they are not yet seen: the pictures of a window never shown
-(`--hidden --tap-window`, `port_dressing.py shots`) hold none of the
-post's passes -- `reflections` on and off gave the same bytes on the
-main Tatara shrine's polished floor -- so the water's code for them is
-written and nothing has looked at what it gives. A
-shaft is drawn over a fighter standing in front of it (a fighter writes
-no depth of his own). The `mist` kind is there, but no shipped stage's
-open water lies where the fight camera looks. Gulls over the ship. Only
-the cemetery's three plainest gravestones stand in for pieces: a mesh in
-a piece's place keeps the piece's box's proportions within a quarter, so
-each piece wants a model of its own.
+**The third pass** (2026-11-25, ROADMAP 17's leftovers): the water's
+reflections seen, the shafts held by the fighters, the foliage in the
+sun's maps, gulls, and more pieces as meshes. Pictures, before and
+after, at 2,560 by 1,440 with close-ups: the main checkout's
+`tmp/stages17c/`.
+
+- **Why a hidden window's pictures had no reflections.** Not the hidden
+  window, not llvmpipe, not a size: `--tap-window` took the window's
+  pixels right after the game's own frame was drawn, and with pictures
+  between frames (`frame_rate` anything but `original`, as every shot
+  ran) that picture is never shown -- the blank's first picture is drawn
+  again for the moment it is shown (`port_DrawTween`) -- and it had none
+  of the lighting's passes after the scene: no reflection, no occlusion,
+  no bloom (`RB_POST_DEBUG=depth`, which paints the whole picture, gave
+  the same bytes as no debug at all). It is now taken as that first
+  picture is shown (`port_TapShown`, sdl_window.c), so a headless
+  picture is what a player's window shows. Why the game's own picture
+  had none: the passes keep the views of the ground's last two drawings,
+  one for each half of video memory, and pick the one of the half on
+  show; a picture between two frames draws the frame on show again over
+  its own half, and was kept as "the drawing before", which pushed out
+  the other half's view. A drawing over the same half now replaces its
+  own view (`port_GlPostNoteView`). A player met this too, wherever no
+  picture between frames could be drawn (a cut of the camera, a frame
+  unlike the last): that picture lost its reflections, occlusion and
+  bloom for a refresh.
+- **The water mirrors the scene.** Once seen, the water showed the sky
+  and nothing of the fighters (`RB_POST_DEBUG=reflect`): the mirror of
+  the floor's plane needs a plane, and a stage whose floor does not
+  reflect (the lost bridge, the coast, under the lost bridge) has none,
+  and the reflection on the screen has no fighter in it (a fighter
+  writes no depth). The dressing's largest water that reflects now gives
+  the post its plane where the stage's floor gives none
+  (`port_GlPostWaterPlane`): a level surface's own height, or for water
+  laid on the ground's faces the height with the most of the area of its
+  level faces under the stream's colour -- the bed, which stood 20 units
+  and more under the mean of the banks the first try took, out of the
+  mirror's reach (`RB_POST_DEBUG=height`). Mirrored water is rough
+  (`POST_WATER_ROUGH`, 0.45): the mirror turned aside by the grain of the
+  water's own picture, and what stands farther from it blurred. A stage
+  whose floor reflects keeps its floor's plane (the ferry dock, the
+  rooftop and the garage, whose puddles lie on it and mirror the fighters
+  with it).
+- **The water's glint** was a pin-point at every distance: far off, a
+  pixel holds many waves, and the sea and the stream were scattered with
+  single white pixels. It widens and dims with distance, its light kept.
+  (The coast's white dashes on its dark sea are the stage's own backdrop,
+  dressing on or off; it shows over the near sand's far band too.)
+- **The shafts and the fighters.** The shafts are drawn at the picture's
+  end, over everything the game painted; the line of sight through a
+  shaft now ends where it meets a fighter, at the depth of the fighters
+  that the post draws from the shadows' casters
+  (`port_GlPostFighterDepth`, now drawn for the shafts as well as for the
+  reflections; `port_GlPostFighterDepthNow`). Checked by painting the
+  shafts' pixels where that depth was read: the fighter's outline exactly
+  (`tmp/stages17c/shafts-stage01-debug-...png`). In a fight's pictures
+  the difference is small: a hall's shafts fall from high windows, and
+  the fighters stand mostly past their soft ends.
+- **The foliage casts.** The grass, flowers, reeds and bushes are drawn
+  once more into the sun's nearest map, the fight's 16 to 1,600 units
+  (`SUN_FOLIAGE_CASCADES`: the second as well cost the card half a
+  millisecond on the dressed bench and changed no byte of a fight's
+  pictures on stages 8 and 19;
+  `port_GlDressingDrawFoliageCasters`) by the foliage's own vertex
+  shader, swayed and pushed the same, a leaf and a bloom cut to their
+  shapes, thinned from 3,000 units (`FOLIAGE_CAST_THIN`) and not 7,500.
+  Read where it stands, a blade of grass lay in its own shadow and only
+  darkened in specks: a blade reads the maps 45 units towards the sun
+  (`FOLIAGE_SUN_LIFT`), past its own shadow and into its neighbours'.
+  Not into the lights' cubes.
+- **Gulls** (`kind = gulls`, MODS.md): seven over the abandoned ship,
+  each a body, a tail and two wings jointed at the elbow (24 vertices in
+  the world, not a quad), circling a place at its own height and pace,
+  banked into the turn, flapping a few seconds and gliding the rest, an M
+  seen from ahead; worked out from its number and the picture's clock.
+- **More pieces as meshes** (`tools/port_dressing.py meshes`,
+  `lathe_obj`): the ferry dock's four mooring bollards (blocks of eight
+  sides) as round iron with flared heads, and the orange trees' five
+  trunks (square columns) as trunks flared at the roots, bending, their
+  bark furrowed. Chosen by listing every stage's pieces and their boxes:
+  plain, several alike, near the fight. The bamboo thicket's seventeen
+  clumps would gain as much, but a mesh fitted to a clump's box would
+  not keep its culms where the collision grid has them.
+
+The state is still the picture's alone: `tools/port_dressing.py hashes
+--stages 8,12,14,21,22,1` gives each stage's state at 1,821 blanks the
+same with the dressing on and off, and a replay made with it on played
+with it off, every hash as recorded.
+
+**What is left.** The foliage does not cast into the lights' cubes. The
+`mist` kind is there, but no shipped stage's open water lies where the
+fight camera looks. The pieces as meshes are five stages' few; the
+bamboo wants its culms placed from the piece's own faces. The coast's
+backdrop sparkle over its near sand is the stage's own.
 
 ## Every stage in every mode, and every unlock
 

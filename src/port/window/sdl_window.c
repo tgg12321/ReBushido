@@ -1575,6 +1575,29 @@ static s32 port_ReadWindowPixels(s32 window_w, s32 window_h) {
 /* For a test: the window's own pixels, as a player would see them, to a
  * file of the same form as port_TapFrame's. Only the build with a
  * graphics card has them; nothing of the game's reads them back. */
+static void port_TapWindow(u32 blank);
+
+/* The blank whose first picture --tap-window keeps, where one is waited
+ * for (port_TapShown). */
+static u32 g_port_tap_blank;
+static s32 g_port_tap_pending;
+
+/* The picture --tap-window waits for, as the window is about to show it:
+ * the window's own pixels as the player sees them. It was taken right
+ * after the game's own frame was drawn, which with pictures between frames
+ * (`frame_rate` not `original`) is never shown: the first picture of the
+ * blank is drawn again for its moment (port_DrawTween), and the game's own
+ * had none of the lighting's passes after the scene (gl_post.h), which
+ * follow the views of the drawings the pictures between frames make --
+ * the reflections, the occlusion and the bloom were in no picture tapped
+ * (docs/PORT.md, "The dressing", "The third pass"). */
+static void port_TapShown(void) {
+    if (g_port_tap_pending) {
+        g_port_tap_pending = FALSE;
+        port_TapWindow(g_port_tap_blank);
+    }
+}
+
 static void port_TapWindow(u32 blank) {
     char path[PATH_BYTES_MAX];
     u32 head[4];
@@ -3849,6 +3872,7 @@ static void port_ShowPictures(u32 due) {
         g_port_wants_lag = FALSE;
         g_port_last_due = due;
         g_port_left_at = port_ReadClock();
+        port_TapShown();
         return;
     }
     g_port_unshown = FALSE;
@@ -3883,6 +3907,9 @@ static void port_ShowPictures(u32 due) {
         /* the picture about to be shown, where the player or a test
          * asked for a picture of the window */
         port_KeepShot(pictures);
+        if (pictures == 0) {
+            port_TapShown();
+        }
         port_SwapPicture();
         g_port_next_picture = port_ReadClock() + (u32)slot;
         if (pictures == 0 && g_port_wants_lag) {
@@ -4928,7 +4955,11 @@ static void port_ShowBlank(u32 blank) {
     port_DrawNetLine();
     if (g_port_window_options.tap_window != NULL &&
         blank % (u32)g_port_window_options.tap_every == 0) {
-        port_TapWindow(blank);
+        /* taken as the blank's first picture is shown (port_ShowPictures):
+         * with pictures between frames, that is a picture drawn again for
+         * its moment, not the game's own drawn here */
+        g_port_tap_blank = blank;
+        g_port_tap_pending = TRUE;
     }
     {
         /* a test's picture of a page beside the game, as it is shown */

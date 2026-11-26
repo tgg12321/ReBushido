@@ -387,8 +387,17 @@ the stage").
     in the ground's depth, which they had failed, and larger, with a glow
     on the embers; three gravestones in the cemetery's pieces' place;
     stage 37, link mode's castle rooftop, reached by `--fight 37` and
-    dressed; the bench's `ra1-rain`. Left: the foliage casting into the
-    sun's maps, gulls, more pieces' meshes.
+    dressed; the bench's `ra1-rain`. The third pass (2026-11-25; PORT.md,
+    "The dressing", "The third pass"): the water's reflections seen at
+    last -- a window's tapped picture was the game's own frame, which
+    with pictures between frames is never shown and had none of the
+    post's passes; the passes lost the view of the half on show (a
+    player's picture at a cut too) -- and the water given a plane of its
+    own to mirror the fighters in; the shafts held by the fighters'
+    depth; the foliage casting into the sun's nearest map; gulls over the
+    ship; the ferry dock's bollards and the orange trees' trunks as
+    meshes. Left: the foliage in the lights' cubes, a mist the fight
+    camera sees, the bamboo's clumps as meshes.
 18. **Custom arenas**: a stage authored in Blender as a render mesh and
     a collision mesh with each face's surface (firm, sand, wet,
     barrier), compiled into the game's ground (`MODS.md`, "Stages");

@@ -35,3 +35,13 @@ area = -8800 -8000 -8000 8000
 count = 300
 size = 80
 color = #E8F0F4
+
+# gulls circling over the ship, each about a place of its own at its own
+# height and pace, flapping a few seconds and gliding the rest
+[particles gulls]
+kind = gulls
+area = -9000 -9000 9000 9000
+count = 7
+size = 420
+top = 5200
+color = #E6EAEC

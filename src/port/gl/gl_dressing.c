@@ -183,6 +183,11 @@ PORT_GL_DRESSING_FUNCTIONS
 /* How far from the camera, in world units, the foliage begins to thin:
  * past it fewer things and fewer blades to a tuft. */
 #define FOLIAGE_THIN 7500.0f
+/* ... and as the sun sees it (port_GlDressingDrawFoliageCasters) */
+#define FOLIAGE_CAST_THIN 3000.0f
+/* ... and how far towards the sun a blade reads the maps: a blade of grass
+ * lies in its own shadow there, which only darkened it in specks */
+#define FOLIAGE_SUN_LIFT 45.0f
 /* How far a tuft's blades reach from its root, about. */
 #define TUFT_REACH 60.0f
 /* What pushes the foliage, at most: the fighters, where they were a few
@@ -248,11 +253,15 @@ PORT_GL_DRESSING_FUNCTIONS
 #define PIECE_TILE_FIRST 512
 #define BEAM_LEAST 500.0f
 #define SHAFT_MOTE_SIZE 14.0f
+/* the texture unit the shafts read the fighters' depth from */
+#define SHAFT_FIGHTER_UNIT 11
 #define SHAFT_MOTE_GAIN 2.0f
 /* the particles' program's own kinds, past PORT_PARTICLES_...: the rain's
  * splashes, a splash for every third drop, and a shaft's motes */
-#define PARTICLES_SPLASHES 11
-#define PARTICLES_SHAFT_MOTES 12
+#define PARTICLES_SPLASHES 20
+#define PARTICLES_SHAFT_MOTES 21
+/* a gull: a body, a tail and two wings of an inner and an outer part */
+#define GULL_VERTICES 24
 #define RAIN_SPLASH_SIZE 38.0f
 #define RAIN_SPLASH_SHARE 3
 
@@ -373,6 +382,7 @@ typedef struct {
     GLint push_way;
     GLint push_count;
     GLint thin;
+    GLint lift;
     /* the particles' */
     GLint area;
     GLint size;
@@ -409,6 +419,10 @@ typedef struct {
     GLint beam_inverse;
     GLint beam_floor;
     GLint beam_color;
+    GLint fighter_on;
+    GLint fighter;
+    GLint fighter_matrix;
+    GLint fighter_a_b;
 } DressAt;
 
 static struct {
@@ -425,6 +439,11 @@ static struct {
     GLuint caster;
     GLuint shaft;
     GLint caster_at_sun;
+    /* the foliage as the sun sees it */
+    GLuint foliage_caster;
+    DressAt foliage_caster_at;
+    GLint foliage_caster_at_cast;
+    GLint foliage_caster_at_sun;
     DressAt shaft_at;
     /* the water's maps, and the shafts of light */
     GLuint maps[MAPS_MOST];
@@ -690,6 +709,9 @@ static const char g_dress_foliage_vertex[] =
                                         way */
     "uniform int u_push_count;\n"
     "uniform float u_thin;\n" /* how far off the foliage begins to thin */
+    /* as the sun sees it, into its maps (port_GlDressingDrawFoliageCasters) */
+    "uniform int u_cast;\n"
+    "uniform mat4 u_sun;\n"
     "out vec3 v_place;\n"
     "out vec3 v_normal;\n"
     "out vec3 v_albedo;\n"
@@ -858,6 +880,7 @@ static const char g_dress_foliage_vertex[] =
     "    v_place = p;\n"
     "    v_normal = n;\n"
     "    gl_Position = dress_project(p, v_depth);\n"
+    "    if (u_cast != 0) { gl_Position = u_sun * vec4(p, 1.0); }\n"
     "}\n";
 
 /* The meshes: their vertices as they are, in the world. */
@@ -884,6 +907,9 @@ static const char g_dress_mesh_vertex[] =
  * colour buffer, the ground's slots and its depth. */
 static const char g_dress_solid_fragment[] =
     "#version 430 core\n" DRESS_FRAGMENT_COMMON "uniform vec3 u_bloom;\n"
+    /* how far towards the sun a blade looks into its maps: past its own
+     * shadow, into its neighbours' (port_GlDressingDrawFoliageCasters) */
+    "uniform float u_lift;\n"
     "in vec3 v_place;\n"
     "in vec3 v_normal;\n"
     "in vec3 v_albedo;\n"
@@ -914,7 +940,7 @@ static const char g_dress_solid_fragment[] =
     "    vec3 n = normalize(v_normal);\n"
     "    if (dot(n, u_eye - v_place) < 0.0 && v_card.z < 0.5) { n = -n; }\n"
     "    vec3 base;\n"
-    "    vec3 lit = dress_light(v_place, n, base);\n"
+    "    vec3 lit = dress_light(v_place - u_sun_travel * u_lift, n, base);\n"
     "    vec3 color = dress_shade(albedo * v_shade, base, lit);\n"
     "    color = mix(color, u_fog_color.rgb * 255.0, dress_fog(v_depth));\n"
     "    o_color = vec4(color / 255.0, 1.0);\n"
@@ -1109,8 +1135,13 @@ static const char g_dress_water_fragment[] =
     "    float seen = u_sun_on != 0 ? sun_visible(v_place, vec3(0.0, -1.0, 0.0))\n"
     "                               : 1.0;\n"
     "    vec3 sun = u_color[0] * 256.0;\n"
-    "    float glint = pow(max(dot(r, to_sun), 0.0), 180.0) * 3.0\n"
-    "                + pow(max(dot(r, to_sun), 0.0), 40.0) * 0.10;\n"
+    /* the glint widened and dimmed with distance, its light kept: a
+     * pixel far off holds many waves, and a sharp glint there was a
+     * scatter of single white pixels across the sea and the stream */
+    "    float sharp = mix(180.0, 28.0, smoothstep(1500.0, 12000.0, v_depth));\n"
+    "    float facing_sun = max(dot(r, to_sun), 0.0);\n"
+    "    float glint = pow(facing_sun, sharp) * 1.4 * (sharp + 8.0) / 188.0\n"
+    "                + pow(facing_sun, 40.0) * 0.10;\n"
     /* never all mirror: the water's own colour shows even far off, so it
      * reads as water and not as the sky's colour laid on the ground */
     "    vec3 color = mix(body, sky, min(fresnel, 0.62)) + sun * glint * seen;\n"
@@ -1150,8 +1181,9 @@ static const char g_dress_water_fragment[] =
 
 /* The particles: quads facing the camera. Over an area each is worked out
  * from its number and the clock alone; the dust from its own event. The
- * kinds are PORT_PARTICLES_..., and two of the program's own: 11 the
- * rain's splashes on the ground, 12 the motes in a shaft of light. */
+ * kinds are PORT_PARTICLES_..., and two of the program's own: 20 the
+ * rain's splashes on the ground, 21 the motes in a shaft of light. A gull
+ * (11) is no quad but GULL_VERTICES of its own shape, in the world. */
 static const char g_dress_particles_vertex[] =
     "#version 330 core\n"
     "layout(location = 0) in vec4 a_at;\n"  /* the dust's: x y z, begun */
@@ -1189,6 +1221,8 @@ static const char g_dress_particles_vertex[] =
     "    float spin = 0.0;\n"
     "    float squash = 1.0;\n"
     "    vec3 streak = vec3(0.0);\n" /* a streak's way and length */
+    "    vec3 placed = vec3(0.0);\n" /* a gull's corner, in the world */
+    "    bool is_placed = false;\n"
     "    v_glow = 0.0;\n"
     "    vec3 tint = u_tint;\n"
     "    vec2 drift = u_wind.xy * u_wind.z;\n"
@@ -1246,7 +1280,7 @@ static const char g_dress_particles_vertex[] =
     "        at = vec3(at_xz.x, u_ground - u_top, at_xz.y) + vel * age;\n"
     "        streak = normalize(vel) * length(vel) * 0.026;\n"
     "        alpha = 0.55 * u_glow;\n"
-    "    } else if (u_kind == 11) {\n"
+    "    } else if (u_kind == 20) {\n"
     /* a drop's splash: a small crown thrown up where it lands */
     "        float period = mix(0.35, 0.9, dress_random(s, 3u));\n"
     "        float age = fract(u_clock / period + dress_random(s, 5u)) * period;\n"
@@ -1276,7 +1310,7 @@ static const char g_dress_particles_vertex[] =
     "        alpha = u_glow * (0.6 + 0.4 * sin(u_clock * mix(1.0, 2.6,\n"
     "                                          dress_random(s, 5u)) + wob));\n"
     "        v_glow = 2.0;\n"
-    "    } else if (u_kind == 12) {\n"
+    "    } else if (u_kind == 21) {\n"
     /* a shaft's motes: inside its box, brightest by the opening */
     "        float a = dress_random(s, 1u) * 2.0 - 1.0;\n"
     "        float b = dress_random(s, 2u) * 2.0 - 1.0;\n"
@@ -1313,6 +1347,64 @@ static const char g_dress_particles_vertex[] =
     "        size *= 1.0 + 2.5 * t / life;\n"
     "        alpha = 0.6 * u_glow * (1.0 - t / life) * smoothstep(0.0, 0.08, t);\n"
     "        if (at.y > u_ground) { alpha = 0.0; }\n"
+    "    } else if (u_kind == 11) {\n"
+    /* a gull: circling a place of the area at its own height and pace, some
+     * clockwise, banked into the turn; flapping a few seconds and gliding
+     * the rest, its wings an M seen from ahead */
+    "        float radius = mix(1600.0, 4200.0, dress_random(s, 3u));\n"
+    "        float way = dress_random(s, 5u) < 0.5 ? -1.0 : 1.0;\n"
+    "        float pace = mix(650.0, 1000.0, dress_random(s, 6u)) / radius;\n"
+    "        float turn = wob + way * pace * u_clock;\n"
+    "        vec3 middle = vec3(at_xz.x, u_ground - mix(0.45, 1.0, dress_random(s, 7u)) * u_top,\n"
+    "                           at_xz.y);\n"
+    "        at = middle + vec3(cos(turn), 0.0, sin(turn)) * radius\n"
+    "           + vec3(0.0, sin(u_clock * 0.37 + wob) * 160.0, 0.0);\n"
+    "        vec3 ahead = way * vec3(-sin(turn), 0.0, cos(turn));\n"
+    "        vec3 inward = -vec3(cos(turn), 0.0, sin(turn));\n"
+    "        const vec3 UP = vec3(0.0, -1.0, 0.0);\n"
+    "        float bank = 0.35;\n"
+    "        vec3 up = normalize(UP * cos(bank) + inward * sin(bank));\n"
+    "        vec3 side = normalize(cross(ahead, up));\n"
+    "        float cycle = mix(5.0, 9.0, dress_random(s, 8u));\n"
+    "        float in_cycle = fract(u_clock / cycle + dress_random(s, 9u)) * cycle;\n"
+    "        float flapping = smoothstep(0.0, 0.3, in_cycle)\n"
+    "                       * (1.0 - smoothstep(2.2, 2.6, in_cycle));\n"
+    "        float flap = sin(u_clock * 7.5 + wob) * 0.65 * flapping;\n"
+    "        float inner = 0.18 + flap;\n"
+    "        float outer = inner - 0.45 - 0.25 * flapping * sin(u_clock * 7.5 + wob + 0.8);\n"
+    "        int v = gl_VertexID % 24;\n"
+    "        int part = v / 3;\n"
+    "        int k = v % 3;\n"
+    "        float m = part >= 5 ? -1.0 : 1.0;\n" /* the left wing, mirrored */
+    "        int wing = part >= 5 ? part - 3 : part;\n"
+    "        vec2 elbow = vec2(0.5 * cos(inner), 0.5 * sin(inner));\n"
+    "        vec2 tip = elbow + vec2(0.5 * cos(outer), 0.5 * sin(outer));\n"
+    "        vec3 c;\n"
+    "        float shade = 1.0;\n"
+    "        if (part == 0) {\n"
+    /* the body twisted about its length, so that it has some width seen
+     * from the side as from below */
+    "            c = k == 0 ? vec3(0.0, 0.0, 0.55)\n"
+    "                       : vec3(k == 1 ? -0.09 : 0.09, k == 1 ? 0.06 : -0.06, -0.35);\n"
+    "        } else if (part == 1) {\n"
+    "            c = k == 0 ? vec3(0.0, 0.0, -0.3) : vec3(k == 1 ? -0.13 : 0.13, 0.0, -0.62);\n"
+    "            shade = 0.9;\n"
+    "        } else if (wing == 2 || wing == 3) {\n"
+    /* the inner wing: from the body to the elbow, a quad of two */
+    "            int q4 = wing == 2 ? (k == 0 ? 0 : k == 1 ? 1 : 2) : (k == 0 ? 0 : k == 1 ? 2 : 3);\n"
+    "            c = q4 == 0 ? vec3(0.06, 0.0, 0.24) : q4 == 1 ? vec3(0.06, 0.0, -0.16)\n"
+    "              : q4 == 2 ? vec3(elbow.x + 0.06, elbow.y, -0.06) : vec3(elbow.x + 0.06, elbow.y, 0.16);\n"
+    "        } else {\n"
+    /* the outer wing to its tip, darker */
+    "            c = k == 0 ? vec3(elbow.x + 0.06, elbow.y, 0.16)\n"
+    "              : k == 1 ? vec3(elbow.x + 0.06, elbow.y, -0.06) : vec3(tip.x + 0.06, tip.y, -0.2);\n"
+    "            shade = k == 2 ? 0.35 : 0.85;\n"
+    "        }\n"
+    "        c.x *= m;\n"
+    "        placed = at + (side * c.x + up * c.y + ahead * c.z) * size;\n"
+    "        is_placed = true;\n"
+    "        tint *= shade;\n"
+    "        size = 0.0;\n"
     "    } else if (u_kind == 10) {\n"
     /* mist: banks drifting with the wind across the area, low */
     "        vec2 span = u_area.zw - u_area.xy;\n"
@@ -1356,7 +1448,10 @@ static const char g_dress_particles_vertex[] =
     "        }\n"
     "    }\n"
     "    vec3 p;\n"
-    "    if (u_kind == 6) {\n"
+    "    if (is_placed) {\n"
+    "        p = placed;\n"
+    "        q = vec2(0.0);\n"
+    "    } else if (u_kind == 6) {\n"
     /* a streak: along its fall, across the line of sight */
     "        vec3 along = normalize(streak);\n"
     "        vec3 side = normalize(cross(along, at - u_camera));\n"
@@ -1391,7 +1486,7 @@ static const char g_dress_particles_fragment[] =
     "        shape = (1.0 - smoothstep(0.2, 1.0, r));\n"
     "    } else if (u_kind == 6) {\n"
     "        shape = (1.0 - abs(v_corner.x)) * smoothstep(1.0, 0.2, abs(v_corner.y));\n"
-    "    } else if (u_kind == 11) {\n"
+    "    } else if (u_kind == 20) {\n"
     /* a crown: a ring's upper half and a few drops above it */
     "        vec2 c = v_corner * vec2(1.0, 2.0);\n"
     "        float ring = 1.0 - smoothstep(0.0, 0.25, abs(length(c) - 0.75));\n"
@@ -1422,7 +1517,7 @@ static const char g_dress_particles_fragment[] =
     "        color = v_color.rgb * (added * 1.6 + base * 0.22);\n"
     "    } else if (v_glow > 0.5) {\n"
     "        color = v_color.rgb * 255.0 * (1.0 + 1.5 * (1.0 - smoothstep(0.0, 0.3, r)));\n"
-    "    } else if (u_kind == 6 || u_kind == 11) {\n"
+    "    } else if (u_kind == 6 || u_kind == 20) {\n"
     /* the rain: thousands of thin streaks, lit by the stage's light
      * alone, with no look into the sun's maps or the lights' list */
     "        vec3 ir = max(u_light * vec3(0.0, -1.0, 0.0), vec3(0.0)) * 4096.0;\n"
@@ -1467,6 +1562,11 @@ static const char g_dress_shaft_fragment[] =
     "uniform mat3 u_beam_inverse;\n"
     "uniform float u_beam_floor;\n"
     "uniform vec3 u_beam_color;\n" /* bytes of light a unit of thickness */
+    /* the fighters' depth (gl_post.h, port_GlPostFighterDepthNow) */
+    "uniform int u_fighter_on;\n"
+    "uniform sampler2D u_fighter;\n"
+    "uniform mat4 u_fighter_matrix;\n"
+    "uniform vec2 u_fighter_a_b;\n"
     "in vec3 v_place;\n"
     "in float v_depth;\n"
     "layout(location = 0) out vec4 o_color;\n"
@@ -1512,6 +1612,19 @@ static const char g_dress_shaft_fragment[] =
     "    } else if (u_eye.y > u_beam_floor) {\n"
     "        discard;\n"
     "    }\n"
+    /* not behind a fighter: his depth where the line of sight meets him
+     * (the view's depth runs along it, v_depth at this face) */
+    "    if (u_fighter_on != 0) {\n"
+    "        vec4 c = u_fighter_matrix * vec4(v_place, 1.0);\n"
+    "        vec2 uv = c.xy / max(c.w, 1e-3) * 0.5 + 0.5;\n"
+    "        if (c.w > 0.0 && uv == clamp(uv, 0.0, 1.0)) {\n"
+    "            float d = texture(u_fighter, uv).r;\n"
+    "            if (d < 1.0) {\n"
+    "                float z = u_fighter_a_b.y / (2.0 * d - 1.0 - u_fighter_a_b.x);\n"
+    "                te = min(te, z / max(v_depth, 1e-3));\n"
+    "            }\n"
+    "        }\n"
+    "    }\n"
     "    if (te <= t0) { discard; }\n"
     "    float sum = 0.0;\n"
     "    for (int i = 0; i < 8; i++) {\n"
@@ -1526,6 +1639,20 @@ static const char g_dress_shaft_fragment[] =
     "               * (1.0 - dress_fog(v_depth));\n"
     "    o_color = vec4(clamp(color, 0.0, 255.0) / 255.0, 1.0);\n"
     "    gl_FragDepth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
+    "}\n";
+
+/* The foliage as the sun sees it: its depth alone, a leaf and a bloom cut
+ * to their shapes as they are drawn. */
+static const char g_dress_foliage_caster_fragment[] =
+    "#version 330 core\n"
+    "in vec3 v_card;\n"
+    "void main() {\n"
+    "    if (v_card.z > 1.5) {\n"
+    "        float a = atan(v_card.y, v_card.x);\n"
+    "        if (length(v_card.xy) > 0.55 + 0.45 * abs(cos(a * 2.5))) { discard; }\n"
+    "    } else if (v_card.z > 0.5) {\n"
+    "        if (abs(v_card.x) > 0.55 * (1.0 - v_card.y * v_card.y)) { discard; }\n"
+    "    }\n"
     "}\n";
 
 /* The meshes as the sun or a light sees them: their depth alone. */
@@ -1620,6 +1747,7 @@ static void port_DressLocate(GLuint program, DressAt *at) {
     at->push_way = glGetUniformLocation(program, "u_push_way");
     at->push_count = glGetUniformLocation(program, "u_push_count");
     at->thin = glGetUniformLocation(program, "u_thin");
+    at->lift = glGetUniformLocation(program, "u_lift");
     at->area = glGetUniformLocation(program, "u_area");
     at->size = glGetUniformLocation(program, "u_size");
     at->tint = glGetUniformLocation(program, "u_tint");
@@ -1653,6 +1781,10 @@ static void port_DressLocate(GLuint program, DressAt *at) {
     at->beam_inverse = glGetUniformLocation(program, "u_beam_inverse");
     at->beam_floor = glGetUniformLocation(program, "u_beam_floor");
     at->beam_color = glGetUniformLocation(program, "u_beam_color");
+    at->fighter_on = glGetUniformLocation(program, "u_fighter_on");
+    at->fighter = glGetUniformLocation(program, "u_fighter");
+    at->fighter_matrix = glGetUniformLocation(program, "u_fighter_matrix");
+    at->fighter_a_b = glGetUniformLocation(program, "u_fighter_a_b");
     port_GlSunLocate(program, &at->sun);
     port_GlLightsLocate(program, &at->lights);
 }
@@ -1681,10 +1813,18 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         port_DressProgram(g_dress_caster_vertex, g_dress_caster_fragment);
     g_dress.shaft =
         port_DressProgram(g_dress_shaft_vertex, g_dress_shaft_fragment);
+    g_dress.foliage_caster = port_DressProgram(
+        g_dress_foliage_vertex, g_dress_foliage_caster_fragment);
     if (g_dress.foliage == 0 || g_dress.mesh == 0 || g_dress.water == 0 ||
-        g_dress.particles == 0 || g_dress.caster == 0 || g_dress.shaft == 0) {
+        g_dress.particles == 0 || g_dress.caster == 0 || g_dress.shaft == 0 ||
+        g_dress.foliage_caster == 0) {
         return g_dress.problem;
     }
+    port_DressLocate(g_dress.foliage_caster, &g_dress.foliage_caster_at);
+    g_dress.foliage_caster_at_cast =
+        glGetUniformLocation(g_dress.foliage_caster, "u_cast");
+    g_dress.foliage_caster_at_sun =
+        glGetUniformLocation(g_dress.foliage_caster, "u_sun");
     port_DressLocate(g_dress.shaft, &g_dress.shaft_at);
     glGenTextures(MAPS_MOST, g_dress.maps);
     g_dress.caster_at_sun = glGetUniformLocation(g_dress.caster, "u_sun");
@@ -2478,9 +2618,58 @@ static void port_DressGrowMap(
  * `on`, the ground's own faces in its areas lifted `y` above them -- each
  * face where a stream is painted across them (its map says where), or the
  * faces of that colour where it is puddles. */
+/* The heights a water laid on the ground's faces lies at, each with its
+ * area: the most is the plane the post mirrors the scene in
+ * (port_GlPostWaterPlane). A stream's bed, and not the mean of the banks
+ * about it, which stood 20 units and more over the bed under the lost
+ * bridge, out of the mirror's reach. */
+#define WATER_HEIGHTS 32
+#define WATER_HEIGHT_STEP 4.0f
+
+typedef struct {
+    float height[WATER_HEIGHTS];
+    float area[WATER_HEIGHTS];
+    s32 count;
+} DressHeights;
+
+static void port_DressHeightAdd(DressHeights *h, const DressTri *t) {
+    float u[3];
+    float v[3];
+    float n[3];
+    float y = (t->p[0][1] + t->p[1][1] + t->p[2][1]) / 3.0f;
+    s32 k;
+
+    for (k = 0; k < 3; k++) {
+        u[k] = t->p[1][k] - t->p[0][k];
+        v[k] = t->p[2][k] - t->p[0][k];
+    }
+    n[0] = u[1] * v[2] - u[2] * v[1];
+    n[1] = u[2] * v[0] - u[0] * v[2];
+    n[2] = u[0] * v[1] - u[1] * v[0];
+    y = WATER_HEIGHT_STEP *
+        (float)(s32)(y / WATER_HEIGHT_STEP + (y < 0.0f ? -0.5f : 0.5f));
+    for (k = 0; k < h->count; k++) {
+        if (h->height[k] == y) {
+            break;
+        }
+    }
+    if (k == h->count) {
+        if (k == WATER_HEIGHTS) {
+            return;
+        }
+        h->height[k] = y;
+        h->area[k] = 0.0f;
+        h->count++;
+    }
+    h->area[k] += port_DressRoot(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+}
+
 static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
     s32 is_stream = def->on != PORT_DRESS_ON_ANY && def->puddles == 0;
+    DressHeights heights;
     s32 i;
+
+    heights.count = 0;
 
     run->first = g_dress.mesh_vertex_count;
     run->count = 0;
@@ -2523,9 +2712,24 @@ static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
             }
             sum += middle[1];
             run->count += 3;
+            if (def->reflect > 0 && -t->normal_y > 0.99f &&
+                (!is_stream || (port_DressTexel(t, weight, rgb) &&
+                                port_DressGroundIs(rgb, def->on)))) {
+                port_DressHeightAdd(&heights, t);
+            }
         }
         run->ground_y = run->count > 0 ? (float)(sum / (run->count / 3)) : 0.0f;
         port_DressGrowMap(def, run, is_stream);
+        if (heights.count > 0) {
+            s32 best = 0;
+
+            for (i = 1; i < heights.count; i++) {
+                if (heights.area[i] > heights.area[best]) {
+                    best = i;
+                }
+            }
+            port_GlPostWaterPlane(heights.height[best], heights.area[best]);
+        }
         return;
     }
     for (i = 0; i < def->area_count &&
@@ -2551,6 +2755,15 @@ static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
     }
     run->ground_y = (float)def->at[1];
     port_DressGrowMap(def, run, FALSE);
+    if (def->reflect > 0) {
+        float size = 0.0f;
+
+        for (i = 0; i < def->area_count; i++) {
+            size += 2.0f * (float)(def->area[i][2] - def->area[i][0]) *
+                    (float)(def->area[i][3] - def->area[i][1]);
+        }
+        port_GlPostWaterPlane(run->ground_y, size);
+    }
 }
 
 /* A shafts block's beams: for each of the stage's lights it names, shown at
@@ -3501,6 +3714,7 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
                  g_dress.push_ways[0]);
     glUniform1i(g_dress.foliage_at.push_count, g_dress.pusher_count);
     glUniform1f(g_dress.foliage_at.thin, FOLIAGE_THIN);
+    glUniform1f(g_dress.foliage_at.lift, FOLIAGE_SUN_LIFT);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
         const PortDressDef *def = &set->block[run->block];
@@ -3547,6 +3761,7 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     /* the meshes */
     glUseProgram(g_dress.mesh);
     port_DressUniforms(&g_dress.mesh_at, view);
+    glUniform1f(g_dress.mesh_at.lift, 0.0f);
     glBindVertexArray(g_dress.mesh_array);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
@@ -3564,6 +3779,83 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     glBindVertexArray(0);
     port_GlCountDraw(g_dress.triangles * 3, g_dress.draws);
     PORT_GPU_END();
+}
+
+/* Whether the stage grew any foliage. */
+static s32 port_DressHasFoliage(void) {
+    s32 i;
+
+    for (i = 0; i < g_dress.run_count; i++) {
+        if (!g_dress.runs[i].is_mesh && g_dress.runs[i].count > 0 &&
+            (g_dress.runs[i].kind == PORT_DRESS_GRASS ||
+             g_dress.runs[i].kind == PORT_DRESS_BUSH ||
+             g_dress.runs[i].kind == PORT_DRESS_REEDS ||
+             g_dress.runs[i].kind == PORT_DRESS_FLOWERS)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+u32 port_GlDressingDrawFoliageCasters(const float *matrix, const float *eye) {
+    const PortDressSet *set = port_DressNow();
+    const DressAt *at = &g_dress.foliage_caster_at;
+    u32 triangles = 0;
+    s32 i;
+
+    if (set == NULL || !g_dress.is_on || !port_DressHasFoliage()) {
+        return 0;
+    }
+    glUseProgram(g_dress.foliage_caster);
+    glUniform1i(g_dress.foliage_caster_at_cast, 1);
+    glUniformMatrix4fv(g_dress.foliage_caster_at_sun, 1, GL_FALSE, matrix);
+    glUniform3f(at->camera, eye[0], eye[1], eye[2]);
+    glUniform1f(at->clock, port_DressClock());
+    glUniform4f(at->wind, g_dress.wind[0], g_dress.wind[1], g_dress.wind[2],
+                g_dress.wind[3]);
+    glUniform4fv(at->push, g_dress.pusher_count, g_dress.pushers[0]);
+    glUniform4fv(at->push_way, g_dress.pusher_count, g_dress.push_ways[0]);
+    glUniform1i(at->push_count, g_dress.pusher_count);
+    /* thinned sooner than in the picture: a tuft's shadow far off is a
+     * texel or two of the map */
+    glUniform1f(at->thin, FOLIAGE_CAST_THIN);
+    for (i = 0; i < g_dress.run_count; i++) {
+        const DressRun *run = &g_dress.runs[i];
+        const PortDressDef *def = &set->block[run->block];
+        s32 kind;
+        s32 vertices;
+
+        if (run->is_mesh || run->count == 0 || !port_DressShownNow(def)) {
+            continue;
+        }
+        switch (run->kind) {
+        case PORT_DRESS_GRASS:
+            kind = 0;
+            vertices = GRASS_VERTICES;
+            break;
+        case PORT_DRESS_BUSH:
+            kind = 1;
+            vertices = BUSH_VERTICES;
+            break;
+        case PORT_DRESS_REEDS:
+            kind = 2;
+            vertices = REEDS_VERTICES;
+            break;
+        case PORT_DRESS_FLOWERS:
+            kind = 3;
+            vertices = FLOWER_VERTICES;
+            break;
+        default:
+            continue;
+        }
+        port_DressThingFormat(run->first);
+        glUniform1i(at->kind, kind);
+        glUniform1f(at->sway, (float)def->sway / PORT_DRESSING_ONE);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, vertices, run->count);
+        triangles += (u32)(run->count * vertices / 3);
+    }
+    glBindVertexArray(0);
+    return triangles;
 }
 
 u32 port_GlDressingDrawSunCasters(const float *matrix) {
@@ -3683,6 +3975,23 @@ static void port_DressDrawShafts(
     glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
     glUseProgram(g_dress.shaft);
     port_DressUniforms(&g_dress.shaft_at, view);
+    {
+        u32 texture = 0;
+        float matrix[16];
+        float a_b[2];
+        s32 on = port_GlPostFighterDepthNow(&texture, matrix, a_b);
+
+        glUniform1i(g_dress.shaft_at.fighter_on, on);
+        if (on) {
+            glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glActiveTexture(GL_TEXTURE0);
+            glUniform1i(g_dress.shaft_at.fighter, SHAFT_FIGHTER_UNIT);
+            glUniformMatrix4fv(
+                g_dress.shaft_at.fighter_matrix, 1, GL_FALSE, matrix);
+            glUniform2f(g_dress.shaft_at.fighter_a_b, a_b[0], a_b[1]);
+        }
+    }
     glBindVertexArray(g_dress.empty_array);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
@@ -3706,6 +4015,9 @@ static void port_DressDrawShafts(
             g_dress.draws++;
         }
     }
+    glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
     /* the motes in them */
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ZERO, GL_ONE);
     glUseProgram(g_dress.particles);
@@ -3856,8 +4168,14 @@ void port_GlDressingDrawMixed(const PortGlDressingView *view) {
                             ? 0
                             : flame_count);
             glBindVertexArray(g_dress.empty_array);
-            glDrawArraysInstanced(GL_TRIANGLES, 0, 6, run->count);
-            g_dress.triangles += (u32)(run->count * 2);
+            if (sub == PORT_PARTICLES_GULLS) {
+                glDrawArraysInstanced(
+                    GL_TRIANGLES, 0, GULL_VERTICES, run->count);
+                g_dress.triangles += (u32)(run->count * GULL_VERTICES / 3);
+            } else {
+                glDrawArraysInstanced(GL_TRIANGLES, 0, 6, run->count);
+                g_dress.triangles += (u32)(run->count * 2);
+            }
             if (sub == PORT_PARTICLES_RAIN) {
                 /* and where the drops land, their splashes */
                 glUniform1i(g_dress.particles_at.kind, PARTICLES_SPLASHES);
@@ -3920,4 +4238,8 @@ s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
     glEnable(GL_SCISSOR_TEST);
     PORT_GPU_END();
     return TRUE;
+}
+
+s32 port_GlDressingWantsFighters(void) {
+    return g_dress.is_on && g_dress.beam_count > 0 && port_DressNow() != NULL;
 }
