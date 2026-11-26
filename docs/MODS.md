@@ -1205,7 +1205,7 @@ The world's units, the world's y running down, as the light files'.
 | `reeds` | three tall blades, one with a brown head | the same |
 | `bush` | a mound of leaves; **looks solid** unless `solid = no` | the same |
 | `water` | a level surface that reflects the sky, the sun or the moon, the lamps, and the stage and the fighters; waved by the wind, rippled where a fighter wades, ringed by rain; deep or shallow by the ground under it, foaming along its shore; or puddles | `y`, `color`, `shallow`, `clarity`, `waves`, `foam`, `reflect`, `sky`, `flow`, `puddles`, `rain`, `on` |
-| `particles` | `kind = dust`, `leaves`, `embers`, `snow`, `petals`, `fireflies`, `rain`, `smoke`, `motes`, `spray` or `mist` | `size`, `top`, `count`, `on`, `glow` |
+| `particles` | `kind = dust`, `leaves`, `embers`, `snow`, `petals`, `fireflies`, `rain`, `smoke`, `motes`, `spray`, `mist` or `gulls` | `size`, `top`, `count`, `on`, `glow` |
 | `shafts` | the light of the stage's own lights through a door or a window, as shafts in the air, with motes hanging in them | `light`, `at`, `size`, `count`, `glow` |
 | `mesh` | a scenery mesh of the mods' (`file`); **looks solid** | `file`, `at`, `turn`, `scale`, `sit`, `piece`, `color`, `tint` |
 | `wind` | the stage's wind | `strength`, `direction`, `gusts` |
@@ -1258,8 +1258,12 @@ counts as night, as the light files'), `solid`.
   area), spreading and thinning; `motes` hang in the air over the area
   and are seen where the stage's lights fall on them; `spray` is thrown
   up in bursts along the area, as waves break, and falls back; `mist` is
-  banks of `size` drifting low across the area with the wind. `glow` (0
-  to 4, 1) makes any of them brighter or thicker.
+  banks of `size` drifting low across the area with the wind; `gulls`
+  circle places of the area, each at its own height up to `top` over the
+  ground and its own pace, banked into the turn, flapping a few seconds
+  and gliding the rest, `size` half a wing's span (a gull is a body, a
+  tail and two jointed wings, not a quad). `glow` (0 to 4, 1) makes any of
+  them brighter or thicker.
 - **Shafts** take each of the stage's lights the block names (`light =
   NAME ...`, up to four, of its light files, "Lights" above), shown at the times the light is, and draw its light through
   an opening `size = WIDTH HEIGHT` across the light's way, centred on
@@ -1372,8 +1376,12 @@ foliage, the water and the particles are drawn by the program's own
 shaders from numbers (`src/port/gl/gl_dressing.c`), coloured by the
 stage's own textures as the game loaded them; the rocks are made by
 `tools/port_dressing.py rocks` from a seed, and the gravestones
-(`grave.obj`, `grave_wide.obj`) by `tools/port_dressing.py meshes` from
-a few numbers; the shafts' light is the stage's light files'. All of it
+(`grave.obj`, `grave_wide.obj`), the ferry dock's bollards
+(`bollard.obj`) and the orange trees' trunks (`orange_trunk.obj`) by
+`tools/port_dressing.py meshes` from a few numbers (the last two turned
+about the upright from a profile, the trunk's bark furrowed by a sine of
+its angle and height); the gulls are the particles' shader's own geometry
+and clock; the shafts' light is the stage's light files'. All of it
 is the repository's, under its licence (AGPL-3.0, `LICENSE`); nothing was
 downloaded, nothing was made by another program, and nothing comes from
 the disc or from another game.
@@ -1383,11 +1391,19 @@ game's link mode fights on it (`select.c`, `SELECT_STAGE_LINK_TO`: link
 mode's castle rooftop is stage 37, a courtyard seen from afar), which the
 port reaches with the original menus' link mode over the network
 (NETPLAY.md, "11. The link cable over UDP") or with `--fight 37` (`castle rooftop
-link`). What is left: gulls over the ship; a mist the fight camera would
+link`). Gulls circle over the ship (21). Pieces standing in by meshes
+of their own: the cemetery's three plainest gravestones (31), the ferry
+dock's four bollards (22, pieces 0, 1, 2 and 5: blocks of eight sides by
+the rail, made round iron with flared heads) and the orange trees' five
+trunks (12, pieces 7 to 11: square columns, made round, flared at the
+roots and furrowed; the game's own leaves and fruit above them stay).
+They were chosen for being plain and many and seen near the fight: the
+bamboo thicket's seventeen clumps (7) would gain as much, but their culms
+stand where the collision grid has them, which a mesh fitted to the
+clump's box would not keep. What is left: a mist the fight camera would
 see (the `mist` kind is there, but no stage's open water lies where the
-fight looks); more of the pieces standing in by meshes of their own (only
-the cemetery's three plainest gravestones do: a piece's mesh has to keep
-its box's proportions within a quarter).
+fight looks); more pieces' meshes (a piece's mesh has to keep its box's
+proportions within a quarter).
 
 ## Music
 
