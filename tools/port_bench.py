@@ -257,6 +257,23 @@ MET_LIMITS += [
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
 SETTLE_BLANKS = 60
+# The fight's first frame, drawn within its first blanks (with run-ahead,
+# the second): the end of its load, held on its own (`first_blank`).
+FIRST_BLANKS = 4
+# What the fight's first frame may take (docs/PORT.md, "The fight's first
+# frame"): FIRST_BLANK_MS, held as the met measures are (MET_SLACK). It was
+# 21 to 27 ms at run_ahead 1 and 2 with the driver's cache of shaders full
+# and 100 to 120 with it empty, the driver making programs and memory at
+# their first use; with those made while the game loads, what is left is
+# the stage's mesh built and the first textures of the fight. One blank's
+# number, which a busy machine lengthens: on a loaded machine said, not held.
+FIRST_BLANK_MS = 2 * BUDGET_MS
+FIRST_LIMITS = [
+    ('ra0', 'first_blank', FIRST_BLANK_MS, "the fight's first frame, its worst blank, run_ahead 0"),
+    ('ra1', 'first_blank', FIRST_BLANK_MS, 'the same, run_ahead 1'),
+    ('ra2', 'first_blank', FIRST_BLANK_MS, 'the same, run_ahead 2'),
+]
+MET_LIMITS += FIRST_LIMITS
 # A blank of the fight, after its first second, over this is a stall
 # (the card's driver doing something for the first time, a file read on
 # the thread that draws): it fails the budget even with --report-only,
@@ -728,6 +745,10 @@ def measure(folder, paced=False, case=None):
         return sum(values[i] for i in held_parts)
 
     settled = [held(v) for b, (_, v) in rows.items() if b >= first + SETTLE_BLANKS]
+    # the fight's first frame: its first blanks, each one's whole time but
+    # the wait for the clock, the swap's too (where the driver catches up
+    # with what it was given, a frame drawn on the step's thread shows it)
+    opening = [held(v) for b, (_, v) in rows.items() if b < first + FIRST_BLANKS]
     settled_stalls = sorted((b, round(held(v), 1)) for b, (_, v) in rows.items()
                             if b >= first + SETTLE_BLANKS and held(v) > STALL_HARD_MS)
 
@@ -808,6 +829,7 @@ def measure(folder, paced=False, case=None):
         'dress_p95': centile(dress, 0.95),
         'hitches': 100.0 * over / len(rows) if rows else 0.0,
         'stalls': stalls[:12],
+        'first_blank': max(opening) if opening else 0.0,
         'settled_p99': centile(settled, 0.99),
         'settled_worst': max(settled) if settled else 0.0,
         'settled_stalls': len(settled_stalls),
@@ -923,6 +945,7 @@ def report(name, m):
         '%s %.2f' % kv for kv in sorted(m['cpu_parts'].items(), key=lambda kv: -kv[1]) if kv[1] >= 0.01))
     print('  card passes (median ms):     ' + ' '.join(
         '%s %.2f' % kv for kv in sorted(m['gpu_parts'].items(), key=lambda kv: -kv[1]) if kv[1] >= 0.01))
+    print('  the fight\'s first blanks: the worst %.2f' % m.get('first_blank', 0.0))
     print('  after the first second: 99%% %.2f  worst %.2f; blanks over %.0f ms: %d%s'
           % (m['settled_p99'], m['settled_worst'], STALL_HARD_MS, m['settled_stalls'],
              ' (' + ', '.join('blank %d %.1f ms' % s for s in m['settled_stall_blanks']) + ')'
@@ -1096,8 +1119,8 @@ def main():
     if theirs is not None:
         for case, m in results.items():
             for key in ('cpu_p50', 'cpu_p95', 'gpu_p50', 'gpu_p95', 'worst', 'settled_p99',
-                        'gap_p95', 'gap_p99'):
-                if case in theirs and key in theirs[case]:
+                        'gap_p95', 'gap_p99', 'first_blank'):
+                if case in theirs and key in theirs[case] and key in m:
                     was, now = theirs[case][key], m[key]
                     worse = now > was * (1 + REGRESSION_SHARE) and now - was > REGRESSION_MS
                     failed = failed or worse
@@ -1121,7 +1144,7 @@ def main():
                 continue
             value = results[case][key]
             over = value > most
-            if over and case in PACED_CASES and case in loaded:
+            if over and (case in PACED_CASES or key == 'first_blank') and case in loaded:
                 # a paced run's measures are the clock's, which another
                 # program on the machine lengthens: said, not held
                 print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,

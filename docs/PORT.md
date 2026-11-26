@@ -5535,6 +5535,44 @@ pictures (`--tap-window`, 640 by 360, `frame_rate original`, the
 counter off, a fight on Lost Bridge) are the same to the byte as
 before, as two runs of one program are.
 
+### The fight's first frame
+
+**What it was** (2026-11-25, RTX 3090, the bench's fight, `main` at
+`91f63ee71`): the fight's first frame, drawn in its second blank, took
+21 to 26 ms of the window's thread at `run_ahead` 2 (and at 1, where the
+same time fell in the swap, which `worst` leaves out), and 100 to 120 ms
+with the driver's cache of shaders empty (`__GL_SHADER_DISK_CACHE_PATH`
+an empty folder: the first run after a driver or program update). Timed
+call by call (every GL call of the first frames wrapped, `glFinish`
+after each to keep NVIDIA's driver thread from moving the cost onto a
+later call), it was the driver doing things the first time they were
+asked for, none of them the fight's own:
+
+| what | first frame, empty cache | full cache | now made while the game loads |
+| --- | --- | --- | --- |
+| the cast shadows' program into the sun's maps: a framebuffer of depth alone is another program to the driver | 40 ms, and the next cascade's clear 38 | under 1 | `port_GlSunWarm`: each map cleared and drawn into by `port_GlShadowWarmSunCasters` |
+| the ground mesh's slots and depth, several samples a pixel at the picture's size, given their memory at their first attachment | 9 + 5 ms | the same | `port_GlWarmTargets`: attached and cleared once for each size's targets |
+| the dressing's particles' program (a dressed stage) | 38 ms | under 1 | `port_GlDressingWarm`: every dressing program drawn once in its state through a scissor of no pixel |
+| the clouds' cube, baked at the first sky | 3 ms | 3 ms | `port_GlSkyWarm` |
+
+All four are called with `port_GlFighterPreload` while a load is on the
+screen, each once (the targets once for each size); none writes anything
+a picture reads before the picture's own drawing has written it, so the
+pictures are main's (the provers `--against main`). The load pays 5.7 ms
+the first time and 2 to 5 ms when a new size's targets are warmed, with
+the driver's cache full, and about 0.3 s once at the program's first
+load with it empty.
+
+**What is left** of the first frame (9 to 10 ms of the window's thread,
+`run_ahead` 2): the stage's mesh built from the game's memory and, on a
+dressed stage, its dressing grown on it (1 to 4 ms; only a still step
+may read the game's memory, gl_stage.h), the mesh's first draw, and the
+first of the fight's mod textures sent to the card (the HUD's, 1 to 4
+ms). **Held**: the bench's `first_blank`, the worst whole blank (the
+swap included) of the fight's first four, at most `FIRST_BLANK_MS`
+(13.9 ms) with the met measures' slack, for `ra0`, `ra1` and `ra2`; on
+a loaded machine it is said and not held, one blank being one sample.
+
 ### The software GPU beside the game
 
 **What the worst blanks were** (2026-11-18, main `984661052`, the
