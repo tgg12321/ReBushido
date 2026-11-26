@@ -63,6 +63,11 @@ extern const char *port_GlShadowStart(void *(*getproc)(const char *name));
  * kind it casts: a driver makes a program ready for the card at its
  * first draw, which was some milliseconds of a fight's first frame. */
 extern void port_GlShadowWarm(void);
+/* The same program into one of the sun's maps as they are drawn
+ * (gl_sun.h, port_GlSunWarm): the driver makes a program again for a
+ * framebuffer of depth alone, which was 40 ms of the fight's first frame
+ * with the driver's cache of shaders empty (RTX 3090). */
+extern void port_GlShadowWarmSunCasters(void);
 
 /* The `shadows` setting (port_remaster.h, port_ReadRemasterShadows): how
  * much the shadows darken what they fall on, in hundredths, 0 for the

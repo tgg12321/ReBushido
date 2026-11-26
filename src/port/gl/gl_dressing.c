@@ -3883,6 +3883,85 @@ u32 port_GlDressingDrawSunCasters(const float *matrix) {
     return triangles;
 }
 
+void port_GlDressingWarm(void) {
+    static const float nought[3 * sizeof(DressVertex) / sizeof(float)];
+    static s32 is_warm;
+    PortGlPicture picture;
+    GLint box[4];
+    GLboolean was_scissor;
+
+    if (is_warm || !g_dress.is_started || !g_dress.is_on) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    if (picture.framebuffer == 0) {
+        return;
+    }
+    is_warm = TRUE;
+    /* the meshes' corners, where none are grown yet: three of nought, which
+     * the first grown set's own replace */
+    if (g_dress.mesh_vertex_count == 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, g_dress.mesh_buffer);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(nought), nought,
+                     GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+    was_scissor = glIsEnabled(GL_SCISSOR_TEST);
+    glGetIntegerv(GL_SCISSOR_BOX, box);
+    glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
+    /* every program drawn once in its own state, through a scissor of no
+     * pixel: nothing of the picture is touched */
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, 0, 0);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glUseProgram(g_dress.foliage);
+    port_GlSunBind(&g_dress.foliage_at.sun);
+    port_GlLightsBind(&g_dress.foliage_at.lights);
+    /* the dust's corners are laid out as a thing's, one an instance */
+    glBindVertexArray(g_dress.dust_array);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 3, 1);
+    glUseProgram(g_dress.mesh);
+    port_GlSunBind(&g_dress.mesh_at.sun);
+    port_GlLightsBind(&g_dress.mesh_at.lights);
+    glBindVertexArray(g_dress.mesh_array);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+    glUseProgram(g_dress.water);
+    port_GlSunBind(&g_dress.water_at.sun);
+    port_GlLightsBind(&g_dress.water_at.lights);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisable(GL_BLEND);
+    glColorMaski(0, GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glEnable(GL_BLEND);
+    glUseProgram(g_dress.particles);
+    port_GlSunBind(&g_dress.particles_at.sun);
+    port_GlLightsBind(&g_dress.particles_at.lights);
+    glBindVertexArray(g_dress.empty_array);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, 1);
+    glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
+    glUseProgram(g_dress.shaft);
+    port_GlSunBind(&g_dress.shaft_at.sun);
+    port_GlLightsBind(&g_dress.shaft_at.lights);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glBindVertexArray(0);
+    glScissor(box[0], box[1], box[2], box[3]);
+    if (!was_scissor) {
+        glDisable(GL_SCISSOR_TEST);
+    }
+    port_GlForgetState();
+}
+
 /* A colour of a block (`color`), 0 to 1, or the one given. */
 static void port_DressColorOf(
     const PortDressDef *def, float r, float g, float b, float *rgb) {

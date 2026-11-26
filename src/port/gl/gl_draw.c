@@ -84,6 +84,8 @@ typedef ptrdiff_t GLintptr;
 #define GL_RGBA8 0x8058
 #define GL_R16UI 0x8234
 #define GL_COLOR 0x1800
+#define GL_DEPTH 0x1801
+#define GL_DEPTH_WRITEMASK 0x0B72
 #define GL_RED_INTEGER 0x8D94
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_TEXTURE0 0x84C0
@@ -527,6 +529,8 @@ static struct {
     GLuint color_samples;
     GLuint slot_samples;
     GLuint slot_framebuffer;
+    /* the colour buffer whose targets were warmed (port_GlWarmTargets) */
+    GLuint warmed_color;
     /* the lighting's passes ran on this picture (gl_post.h), which is
      * then averaged down into a buffer of its own */
     s32 is_post;
@@ -2015,6 +2019,60 @@ static s32 port_GlFastenTargets(s32 is_multi) {
     }
     glViewport(0, 0, g_gl.target_w, g_gl.target_h);
     return TRUE;
+}
+
+void port_GlWarmTargets(void) {
+    static const GLenum all[3] = {
+        GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
+    static const GLenum one[1] = {GL_COLOR_ATTACHMENT0};
+    static const GLenum taken[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    static const GLfloat nought[4];
+    static const GLuint nought_u[4];
+    static const GLfloat far_depth = 1.0f;
+    s32 is_multi = g_gl.samples > 1;
+
+    if (!g_gl.is_started || g_gl.warmed_color == g_gl.color_texture) {
+        return;
+    }
+    g_gl.warmed_color = g_gl.color_texture;
+    glDisable(GL_SCISSOR_TEST);
+    /* the ground's slots and depth beside the colour buffer, attached as
+     * port_GlGroundSlotsBegin attaches them, cleared, and taken off again;
+     * the colour buffer itself is left as it is */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
+                           is_multi ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D,
+                           is_multi ? g_gl.slot_samples : g_gl.slot_one, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2,
+                           is_multi ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D,
+                           is_multi ? g_gl.deep_samples : g_gl.deep_one, 0);
+    glDrawBuffers(3, all);
+    glClearBufferfv(GL_COLOR, 1, nought);
+    glClearBufferfv(GL_COLOR, 2, nought);
+    /* the mesh's depth, which it clears before it draws (gl_stage.c) */
+    if (g_gl.options.is_stage_mesh && !g_gl.options.is_exact) {
+        GLint mask = GL_TRUE;
+
+        glGetIntegerv(GL_DEPTH_WRITEMASK, &mask);
+        glDepthMask(GL_TRUE);
+        glClearBufferfv(GL_DEPTH, 0, &far_depth);
+        glDepthMask(mask ? GL_TRUE : GL_FALSE);
+    }
+    glDrawBuffers(1, one);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
+        is_multi ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2,
+        is_multi ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
+    /* ... and the slots taken down, with the ground's depth */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.slot_framebuffer);
+    glDrawBuffers(2, taken);
+    glClearBufferuiv(GL_COLOR, 0, nought_u);
+    glClearBufferfv(GL_COLOR, 1, nought);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    glEnable(GL_SCISSOR_TEST);
+    g_gl.has_state = FALSE;
 }
 
 /* ---- the mirror of video memory ---- */

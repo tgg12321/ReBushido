@@ -91,8 +91,10 @@ lessons still holds unless this section says otherwise.
   from the pieces' own faces).
 - 18's leftovers: more than 32 arenas, arenas larger than their host's
   room, pieces; dispute tooling; the kanabo's window model.
-- The ra2 fight's first-frame stall (21 to 25 ms, older than the
-  session; no budget holds it).
+- The fight's first frame: the driver's first-use work moved into the
+  load (PORT.md, "The fight's first frame"), ra2's first blank 25 to 13
+  ms, held by the bench's `first_blank`; left of it, the stage's mesh and
+  dressing built from the game's memory at the first frame (1 to 4 ms).
 
 ## Lessons of the session
 
@@ -362,8 +364,7 @@ quick-boot disc flake (WSL's clock stepping backwards).
   Interpolating on the card (a persistent vertex buffer, a shader mixing
   two frames) and not drawing the record's own frame under the first
   picture would cut it.
-- The fight's first blank (16 to 18 ms): warm the shadows' and the
-  card's first draws at the load.
+- The fight's first blank: done (PORT.md, "The fight's first frame").
 - A heavier made-up scene for the bench: the stress case only doubles
   the ground; four HD fighters on a large modded stage with many lights
   is what the owner's goal needs measured, and the lighting work will

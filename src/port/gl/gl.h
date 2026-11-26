@@ -374,6 +374,13 @@ extern void port_GlForgetOccluders(void);
  * among the primitives, and the batching's state forgotten after it. */
 extern void port_GlFlushBatch(void);
 extern void port_GlForgetState(void);
+/* While the game loads (sdl_window.c): the targets of the picture's size
+ * that only the ground's mesh draws into -- its slots and depth, several
+ * samples a pixel, hundreds of megabytes at a large window -- cleared
+ * once, so that the driver gives them their memory then and not in the
+ * fight's first frame (some 13 ms of it on an RTX 3090). Nothing reads
+ * them before the mesh has written them; once for each size's targets. */
+extern void port_GlWarmTargets(void);
 /* Vertices and draws added to the frame's counts. */
 extern void port_GlCountDraw(u32 vertices, u32 draws);
 /* Around the draw of the ground's mesh (gl_stage.c): its second output,

@@ -63,6 +63,11 @@ extern void port_GlSunNewPicture(void);
  * framebuffer bound. TRUE where there are maps to read. */
 extern s32 port_GlSunPrepare(const PortStageView *view);
 extern s32 port_GlSunIsReady(void);
+/* While the game loads (sdl_window.c, with port_GlFighterPreload): each
+ * map cleared and drawn into once, by every caster's program, in the
+ * state port_GlSunPrepare draws them in; nothing of it is read, since
+ * every picture clears the maps first. Once a run. */
+extern void port_GlSunWarm(void);
 
 /* Where a program has the map's uniforms, and the map given to it. */
 typedef struct {
