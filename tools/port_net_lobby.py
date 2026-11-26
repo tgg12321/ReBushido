@@ -1262,13 +1262,15 @@ def case_four_between(case):
         case.fail('the match was not Stock 2')
     if 'player %d left between the fights of the match' % pad not in host:
         case.fail('the host did not give player %d to the CPU between the fights' % pad)
-    for n in (0, 1, 2):
-        if 'cp fight2 ' not in read(os.path.join(case.folder, labels[n] + '.out')):
-            case.fail('%s never came to the second fight' % labels[n])
     cpu_from = four_left_judge(case, labels, codes, 3, pad, r'has left the session', None)
     if cpu_from is None:
         return
     fights = same_replays(case, [os.path.join(case.folder, 'side%d-replays' % n) for n in (0, 1, 2)])
+    # (each machine kept a replay of each fight: the second was played; a
+    # checkpoint of the plan's is not, as a frame it falls in may be run
+    # again quietly on a guest, where nothing is printed)
+    if fights < 2:
+        case.fail('the match had %d fight, not two or more' % fights)
     if not case.problems:
         case.said.append('the match of %d fights kept as replays on the three, each the same on all and played '
                          'back with every hash the same' % fights)
