@@ -752,6 +752,24 @@ static void port_NetplayTake(s32 link, const u8 *in, s32 bytes) {
     }
 }
 
+/* Each goodbye come NETPLAY_BYE_GRACE_MS or more before `now` taken: its
+ * link has left, once what was sent before it has had time to come. */
+static void port_NetplayTakeByes(u32 now) {
+    s32 link;
+
+    for (link = 0; link < g_np_links; link++) {
+        PortNetplayLink *from = &g_np_link[link];
+
+        if (from->bye && !from->left && !from->taken &&
+            now - from->bye_at >= NETPLAY_BYE_GRACE_MS) {
+            from->left = 1;
+            from->left_pad = from->bye_pad;
+            from->desync = from->bye_desync;
+            g_np_peer_left = 1;
+        }
+    }
+}
+
 /* Everything that has come on every link, waiting up to `wait_ms` for
  * the first link's first. */
 static void port_NetplayReceive(u32 wait_ms) {
@@ -767,18 +785,7 @@ static void port_NetplayReceive(u32 wait_ms) {
         }
     }
     port_NetSelectLink(0);
-    /* a goodbye taken once what was sent before it has had time to come */
-    for (link = 0; link < g_np_links; link++) {
-        PortNetplayLink *from = &g_np_link[link];
-
-        if (from->bye && !from->left && !from->taken &&
-            port_NetClock() - from->bye_at >= NETPLAY_BYE_GRACE_MS) {
-            from->left = 1;
-            from->left_pad = from->bye_pad;
-            from->desync = from->bye_desync;
-            g_np_peer_left = 1;
-        }
-    }
+    port_NetplayTakeByes(port_NetClock());
 }
 
 /* ---- time ---- */

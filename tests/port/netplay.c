@@ -472,6 +472,12 @@ static void test_HostOfFour(void) {
 
         port_NetHeader(bye, KIND_BYE, 3 + 1, 0);
         port_NetplayTake(2, bye, sizeof(bye));
+        /* (taken a moment after it came: what was sent before it may
+         * come after it) */
+        CHECK(!g_np_link[2].left);
+        port_NetplayTakeByes(g_np_link[2].bye_at + NETPLAY_BYE_GRACE_MS - 1);
+        CHECK(!g_np_link[2].left);
+        port_NetplayTakeByes(g_np_link[2].bye_at + NETPLAY_BYE_GRACE_MS);
         CHECK(g_np_link[2].left);
         CHECK_EQ(port_NetplayLeftPad(), 3);
     }
