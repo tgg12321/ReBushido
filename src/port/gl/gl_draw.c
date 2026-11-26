@@ -3370,6 +3370,8 @@ static void port_GlUploadBank(void) {
     const u16 *bank = port_VramBank();
     s32 row;
     s32 bound = FALSE;
+    s32 first = -1; /* the lines that differ, for a mod's pages */
+    s32 last = -1;
 
     if (bank == NULL) {
         return;
@@ -3384,6 +3386,8 @@ static void port_GlUploadBank(void) {
             continue;
         }
         memcpy(&g_gl.staged[at], line, PORT_VRAM_BANK_W * sizeof(u16));
+        first = first < 0 ? row : first;
+        last = row;
         if (!bound) {
             glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
             bound = TRUE;
@@ -3395,6 +3399,11 @@ static void port_GlUploadBank(void) {
     }
     if (bound) {
         glBindBuffer(GL_TEXTURE_BUFFER, 0);
+    }
+    /* a partner's page written over (his face) is looked up again, as a
+     * page of the console's is (gl_scene.h) */
+    if (first >= 0) {
+        port_GlSceneWroteBank(first, last - first + 1);
     }
 }
 

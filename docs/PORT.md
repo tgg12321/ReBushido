@@ -9740,8 +9740,11 @@ a fighter's colour tables are read from the bank for his model's tints
 partner's meshes are a fighter's to the renderer
 (`port_RemasterNoteFighter`, render_asm.c), so **each of the four is
 drawn from his own model** (`fighter_models`) where one is given. A mod's
-picture of a whole page is not laid over the second bank's (gl_replace.c,
-gl_scene.c leave it to the textures as loaded).
+picture of a whole page is laid over a partner's pages in the bank as over
+a slot's (MODS.md, "A fighter's pages": `owner fighter 3 bank` and `4`;
+gl_scene.c, its lookup table's rows from 512 the bank's tables); the 2D
+layer's replacements by the piece are not, as they are not of any face
+with depth (gl_replace.c).
 
 The four fighters' primitives overflow the console's buffers: in a
 fight of four the port's larger buffers are the game's

@@ -778,9 +778,15 @@ extern const PortStageTexture *port_RemasterStageTextures(
  * the first; 1, the second, two pages to the right). The stage's number
  * (port_RemasterStageTextures' `version`) changes with them. */
 #define PORT_MODEL_TEXTURE_SLOTS 2
+/* ... and two on two's partners of characters of their own, whose
+ * textures are in the second bank of video memory where their slots' are
+ * in the first (port_gpu.h, model_PortLoadPartner): the list of slot
+ * `slot`'s partner is PORT_PARTNER_TEXTURES(slot). */
+#define PORT_PARTNER_TEXTURES(slot) (PORT_MODEL_TEXTURE_SLOTS + (slot))
+#define PORT_FIGHTER_TEXTURE_LISTS (2 * PORT_MODEL_TEXTURE_SLOTS)
 #define PORT_FIGHTER_TEXTURES_MAX 64
-/* Slot `slot`'s textures are about to be loaded: its last are
- * forgotten. */
+/* Slot `slot`'s textures (or a partner's list, above) are about to be
+ * loaded: its last are forgotten. */
 extern void port_RemasterBeginFighterTextures(s32 slot);
 /* From now on every TIM tex_LoadTim loads is slot `slot`'s (-1: none's),
  * the faces naming its colour table `named_dy` rows from where it is

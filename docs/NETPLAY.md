@@ -2415,6 +2415,29 @@ fight) is the session's, as a room's match's is (`port_SessionInput`,
 the state, as section 16 has it; a headless program ends there. The rest
 of the session would need the leaver at the select screen.
 
+**Between the fights of a match** (2026-11-25). A match of several fights
+(Stock N, First to N) has its fall, replay and winner's view after each
+fight, then the card between two fights, then the next one's load. None
+of it waits on one player: the card goes on by itself, or on anyone's
+Cross (`port_MatchAfterFight`), and a pad the CPU's holds nothing. So a
+guest who leaves there, or goes silent there, is given to the CPU as in
+a fight (`port_NetplayInFightsOfFour`: the screens of a fight and of what
+follows it, in a match of two on two of a versus mode, while the
+session's end is not yet set), and his fighter is the CPU's from the next
+fight's first step, the same frame on every machine, as any input is.
+The host says so (`netplay: player 4 left between the fights of the
+match: his fighter is the CPU's from the next fight's first step`); the
+guest's F1 says the CPU plays his fighter on there too. Before a match's
+first fight (the select screen, the partners' grid, the stage page) and
+on the menus after its last, the session still ends for all: those pages
+need their players. A leave after the last fight of a match that is
+decided but whose session has not ended (a session of four by address,
+the game's menu after its last fight) gives the pad to the CPU too, and
+the session ends at once there with the match's result in the state,
+where before it ended at the leave. Nothing new is sent and the game's
+state is what it was, so the session protocol is unchanged (18): a guest
+of before follows a host of now, which alone decides.
+
 **Spectators and replays.** The feed carries every pad's input as
 netplay keeps it (section 16), so a spectator is sent `INPUT_CPU` too and
 makes the fighter the CPU's at the frame its players did
@@ -2424,9 +2447,9 @@ makes the fighter the CPU's at the frame its players did
 every hash held (`--replay-check`); one of before has none of them set.
 
 **When the session still ends for all.** The host's own player leaving
-(nobody else hears everyone), a leave outside the fight itself (the
-host's game not in a fight's step: before it, at the menu after it or
-between a match's fights; the select screen and the menus need their
+(nobody else hears everyone), a leave outside a match's fights (the
+host's game before the first, on the select screen, the partners' grid
+or the stage page, or on the menus after the last: they need their
 players), the last
 guest of all leaving (nobody would be left to play with), a goodbye that
 says a desync, two on each of two PCs (either leaving leaves one PC: the
@@ -2464,14 +2487,13 @@ on*.
 | `four-host-leave` | four headless, each size | the host's player leaving 400 frames into the fight | as before protocol 16: each guest told `the other program ended after frame 1,789` (or 1,791) `(player 1)`, all ending well; 59 hashes the same on all four, each size |
 | `port_net_lobby.py`: `rooms-four`, `rooms-four-win` | five headless, Linux and Windows | section 18's: Dai leaves the second match at its frame 1,900, in the fight | match 2: the CPU played Dai's fighter from frame 1,903 on Bunta, Chie, Ayame and Sora alike; the match to its end at frame 5,465, the second team's win (Chie and Ayame) told to the room by those who stayed, Dai's program telling nothing; 186 hashes the same on all four (Dai's before the CPU's frame), Sora holding 140; 165 s, on Windows the same, 174 s |
 | `four-punch`, `four-relay` | four headless | section 18's, again with protocol 16 | 183 hashes the same on all four, as before |
-| `tests/port/netplay.c` | netplay alone | the host given a guest's goodbye: with no fight of four on, the session's end as before; in one, the pad the CPU's from the first frame the host lacked, the frames past it run again, `INPUT_CPU` passed on; a guest told so from a frame it ran on a guess, rolled back where the frame's input depended on no button; the rest of a taken guest's goodbyes changing nothing | 113 checks, both sizes |
+| `tests/port/netplay.c` | netplay alone | the host given a guest's goodbye: with no fight of four on, the session's end as before; in one, the pad the CPU's from the first frame the host lacked, the frames past it run again, `INPUT_CPU` passed on; a guest told so from a frame it ran on a guess, rolled back where the frame's input depended on no button; the rest of a taken guest's goodbyes changing nothing; on the menus of a match of four no take-over, between its fights (the card, the next fight's load) one | 116 checks, both sizes |
+| `port_net_lobby.py`: `four-silent`, `four-silent-win` (2026-11-25) | four headless at a local lobby, Linux and Windows | `four-punch`'s room; Dai's program killed (SIGKILL, TerminateProcess: no goodbye) four seconds into the fight | the host heard nothing from him for 15 seconds and the CPU played his fighter on, from one frame on all three who stayed (Linux: from frame 2,188, his last hash at 2,160; Windows: 2,200, his last at 2,190); the fight to a team out and the match's end on all three, 95 hashes the same on them (23 after the CPU's frame), Dai's 72 before it the same too; the fight's replay the same on the three and played back with every hash the same; 85 s, on Windows 64 s. Nothing to fix: the silence path held as written |
+| `port_net_lobby.py`: `four-between`, `four-between-win` (2026-11-25) | four headless at a local lobby, Linux and Windows | the same room, the host's `--match stock:2`; the first fight's rounds, then Dai leaves (a goodbye) 30 frames into the card between the fights, the others pressing on in the second | the host gave player 4's pad to the CPU from frame 4,212, in the card (`left between the fights of the match`); the card went on, the second fight began with all four up and his fighter the CPU's at its first step, the match decided at frame 5,009 and the session ended there on the three; 167 hashes the same on them (27 after the CPU's frame), Dai's 140 the same too; both fights' replays the same on the three and played back; 131 s, on Windows 119 s (the same hashes but the build's own: section 7) |
 
-**What is left.** A guest who stops answering is given to the CPU after
-15 seconds; no case of the tests kills a program to see it. A match of
-several fights with a leaver in its first is not run by a test (the
-tests' are of one): the next fight's first step makes the fighter the
-CPU's again, but whether the game's menu between fights waits on the
-second pad, where its player has left, is not seen. Four real PCs.
+**What is left.** A leave in a room of several's match of several
+fights is the same path (the room's own end, `port_OnlineMatchEnds`, is
+unchanged) but no case runs one; four real PCs.
 
 ## 20. Teams of four characters
 

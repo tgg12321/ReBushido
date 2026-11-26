@@ -76,12 +76,15 @@ lessons still holds unless this section says otherwise.
 
 ## Next, what needs no owner
 
-- ROADMAP 24's leftovers: mods' texture pages on the
-  second video memory bank, the silent guest's 15 s takeover untested, a
-  leave between fights of a match.
-- A replay played by a later window build that differs only in window
-  code passed the build check and then crashed (exit 70): the replay's
-  build check may not cover the window's code.- 17's leftovers: foliage in the sun's maps, gulls over the ship, more
+- ROADMAP 24's leftovers: a thrown object's sounds still the slot's; a
+  leave in a room of several whose match has several fights (no case);
+  four real PCs. (Partners' own voices, mods' pages on the second bank,
+  the silent guest and a leave between fights are done, 2026-11-25:
+  NETPLAY.md, section 19; MODS.md, "A fighter's pages"; the owner's ear
+  on `tmp/2v2-voices/` and eye on `tmp/2v2-mods/`.)
+- Replays across builds of different game code (an agent is on it; a
+  build whose window alone differs plays a replay since 94a1f68b4).
+- 17's leftovers: foliage in the sun's maps, gulls over the ship, more
   pieces as meshes, the shafts drawn over a fighter in front of them.
 - 18's leftovers: more than 32 arenas, arenas larger than their host's
   room, pieces; dispute tooling; the kanabo's window model.

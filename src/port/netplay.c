@@ -1069,9 +1069,48 @@ static void port_NetplayKeepLocal(void) {
     }
 }
 
+/* Whether the game is in the fights of a match of four, where the CPU
+ * may play a fighter whose player has left (docs/NETPLAY.md, section 19):
+ * a fight of two on two, or between the fights of its match -- its fall,
+ * replay and winner's view, the card between two fights, the next one's
+ * load -- where nothing waits on one player's press (the card goes on by
+ * itself, or on anyone's Cross: port_MatchAfterFight), and his fighter is
+ * the CPU's from the next fight's first step (port_DuoPutFighter). Not
+ * once the session's end is set, and not on the menus before the match
+ * or after it, which need their players. */
+static s32 port_NetplayInFightsOfFour(void) {
+    if (port_SessionResult() != 0) {
+        return FALSE;
+    }
+    if (g_sys_screen == SCREEN_FIGHT_UPDATE && port_DuoIsOn()) {
+        return TRUE;
+    }
+    if (g_port_match.teams == PORT_TEAMS_ONE ||
+        !port_MatchModeHasRules(g_fight_mode)) {
+        return FALSE;
+    }
+    switch (g_sys_screen) {
+    case SCREEN_FIGHT_INIT:
+    case SCREEN_FIGHT_UPDATE:
+    case SCREEN_REPLAY_INIT:
+    case SCREEN_REPLAY_UPDATE:
+    case SCREEN_WINNER_VIEW_INIT:
+    case SCREEN_WINNER_VIEW_UPDATE:
+    case SCREEN_KAISHAKU_INIT:
+    case SCREEN_KAISHAKU_UPDATE:
+    case SCREEN_AFTER_FIGHT_INIT:
+    case SCREEN_AFTER_FIGHT_UPDATE:
+    case SCREEN_AFTER_MATCH_INIT:
+    case SCREEN_AFTER_MATCH_UPDATE:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 /* Whether the host gives the pads of link `link`, whose player has left
  * or gone silent, to the CPU and plays on (docs/NETPLAY.md, section 19):
- * a host of four PCs, in the middle of a fight of four, another guest
+ * a host of four PCs, in the fights of a match of four, another guest
  * still in, the leave no desync's. Otherwise the session ends for all, as
  * it did. */
 static s32 port_NetplayMayTakeOver(s32 link) {
@@ -1079,8 +1118,7 @@ static s32 port_NetplayMayTakeOver(s32 link) {
     s32 i;
 
     if (g_np_links < 2 || g_np_watch || g_np_link[link].desync ||
-        g_np_link[link].taken || !port_DuoIsOn() ||
-        g_sys_screen != SCREEN_FIGHT_UPDATE || port_SessionResult() != 0) {
+        g_np_link[link].taken || !port_NetplayInFightsOfFour()) {
         return FALSE;
     }
     for (i = 0; i < g_np_links; i++) {
@@ -1116,6 +1154,13 @@ static void port_NetplayTakeOver(s32 link, const char *how) {
             g_np_is_wrong = 1;
         }
         port_NetplayCpuNoted(pad, from, how);
+        if (g_sys_screen != SCREEN_FIGHT_UPDATE &&
+            g_port_match.rule != PORT_MATCH_SINGLE && !g_port_match.over) {
+            port_Log("netplay: player %d left between the fights of the "
+                     "match: his fighter is the CPU's from the next fight's "
+                     "first step\n",
+                     pad + 1);
+        }
     }
     g_np_peer_left = FALSE;
     for (pad = 0; pad < g_np_links; pad++) {
@@ -1625,9 +1670,9 @@ void port_GetNetplayStats(PortNetplayStats *stats) {
     stats->cpu_pad = g_np_cpu_pad;
     stats->cpu_ms = g_np_cpu_pad >= 0 ? now - g_np_cpu_at : 0;
     /* a guest of four PCs: one pad of four, one link (section 19) */
-    stats->cpu_on_leave =
-        g_np_pads > 2 && g_np_links == 1 && !g_np_watch && port_DuoIsOn() &&
-        (g_np_local_mask & (g_np_local_mask - 1)) == 0;
+    stats->cpu_on_leave = g_np_pads > 2 && g_np_links == 1 && !g_np_watch &&
+                          port_NetplayInFightsOfFour() &&
+                          (g_np_local_mask & (g_np_local_mask - 1)) == 0;
 }
 
 /* For a moment after this program ends, until the others have said

@@ -92,8 +92,18 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
 
 s32 port_DuoIsOn(void) { return g_test_duo_on; }
 
-/* the game's screen: a fight's (the CPU takes a pad over only there) */
+/* the game's screen: a fight's (the CPU takes a pad over only there, or
+ * between the fights of a match of four) */
 s16 g_sys_screen = SCREEN_FIGHT_UPDATE;
+
+/* the match (port_match.h): one on one, of a versus mode */
+PortMatch g_port_match;
+s16 g_fight_mode;
+
+s32 port_MatchModeHasRules(s32 mode) {
+    (void)mode;
+    return TRUE;
+}
 
 s32 port_GetSessionRole(void) { return PORT_SESSION_NONE; }
 
@@ -469,6 +479,17 @@ static void test_HostOfFour(void) {
     g_test_duo_on = FALSE;
     CHECK(!port_NetplayTakeOverLeavers());
     CHECK(port_NetplayPeerGone());
+    /* ... nor on the menus of a match of four, which need their players;
+     * between its fights (the card after one) the CPU may take him */
+    g_port_match.teams = PORT_TEAMS_TWO_PADS;
+    g_sys_screen = SCREEN_MENU_UPDATE;
+    CHECK(!port_NetplayInFightsOfFour());
+    g_sys_screen = SCREEN_AFTER_FIGHT_UPDATE;
+    CHECK(port_NetplayInFightsOfFour());
+    g_sys_screen = SCREEN_FIGHT_INIT;
+    CHECK(port_NetplayInFightsOfFour());
+    g_sys_screen = SCREEN_FIGHT_UPDATE;
+    g_port_match.teams = PORT_TEAMS_ONE;
     /* in one, the CPU plays the pad on (section 19): from the first frame
      * of it the host lacks, as INPUT_CPU, the frames run past it on a
      * guess run again with the pad the CPU's, and passed on to the

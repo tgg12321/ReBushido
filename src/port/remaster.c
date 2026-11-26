@@ -1588,15 +1588,15 @@ const PortStageTexture *port_RemasterStageTextures(s32 *count, u32 *version) {
 /* ---- the fighters' own textures (port_remaster.h) ---- */
 
 static PortStageTexture
-    g_fighter_textures[PORT_MODEL_TEXTURE_SLOTS][PORT_FIGHTER_TEXTURES_MAX];
-static s32 g_fighter_texture_counts[PORT_MODEL_TEXTURE_SLOTS];
+    g_fighter_textures[PORT_FIGHTER_TEXTURE_LISTS][PORT_FIGHTER_TEXTURES_MAX];
+static s32 g_fighter_texture_counts[PORT_FIGHTER_TEXTURE_LISTS];
 /* the slot whose TIMs tex_LoadTim is loading, or -1; and how far above
  * where a table is loaded the faces name it */
 static s32 g_fighter_noting = -1;
 static s32 g_fighter_named_dy;
 
 void port_RemasterBeginFighterTextures(s32 slot) {
-    if (g_backend == NULL || slot < 0 || slot >= PORT_MODEL_TEXTURE_SLOTS) {
+    if (g_backend == NULL || slot < 0 || slot >= PORT_FIGHTER_TEXTURE_LISTS) {
         return;
     }
     g_fighter_texture_counts[slot] = 0;
@@ -1606,7 +1606,7 @@ void port_RemasterBeginFighterTextures(s32 slot) {
 
 void port_RemasterNoteFighterTextures(s32 slot, s32 named_dy) {
     g_fighter_noting =
-        g_backend != NULL && slot >= 0 && slot < PORT_MODEL_TEXTURE_SLOTS
+        g_backend != NULL && slot >= 0 && slot < PORT_FIGHTER_TEXTURE_LISTS
             ? slot
             : -1;
     g_fighter_named_dy = named_dy;
@@ -1640,7 +1640,7 @@ void port_RemasterNoteTim(
 }
 
 const PortStageTexture *port_RemasterFighterTextures(s32 slot, s32 *count) {
-    if (slot < 0 || slot >= PORT_MODEL_TEXTURE_SLOTS) {
+    if (slot < 0 || slot >= PORT_FIGHTER_TEXTURE_LISTS) {
         *count = 0;
         return NULL;
     }
