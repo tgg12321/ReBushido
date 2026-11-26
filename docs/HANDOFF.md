@@ -116,9 +116,14 @@ lessons still holds unless this section says otherwise.
   up on the whole session 15 s from the wait's start, the silent guest's
   handover 15 s from his last word; a word come after the wait began
   ended the session for all. The host now leaves it to the handover
-  while a guest may be handed over (twice the time at most). Once in 15
-  runs since, `four-silent-win` failed otherwise (chie did not end the
-  session at the match's end; the run's folder was overwritten).
+  while a guest may be handed over (twice the time at most).
+- **A guest of four ended short of the match's end** (fixed 2026-11-26;
+  `four-silent`, `rooms-four`): the host's goodbye could come before its
+  last inputs (one lost, or overtaken on a network that delays each
+  datagram by its own time), and the guest ended a frame or two before
+  the match was decided. The host now sends its last inputs as often as
+  its goodbye, and a goodbye is taken 250 ms after it comes
+  (`NETPLAY_BYE_GRACE_MS`).
 - **Open, no cause yet**: some Windows online window cases (`win-pages`
   three times, `rooms-four-win` and `room` once each) fail only inside a
   full gate on a loaded machine and pass alone every time (`win-pages`

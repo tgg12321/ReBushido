@@ -77,6 +77,11 @@
 #define MS_PER_SECOND 1000
 #define NETPLAY_BYES 5
 #define NETPLAY_LINGER_MS 3000
+/* A goodbye is taken this long after it came: the datagrams before it,
+ * the sender's last inputs among them, may come after it (a network
+ * that delays each by its own time), and a guest of four that ended on
+ * the goodbye alone would end short of the frame its host ended at */
+#define NETPLAY_BYE_GRACE_MS 250
 #define NETPLAY_QUIET_MS 500
 /* A wait longer than this is shown on the window's line. */
 #define NETPLAY_WAIT_SHOWN_MS 100
@@ -186,6 +191,10 @@ typedef struct {
     s32 left_pad; /* the pad whose player it said had gone, or -1 */
     s32 desync;   /* ... on a desync */
     s32 taken;    /* its pads given to the CPU: the session goes on */
+    s32 bye;      /* a goodbye come, not yet taken (NETPLAY_BYE_GRACE_MS) */
+    u32 bye_at;
+    s32 bye_pad;
+    s32 bye_desync;
 } PortNetplayLink;
 
 static s32 g_np_on;
@@ -694,11 +703,13 @@ static void port_NetplayTake(s32 link, const u8 *in, s32 bytes) {
             /* (the rest of a goodbye already taken: the CPU plays on) */
             return;
         }
-        from->left = 1;
-        from->left_pad =
-            (detail & BYE_PAD_MASK) != 0 ? (detail & BYE_PAD_MASK) - 1 : -1;
-        from->desync = (detail & BYE_DESYNC) != 0;
-        g_np_peer_left = 1;
+        if (!from->bye) {
+            from->bye = 1;
+            from->bye_at = port_NetClock();
+            from->bye_pad =
+                (detail & BYE_PAD_MASK) != 0 ? (detail & BYE_PAD_MASK) - 1 : -1;
+            from->bye_desync = (detail & BYE_DESYNC) != 0;
+        }
         return;
     }
     if (kind != KIND_INPUT || bytes < INPUT_FIRST_BLOCK) {
@@ -756,6 +767,18 @@ static void port_NetplayReceive(u32 wait_ms) {
         }
     }
     port_NetSelectLink(0);
+    /* a goodbye taken once what was sent before it has had time to come */
+    for (link = 0; link < g_np_links; link++) {
+        PortNetplayLink *from = &g_np_link[link];
+
+        if (from->bye && !from->left && !from->taken &&
+            port_NetClock() - from->bye_at >= NETPLAY_BYE_GRACE_MS) {
+            from->left = 1;
+            from->left_pad = from->bye_pad;
+            from->desync = from->bye_desync;
+            g_np_peer_left = 1;
+        }
+    }
 }
 
 /* ---- time ---- */
@@ -1756,7 +1779,13 @@ void port_EndNetplay(void) {
             gone = g_np_local;
         }
     }
-    port_NetplaySendInputs();
+    /* the last inputs as many times as the goodbye: one lost, and a
+     * goodbye come through, a guest of four would end short of the frame
+     * the host ended at (a match decided there), its last inputs never
+     * had */
+    for (i = 0; i < NETPLAY_BYES; i++) {
+        port_NetplaySendInputs();
+    }
     port_NetHeader(
         out, KIND_BYE, ((gone + 1) & BYE_PAD_MASK) | (desync ? BYE_DESYNC : 0),
         g_np_local_count);
