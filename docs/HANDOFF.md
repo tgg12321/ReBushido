@@ -124,6 +124,10 @@ lessons still holds unless this section says otherwise.
   the match was decided. The host now sends its last inputs as often as
   its goodbye, and a goodbye is taken 250 ms after it comes
   (`NETPLAY_BYE_GRACE_MS`).
+- **`win-pages` was its script's race** (fixed 2026-11-26): a guest slow
+  to be ready under load had the host's presses meant for the pages after
+  the first session land on the lobby's Leave; the host now waits for
+  the session's end (`until:message`).
 - **Open, no cause yet**: some Windows online window cases (`win-pages`
   three times, `rooms-four-win` and `room` once each) fail only inside a
   full gate on a loaded machine and pass alone every time (`win-pages`

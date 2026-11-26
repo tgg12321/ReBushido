@@ -1727,7 +1727,10 @@ def case_pages(case):
     lobby = case.server()
     host_keys = ('shot down accept shot down accept type:%s shot done down accept '
                  'until:waiting wait:20 shot until:lobby wait:10 shot accept '
-                 'wait:5 shot accept up accept until:lobby accept' % PASSWORD)
+                 'until:message wait:5 shot accept up accept until:lobby accept' % PASSWORD)
+    # (`until:message`: the first session's end on the pages; a guest
+    # slow to be ready under load had the host's next presses land on
+    # the lobby's Leave, 2026-11-26)
     guest_keys = 'down down accept wait:10 shot accept type:%s shot done until:lobby wait:10 shot accept' % PASSWORD
     host = pages_window(case, 'host', 'net_lobby = %s\nnet_player = Hostess\nnet_room = Pages room\nnet_delay = 2\n'
                         'net_port = %d\n' % (lobby, case.port(1)), host_keys, 0)
