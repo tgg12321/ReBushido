@@ -109,6 +109,9 @@ PORT_GL_SUN_FUNCTIONS
  * end of the stage however far it is drawn, the last map holds the whole
  * stage (port_SunWhole). */
 #define SUN_SLICES (PORT_GL_SUN_CASCADES - 1)
+/* The nearer maps the dressing's foliage casts into: in the farther its
+ * shadow is smaller than a texel (gl_dressing.h) */
+#define SUN_FOLIAGE_CASCADES 2
 static const float g_sun_split[SUN_SLICES + 1] = {
     16.0f, 1600.0f, 5000.0f, 16000.0f};
 /* What the map of the whole stage holds where there is no mesh to say
@@ -523,6 +526,10 @@ s32 port_GlSunPrepare(const PortStageView *view) {
         if (port_SunStageCasts()) {
             g_sun.triangles += port_GlStageDrawSunCasters(g_sun.matrix[i]);
             g_sun.triangles += port_GlDressingDrawSunCasters(g_sun.matrix[i]);
+            if (i < SUN_FOLIAGE_CASCADES) {
+                g_sun.triangles +=
+                    port_GlDressingDrawFoliageCasters(g_sun.matrix[i], eye);
+            }
         }
         g_sun.triangles += port_GlShadowDrawSunCasters(g_sun.matrix[i]);
     }

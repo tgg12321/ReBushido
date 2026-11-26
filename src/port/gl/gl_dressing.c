@@ -183,6 +183,11 @@ PORT_GL_DRESSING_FUNCTIONS
 /* How far from the camera, in world units, the foliage begins to thin:
  * past it fewer things and fewer blades to a tuft. */
 #define FOLIAGE_THIN 7500.0f
+/* ... and as the sun sees it (port_GlDressingDrawFoliageCasters) */
+#define FOLIAGE_CAST_THIN 3000.0f
+/* ... and how far towards the sun a blade reads the maps: a blade of grass
+ * lies in its own shadow there, which only darkened it in specks */
+#define FOLIAGE_SUN_LIFT 45.0f
 /* How far a tuft's blades reach from its root, about. */
 #define TUFT_REACH 60.0f
 /* What pushes the foliage, at most: the fighters, where they were a few
@@ -375,6 +380,7 @@ typedef struct {
     GLint push_way;
     GLint push_count;
     GLint thin;
+    GLint lift;
     /* the particles' */
     GLint area;
     GLint size;
@@ -431,6 +437,11 @@ static struct {
     GLuint caster;
     GLuint shaft;
     GLint caster_at_sun;
+    /* the foliage as the sun sees it */
+    GLuint foliage_caster;
+    DressAt foliage_caster_at;
+    GLint foliage_caster_at_cast;
+    GLint foliage_caster_at_sun;
     DressAt shaft_at;
     /* the water's maps, and the shafts of light */
     GLuint maps[MAPS_MOST];
@@ -696,6 +707,9 @@ static const char g_dress_foliage_vertex[] =
                                         way */
     "uniform int u_push_count;\n"
     "uniform float u_thin;\n" /* how far off the foliage begins to thin */
+    /* as the sun sees it, into its maps (port_GlDressingDrawFoliageCasters) */
+    "uniform int u_cast;\n"
+    "uniform mat4 u_sun;\n"
     "out vec3 v_place;\n"
     "out vec3 v_normal;\n"
     "out vec3 v_albedo;\n"
@@ -864,6 +878,7 @@ static const char g_dress_foliage_vertex[] =
     "    v_place = p;\n"
     "    v_normal = n;\n"
     "    gl_Position = dress_project(p, v_depth);\n"
+    "    if (u_cast != 0) { gl_Position = u_sun * vec4(p, 1.0); }\n"
     "}\n";
 
 /* The meshes: their vertices as they are, in the world. */
@@ -890,6 +905,9 @@ static const char g_dress_mesh_vertex[] =
  * colour buffer, the ground's slots and its depth. */
 static const char g_dress_solid_fragment[] =
     "#version 430 core\n" DRESS_FRAGMENT_COMMON "uniform vec3 u_bloom;\n"
+    /* how far towards the sun a blade looks into its maps: past its own
+     * shadow, into its neighbours' (port_GlDressingDrawFoliageCasters) */
+    "uniform float u_lift;\n"
     "in vec3 v_place;\n"
     "in vec3 v_normal;\n"
     "in vec3 v_albedo;\n"
@@ -920,7 +938,7 @@ static const char g_dress_solid_fragment[] =
     "    vec3 n = normalize(v_normal);\n"
     "    if (dot(n, u_eye - v_place) < 0.0 && v_card.z < 0.5) { n = -n; }\n"
     "    vec3 base;\n"
-    "    vec3 lit = dress_light(v_place, n, base);\n"
+    "    vec3 lit = dress_light(v_place - u_sun_travel * u_lift, n, base);\n"
     "    vec3 color = dress_shade(albedo * v_shade, base, lit);\n"
     "    color = mix(color, u_fog_color.rgb * 255.0, dress_fog(v_depth));\n"
     "    o_color = vec4(color / 255.0, 1.0);\n"
@@ -1557,6 +1575,20 @@ static const char g_dress_shaft_fragment[] =
     "    gl_FragDepth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
     "}\n";
 
+/* The foliage as the sun sees it: its depth alone, a leaf and a bloom cut
+ * to their shapes as they are drawn. */
+static const char g_dress_foliage_caster_fragment[] =
+    "#version 330 core\n"
+    "in vec3 v_card;\n"
+    "void main() {\n"
+    "    if (v_card.z > 1.5) {\n"
+    "        float a = atan(v_card.y, v_card.x);\n"
+    "        if (length(v_card.xy) > 0.55 + 0.45 * abs(cos(a * 2.5))) { discard; }\n"
+    "    } else if (v_card.z > 0.5) {\n"
+    "        if (abs(v_card.x) > 0.55 * (1.0 - v_card.y * v_card.y)) { discard; }\n"
+    "    }\n"
+    "}\n";
+
 /* The meshes as the sun or a light sees them: their depth alone. */
 static const char g_dress_caster_vertex[] =
     "#version 330 core\n"
@@ -1649,6 +1681,7 @@ static void port_DressLocate(GLuint program, DressAt *at) {
     at->push_way = glGetUniformLocation(program, "u_push_way");
     at->push_count = glGetUniformLocation(program, "u_push_count");
     at->thin = glGetUniformLocation(program, "u_thin");
+    at->lift = glGetUniformLocation(program, "u_lift");
     at->area = glGetUniformLocation(program, "u_area");
     at->size = glGetUniformLocation(program, "u_size");
     at->tint = glGetUniformLocation(program, "u_tint");
@@ -1714,10 +1747,18 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         port_DressProgram(g_dress_caster_vertex, g_dress_caster_fragment);
     g_dress.shaft =
         port_DressProgram(g_dress_shaft_vertex, g_dress_shaft_fragment);
+    g_dress.foliage_caster = port_DressProgram(
+        g_dress_foliage_vertex, g_dress_foliage_caster_fragment);
     if (g_dress.foliage == 0 || g_dress.mesh == 0 || g_dress.water == 0 ||
-        g_dress.particles == 0 || g_dress.caster == 0 || g_dress.shaft == 0) {
+        g_dress.particles == 0 || g_dress.caster == 0 || g_dress.shaft == 0 ||
+        g_dress.foliage_caster == 0) {
         return g_dress.problem;
     }
+    port_DressLocate(g_dress.foliage_caster, &g_dress.foliage_caster_at);
+    g_dress.foliage_caster_at_cast =
+        glGetUniformLocation(g_dress.foliage_caster, "u_cast");
+    g_dress.foliage_caster_at_sun =
+        glGetUniformLocation(g_dress.foliage_caster, "u_sun");
     port_DressLocate(g_dress.shaft, &g_dress.shaft_at);
     glGenTextures(MAPS_MOST, g_dress.maps);
     g_dress.caster_at_sun = glGetUniformLocation(g_dress.caster, "u_sun");
@@ -3607,6 +3648,7 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
                  g_dress.push_ways[0]);
     glUniform1i(g_dress.foliage_at.push_count, g_dress.pusher_count);
     glUniform1f(g_dress.foliage_at.thin, FOLIAGE_THIN);
+    glUniform1f(g_dress.foliage_at.lift, FOLIAGE_SUN_LIFT);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
         const PortDressDef *def = &set->block[run->block];
@@ -3653,6 +3695,7 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     /* the meshes */
     glUseProgram(g_dress.mesh);
     port_DressUniforms(&g_dress.mesh_at, view);
+    glUniform1f(g_dress.mesh_at.lift, 0.0f);
     glBindVertexArray(g_dress.mesh_array);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
@@ -3670,6 +3713,83 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     glBindVertexArray(0);
     port_GlCountDraw(g_dress.triangles * 3, g_dress.draws);
     PORT_GPU_END();
+}
+
+/* Whether the stage grew any foliage. */
+static s32 port_DressHasFoliage(void) {
+    s32 i;
+
+    for (i = 0; i < g_dress.run_count; i++) {
+        if (!g_dress.runs[i].is_mesh && g_dress.runs[i].count > 0 &&
+            (g_dress.runs[i].kind == PORT_DRESS_GRASS ||
+             g_dress.runs[i].kind == PORT_DRESS_BUSH ||
+             g_dress.runs[i].kind == PORT_DRESS_REEDS ||
+             g_dress.runs[i].kind == PORT_DRESS_FLOWERS)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+u32 port_GlDressingDrawFoliageCasters(const float *matrix, const float *eye) {
+    const PortDressSet *set = port_DressNow();
+    const DressAt *at = &g_dress.foliage_caster_at;
+    u32 triangles = 0;
+    s32 i;
+
+    if (set == NULL || !g_dress.is_on || !port_DressHasFoliage()) {
+        return 0;
+    }
+    glUseProgram(g_dress.foliage_caster);
+    glUniform1i(g_dress.foliage_caster_at_cast, 1);
+    glUniformMatrix4fv(g_dress.foliage_caster_at_sun, 1, GL_FALSE, matrix);
+    glUniform3f(at->camera, eye[0], eye[1], eye[2]);
+    glUniform1f(at->clock, port_DressClock());
+    glUniform4f(at->wind, g_dress.wind[0], g_dress.wind[1], g_dress.wind[2],
+                g_dress.wind[3]);
+    glUniform4fv(at->push, g_dress.pusher_count, g_dress.pushers[0]);
+    glUniform4fv(at->push_way, g_dress.pusher_count, g_dress.push_ways[0]);
+    glUniform1i(at->push_count, g_dress.pusher_count);
+    /* thinned sooner than in the picture: a tuft's shadow far off is a
+     * texel or two of the map */
+    glUniform1f(at->thin, FOLIAGE_CAST_THIN);
+    for (i = 0; i < g_dress.run_count; i++) {
+        const DressRun *run = &g_dress.runs[i];
+        const PortDressDef *def = &set->block[run->block];
+        s32 kind;
+        s32 vertices;
+
+        if (run->is_mesh || run->count == 0 || !port_DressShownNow(def)) {
+            continue;
+        }
+        switch (run->kind) {
+        case PORT_DRESS_GRASS:
+            kind = 0;
+            vertices = GRASS_VERTICES;
+            break;
+        case PORT_DRESS_BUSH:
+            kind = 1;
+            vertices = BUSH_VERTICES;
+            break;
+        case PORT_DRESS_REEDS:
+            kind = 2;
+            vertices = REEDS_VERTICES;
+            break;
+        case PORT_DRESS_FLOWERS:
+            kind = 3;
+            vertices = FLOWER_VERTICES;
+            break;
+        default:
+            continue;
+        }
+        port_DressThingFormat(run->first);
+        glUniform1i(at->kind, kind);
+        glUniform1f(at->sway, (float)def->sway / PORT_DRESSING_ONE);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, vertices, run->count);
+        triangles += (u32)(run->count * vertices / 3);
+    }
+    glBindVertexArray(0);
+    return triangles;
 }
 
 u32 port_GlDressingDrawSunCasters(const float *matrix) {
