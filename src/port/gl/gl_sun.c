@@ -109,9 +109,12 @@ PORT_GL_SUN_FUNCTIONS
  * end of the stage however far it is drawn, the last map holds the whole
  * stage (port_SunWhole). */
 #define SUN_SLICES (PORT_GL_SUN_CASCADES - 1)
-/* The nearer maps the dressing's foliage casts into: in the farther its
- * shadow is smaller than a texel (gl_dressing.h) */
-#define SUN_FOLIAGE_CASCADES 2
+/* The nearer maps the dressing's foliage casts into: the nearest alone,
+ * the fight's 16 to 1,600 units. The second (to 5,000) cost the card half
+ * a millisecond a picture at 2,560 by 1,440 on the dressed bench's stage 8
+ * (the sun's pass 1.12 ms against 0.60) and changed no byte of a fight's
+ * pictures on stages 8 and 19: past it a tuft's shadow is a texel or two */
+#define SUN_FOLIAGE_CASCADES 1
 static const float g_sun_split[SUN_SLICES + 1] = {
     16.0f, 1600.0f, 5000.0f, 16000.0f};
 /* What the map of the whole stage holds where there is no mesh to say

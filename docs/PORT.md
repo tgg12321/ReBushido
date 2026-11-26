@@ -9096,7 +9096,10 @@ after, at 2,560 by 1,440 with close-ups: the main checkout's
   the difference is small: a hall's shafts fall from high windows, and
   the fighters stand mostly past their soft ends.
 - **The foliage casts.** The grass, flowers, reeds and bushes are drawn
-  once more into the sun's two nearer maps (`SUN_FOLIAGE_CASCADES`;
+  once more into the sun's nearest map, the fight's 16 to 1,600 units
+  (`SUN_FOLIAGE_CASCADES`: the second as well cost the card half a
+  millisecond on the dressed bench and changed no byte of a fight's
+  pictures on stages 8 and 19;
   `port_GlDressingDrawFoliageCasters`) by the foliage's own vertex
   shader, swayed and pushed the same, a leaf and a bloom cut to their
   shapes, thinned from 3,000 units (`FOLIAGE_CAST_THIN`) and not 7,500.

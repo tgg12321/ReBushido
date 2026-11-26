@@ -394,7 +394,7 @@ the stage").
     post's passes; the passes lost the view of the half on show (a
     player's picture at a cut too) -- and the water given a plane of its
     own to mirror the fighters in; the shafts held by the fighters'
-    depth; the foliage casting into the sun's nearer maps; gulls over the
+    depth; the foliage casting into the sun's nearest map; gulls over the
     ship; the ferry dock's bollards and the orange trees' trunks as
     meshes. Left: the foliage in the lights' cubes, a mist the fight
     camera sees, the bamboo's clumps as meshes.
