@@ -48,6 +48,10 @@ extern void port_GlSkySetKind(s32 kind);
  * stage that is open to the sky, the sky is painted over the fill, in
  * the picture's own rectangle and its bands. */
 extern void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color);
+/* While the game loads (sdl_window.c): the clouds' cube baked, which the
+ * first sky painted would bake otherwise (3 ms of the fight's first frame
+ * on an RTX 3090); it is the same for every stage. Once a run. */
+extern void port_GlSkyWarm(void);
 
 /* Which stages have a sky, as the run's log says it: the name of the
  * stage and why, once for each stage the run reaches. NULL while there is

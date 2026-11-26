@@ -455,6 +455,58 @@ static s32 port_SunStageCasts(void) {
     return stage < 0 || stage >= PORT_SUN_STAGES || g_sun_stage_casts[stage];
 }
 
+/* The card's state the maps are drawn in, and the picture's put back
+ * after them. */
+static void port_SunMapsBegin(void) {
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glClearDepth(1.0);
+    /* a caster outside the map's depth is held to its ends, not cut */
+    glEnable(GL_DEPTH_CLAMP);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(SUN_OFFSET_FACTOR, SUN_OFFSET_UNITS);
+    glViewport(0, 0, PORT_GL_SUN_SIZE, PORT_GL_SUN_SIZE);
+}
+
+static void port_SunMapsEnd(const PortGlPicture *picture) {
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glDisable(GL_DEPTH_CLAMP);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindFramebuffer(GL_FRAMEBUFFER, picture->framebuffer);
+    glViewport(0, 0, picture->target_w, picture->target_h);
+    glEnable(GL_SCISSOR_TEST);
+    port_GlForgetState();
+}
+
+void port_GlSunWarm(void) {
+    static s32 is_warm;
+    PortGlPicture picture;
+    s32 i;
+
+    if (is_warm || !port_GlSunIsOn()) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    if (picture.target_w <= 0) {
+        return;
+    }
+    is_warm = TRUE;
+    port_SunMapsBegin();
+    for (i = 0; i < PORT_GL_SUN_CASCADES; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, g_sun.framebuffer[i]);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        port_GlShadowWarmSunCasters();
+    }
+    port_SunMapsEnd(&picture);
+}
+
 s32 port_GlSunPrepare(const PortStageView *view) {
     PortGlPicture picture;
     float eye[3];
@@ -501,19 +553,7 @@ s32 port_GlSunPrepare(const PortStageView *view) {
     port_SunCross(g_sun.travel, right, up);
     port_SunNormalise(up);
     g_sun.triangles = 0;
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_BLEND);
-    glDisable(GL_CULL_FACE);
-    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glClearDepth(1.0);
-    /* a caster outside the map's depth is held to its ends, not cut */
-    glEnable(GL_DEPTH_CLAMP);
-    glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(SUN_OFFSET_FACTOR, SUN_OFFSET_UNITS);
-    glViewport(0, 0, PORT_GL_SUN_SIZE, PORT_GL_SUN_SIZE);
+    port_SunMapsBegin();
     for (i = 0; i < PORT_GL_SUN_CASCADES; i++) {
         if (i < SUN_SLICES || !port_SunWhole(i, right, up)) {
             port_SunCascade(i, eye, forward, spread, right, up);
@@ -526,15 +566,7 @@ s32 port_GlSunPrepare(const PortStageView *view) {
         }
         g_sun.triangles += port_GlShadowDrawSunCasters(g_sun.matrix[i]);
     }
-    glDisable(GL_POLYGON_OFFSET_FILL);
-    glDisable(GL_DEPTH_CLAMP);
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
-    glViewport(0, 0, picture.target_w, picture.target_h);
-    glEnable(GL_SCISSOR_TEST);
-    port_GlForgetState();
+    port_SunMapsEnd(&picture);
     PORT_GPU_END();
     g_sun.is_ready = TRUE;
     g_sun.stamp++;

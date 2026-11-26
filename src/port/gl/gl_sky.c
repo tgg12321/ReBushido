@@ -677,6 +677,21 @@ static GLuint port_GlSkyBakeClouds(u32 framebuffer) {
     return texture;
 }
 
+void port_GlSkyWarm(void) {
+    PortGlPicture picture;
+
+    if (!g_sky.is_started || g_sky.clouds != 0 ||
+        (g_sky.kind == PORT_SKY_ORIGINAL && !port_GlTime()->on)) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    if (picture.framebuffer == 0) {
+        return;
+    }
+    g_sky.clouds = port_GlSkyBakeClouds(picture.framebuffer);
+    port_GlForgetState();
+}
+
 /* ---- painting it ---- */
 
 /* The stage's light, as the sky is coloured by it: the scenery's ambient

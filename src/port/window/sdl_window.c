@@ -46,6 +46,7 @@
 #include "gl_record.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
+#include "gl_sun.h"
 #include "gl_tween.h"
 #include "menu.h"
 #include "port_gpu.h"
@@ -4845,6 +4846,10 @@ static void port_ShowBlank(u32 blank) {
          * fight's first frame */
         port_ProfileSwitch(PORT_PROFILE_CARD);
         port_GlFighterPreload();
+        port_GlSunWarm();
+        port_GlWarmTargets();
+        port_GlSkyWarm();
+        port_GlDressingWarm();
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
     }
     /* a film's being made by another run of this program, which this

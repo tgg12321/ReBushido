@@ -848,6 +848,31 @@ void port_GlShadowWarm(void) {
     port_GlForgetState();
 }
 
+void port_GlShadowWarmSunCasters(void) {
+    static const float corners[18];
+    static const GLfloat nowhere[16];
+
+    if (!g_shadow.is_started || !g_shadow.is_cast) {
+        return;
+    }
+    glUseProgram(g_shadow.cast_program);
+    glBindVertexArray(g_shadow.cast_array);
+    glBindBuffer(GL_ARRAY_BUFFER, g_shadow.cast_buffer);
+    glBufferData(
+        GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(corners), corners, GL_STREAM_DRAW);
+    /* as port_GlShadowWarm, into the map: every corner at nought, a
+     * triangle of no size that covers no texel */
+    glUniform1f(g_shadow.cast_at_t, 0.0f);
+    glUniform1i(g_shadow.cast_at_sun_mode, 1);
+    glUniformMatrix4fv(g_shadow.cast_at_sun, 1, GL_FALSE, nowhere);
+    glUniform1i(g_shadow.cast_at_kind, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glUniform1i(g_shadow.cast_at_sun_mode, 0);
+    glBindVertexArray(0);
+    g_shadow.sent_one = 0;
+    g_shadow.sent_two = 0;
+}
+
 /* The mask, as large as the colour buffer and in the same pixels, so
  * that nothing here has a coordinate of its own. It is asked for only
  * when a frame first has a shadow in it and `shadows soft` is on. */

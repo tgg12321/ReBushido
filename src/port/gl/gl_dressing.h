@@ -89,6 +89,12 @@ extern s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h);
  * after a column), into the depth map bound now (gl_sun.h, gl_lights.h):
  * the triangles drawn. */
 extern u32 port_GlDressingDrawSunCasters(const float *matrix);
+/* While the game loads (sdl_window.c): each of the dressing's programs
+ * drawn once into the picture, in the state it is drawn in, through a
+ * scissor of no pixel, so that the driver makes them ready for the card
+ * then (the particles' alone were 38 ms of a dressed fight's first frame
+ * with the driver's cache of shaders empty, RTX 3090). Once a run. */
+extern void port_GlDressingWarm(void);
 /* The pieces a mesh stands in for this frame, a bit each (as the mesh's
  * u_pieces): the ground's mesh leaves them out. */
 extern void port_GlDressingHiddenPieces(u32 *words, s32 count);
