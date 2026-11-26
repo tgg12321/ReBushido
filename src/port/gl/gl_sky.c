@@ -139,6 +139,8 @@ typedef char GLchar;
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
     GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
     GL(void, glUniform3fv, (GLint, GLsizei, const GLfloat *))                  \
+    GL(void, glUniform2fv, (GLint, GLsizei, const GLfloat *))                  \
+    GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))
 
@@ -192,7 +194,12 @@ PORT_GL_SKY_FUNCTIONS
 /* Which stages are open to the sky: looked at, stage by stage, over the
  * prover's tour of each (tools/port_stage_prove.py; docs/PORT.md, "The
  * sky"). A stage that is a hall or a cave keeps the game's fill: a star
- * in a gap between two of its walls would be a hole, not a sky. */
+ * in a gap between two of its walls would be a hole, not a sky. What lies
+ * beyond an open one, below the horizon: land (SKY_LAND), ranges far off
+ * in the haze, or the sea (SKY_SEA), the sky in it, a headland or an
+ * island here and there. */
+#define SKY_LAND 1
+#define SKY_SEA 2
 static const u8 g_sky_open[SKY_STAGES] = {
     0, /* the main Tatara shrine: a hall */
     0, /* the Meikyokan dojo: a hall */
@@ -205,7 +212,7 @@ static const u8 g_sky_open[SKY_STAGES] = {
     1, /* outside the Meikyokan */
     1, /* the future dump site */
     1, /* the snake cliff */
-    1, /* Kimigaura coast */
+    2, /* Kimigaura coast: the sea beyond */
     1, /* the orange tree fields */
     0, /* the castle rooftop: a sky and a moon of its own (stage_hooks.c) */
     1, /* under the lost bridge */
@@ -213,16 +220,16 @@ static const u8 g_sky_open[SKY_STAGES] = {
     1, /* under the railway */
     1, /* the water tower dam */
     1, /* the lumberyard */
-    1, /* the lighthouse */
+    2, /* the lighthouse: the sea beyond */
     1, /* the kabuki stage */
-    1, /* the abandoned ship */
-    1, /* the ferry dock */
+    2, /* the abandoned ship: the sea beyond */
+    2, /* the ferry dock: the sea beyond */
     1, /* the Shainto gate */
     0, /* the purple cavern: a cave */
     1, /* the abandoned station */
     1, /* the railway */
     1, /* the abandoned tunnel: the open ground before its mouth */
-    1, /* the abandoned shipyard */
+    2, /* the abandoned shipyard: the sea beyond */
     1, /* the building's rooftop */
     0, /* the building's parking lot: a garage */
     1, /* the Shainto cemetery */
@@ -244,25 +251,41 @@ s32 port_GlSkyIsOpen(s32 stage) {
  * docs/PORT.md, "The sky"), beside its colours of gl_time.c. The first is
  * the stage's own time, the game's night. */
 typedef struct {
-    float cover;      /* how much of the sky the heaped clouds cover, 0-1 */
-    float cirrus;     /* the veil of high cloud, 0-1 */
-    float air_height; /* degrees: the height of the sun the air's colour is
-                         worked out for, lower than the sun's own at dawn
-                         and dusk so that its light is the time's deep gold
-                         (the sun's own colour in gl_time.c); 0: its own */
-    float haze;       /* the haze in the air, times a clear day's */
-    float power;      /* the sunlight in the air */
-    float light;      /* the light on the clouds, times the sun's colour */
-    float glow;       /* the glow about the sun or the moon */
-    float milky;      /* the Milky Way */
-    float horizon;    /* how much of the horizon is the colour of the
-                         distance, which the ground's fog runs into */
-    float shade;      /* the sky's light on the clouds, times its own */
-    float deepen;     /* the sun's colour on the clouds made deeper: its
-                         hue to this power */
-    float clearing;   /* the clouds thinned about the sun or the moon */
-    float shown;      /* degrees: the sun's or the moon's disc drawn at most
-                         this high, on its own bearing (0: where it is) */
+    float cover;        /* how much of the sky the heaped clouds cover, 0-1 */
+    float cirrus;       /* the veil of high cloud, 0-1 */
+    float air_height;   /* degrees: the height of the sun the air's colour is
+                           worked out for, lower than the sun's own at dawn
+                           and dusk so that its light is the time's deep gold
+                           (the sun's own colour in gl_time.c); 0: its own */
+    float haze;         /* the haze in the air, times a clear day's */
+    float power;        /* the sunlight in the air */
+    float light;        /* the light on the clouds, times the sun's colour */
+    float glow;         /* the glow about the sun or the moon */
+    float milky;        /* the Milky Way */
+    float horizon;      /* how much of the horizon is the colour of the
+                           distance, which the ground's fog runs into */
+    float shade;        /* the sky's light on the clouds, times its own */
+    float deepen;       /* the sun's colour on the clouds made deeper: its
+                           hue to this power */
+    float clearing;     /* the clouds thinned about the sun or the moon */
+    float shown;        /* degrees: the sun's or the moon's disc drawn at most
+                           this high, on its own bearing (0: where it is) */
+    float paint;        /* how much of the time's palette is laid over the
+                           air's own colours, 0-1 */
+    float palette;      /* which: 0 dawn's, 1 the day's, 2 dusk's */
+    float boost;        /* the horizon under the sun lit up by the palette */
+    float deepen_above; /* the sky darker upwards by the palette, 0-1 */
+    float vivid;        /* the colours made more vivid: 1 as they are */
+    float under;        /* the low sun's light under the clouds, times its
+                           colour on them */
+    float rays;         /* the rays of a low sun fanning out, 0-1 */
+    float tops;         /* metres: the tallest clouds' tops */
+    float far_haze;     /* metres: how far off the haze hides half of a
+                           cloud */
+    float thin_far;     /* how much the clouds thin far off, 0-1: a clear
+                           band of sky over the horizon */
+    float scattered;    /* the light scattered many times in the clouds,
+                           which lights their sides: 1 a fair day's */
 } SkyLook;
 
 static const SkyLook g_sky_looks[PORT_TIME_COUNT] = {
@@ -281,54 +304,98 @@ static const SkyLook g_sky_looks[PORT_TIME_COUNT] = {
         .deepen = 1.0f,
         .clearing = 0.8f,
         .shown = 5.0f,
+        .paint = 0.0f,
+        .palette = 0.0f,
+        .boost = 0.0f,
+        .deepen_above = 0.0f,
+        .vivid = 1.1f,
+        .under = 0.0f,
+        .rays = 0.0f,
+        .tops = 5200.0f,
+        .far_haze = 76000.0f,
+        .thin_far = 0.0f,
+        .scattered = 1.0f,
     },
     /* dawn: the sun rising in pink and peach under a high veil */
     {
-        .cover = 0.40f,
+        .cover = 0.38f,
         .cirrus = 0.70f,
         .air_height = 6.0f,
         .haze = 0.4f,
-        .power = 55.0f,
-        .light = 3.0f,
+        .power = 32.0f,
+        .light = 4.0f,
         .glow = 1.0f,
         .milky = 0.0f,
-        .horizon = 0.2f,
-        .shade = 0.9f,
-        .deepen = 1.0f,
-        .clearing = 0.8f,
+        .horizon = 0.1f,
+        .shade = 0.5f,
+        .deepen = 2.0f,
+        .clearing = 0.4f,
         .shown = 4.0f,
+        .paint = 0.8f,
+        .palette = 0.0f,
+        .boost = 2.0f,
+        .deepen_above = 0.5f,
+        .vivid = 1.35f,
+        .under = 1.0f,
+        .rays = 0.5f,
+        .tops = 6500.0f,
+        .far_haze = 160000.0f,
+        .thin_far = 0.0f,
+        .scattered = 0.6f,
     },
     /* day: fair-weather heaps in a deep blue */
     {
-        .cover = 0.42f,
+        .cover = 0.38f,
         .cirrus = 0.35f,
         .air_height = 0.0f,
-        .haze = 1.0f,
+        .haze = 0.6f,
         .power = 20.0f,
-        .light = 3.0f,
+        .light = 3.5f,
         .glow = 0.6f,
         .milky = 0.0f,
-        .horizon = 0.3f,
+        .horizon = 0.05f,
         .shade = 1.0f,
         .deepen = 1.0f,
         .clearing = 0.0f,
         .shown = 0.0f,
+        .paint = 0.85f,
+        .palette = 1.0f,
+        .boost = 0.0f,
+        .deepen_above = 0.3f,
+        .vivid = 1.3f,
+        .under = 0.0f,
+        .rays = 0.0f,
+        .tops = 8000.0f,
+        .far_haze = 60000.0f,
+        .thin_far = 0.6f,
+        .scattered = 1.3f,
     },
     /* dusk: the sun's last light under a high veil, the clouds aflame */
     {
-        .cover = 0.42f,
+        .cover = 0.48f,
         .cirrus = 0.85f,
         .air_height = 3.0f,
         .haze = 0.8f,
         .power = 30.0f,
-        .light = 4.5f,
+        .light = 5.5f,
         .glow = 1.2f,
         .milky = 0.0f,
-        .horizon = 0.25f,
+        .horizon = 0.1f,
         .shade = 0.5f,
         .deepen = 2.0f,
-        .clearing = 0.8f,
+        .clearing = 0.6f,
         .shown = 3.5f,
+        .paint = 0.85f,
+        .palette = 2.0f,
+        .boost = 3.0f,
+        .deepen_above = 0.5f,
+        .vivid = 1.3f,
+        .under = 0.9f,
+        .rays = 0.8f,
+        .tops = 7000.0f,
+        .far_haze = 140000.0f,
+        .thin_far = 0.0f,
+        .scattered = 0.5f,
     },
     /* night: broken clouds under the moon, the Milky Way */
     {
@@ -345,6 +412,17 @@ static const SkyLook g_sky_looks[PORT_TIME_COUNT] = {
         .deepen = 1.0f,
         .clearing = 0.8f,
         .shown = 5.0f,
+        .paint = 0.0f,
+        .palette = 0.0f,
+        .boost = 0.0f,
+        .deepen_above = 0.0f,
+        .vivid = 1.1f,
+        .under = 0.0f,
+        .rays = 0.0f,
+        .tops = 5200.0f,
+        .far_haze = 76000.0f,
+        .thin_far = 0.0f,
+        .scattered = 1.0f,
     },
 };
 
@@ -522,7 +600,10 @@ static const char g_sky_air_text[] =
     "uniform vec3 u_low;\n"  /* the night's colours at the horizon */
     "uniform vec3 u_high;\n" /* and above */
     "uniform vec3 u_moon_light;\n"
-    "uniform vec3 u_belt;\n" /* the Belt of Venus, dawn's and dusk's */
+    "uniform vec3 u_belt;\n"  /* the Belt of Venus, dawn's and dusk's */
+    "uniform vec4 u_paint;\n" /* the time's palette: how much of it, which
+                                 (0 dawn, 1 day, 2 dusk), and the glow it
+                                 adds low on the sun's side */
     "layout(location = 0) out vec4 o_air;\n"
     "const float GROUND = 6360e3;\n"
     "const float TOP = 6420e3;\n"
@@ -549,6 +630,43 @@ static const char g_sky_air_text[] =
     "vec3 extinction(vec3 depth) {\n"
     "    return RAYLEIGH * depth.x + MIE * 1.1 * u_haze * depth.y\n"
     "         + OZONE * depth.z;\n"
+    "}\n"
+    /* The time's palette: the hue of the sky at elevation `e` (radians)
+     * on the sun's side (`toward` 1) and away from it (0). The air worked
+     * out alone is pale; a painter's sunset has the gold and the flame at
+     * the horizon under the sun, magenta and violet above them, the
+     * Earth's shadow and the Belt of Venus opposite. Dawn's is the same
+     * in peach and rose, the day's a blue deepening upwards. */
+    "vec3 band(float e, vec3 a, vec3 b, vec3 c, vec3 d, vec3 z) {\n"
+    "    vec3 h = mix(a, b, smoothstep(0.0, 0.07, e));\n"
+    "    h = mix(h, c, smoothstep(0.05, 0.22, e));\n"
+    "    h = mix(h, d, smoothstep(0.18, 0.55, e));\n"
+    "    return mix(h, z, smoothstep(0.5, 1.2, e));\n"
+    "}\n"
+    "vec3 palette(float e, float toward, float which) {\n"
+    "    vec3 sun_side;\n"
+    "    vec3 away;\n"
+    "    if (which < 0.5) {\n"
+    "        sun_side = band(e, vec3(1.0, 0.70, 0.32), vec3(1.0, 0.46, 0.42),\n"
+    "                        vec3(0.80, 0.44, 0.82), vec3(0.42, 0.48, 0.95),\n"
+    "                        vec3(0.24, 0.40, 0.86));\n"
+    "        away = band(e, vec3(0.46, 0.48, 0.80), vec3(1.0, 0.56, 0.72),\n"
+    "                    vec3(0.62, 0.52, 0.86), vec3(0.40, 0.50, 0.90),\n"
+    "                    vec3(0.24, 0.40, 0.86));\n"
+    "    } else if (which < 1.5) {\n"
+    "        sun_side = band(e, vec3(0.70, 0.82, 1.0), vec3(0.42, 0.62, 1.0),\n"
+    "                        vec3(0.32, 0.54, 1.0), vec3(0.20, 0.40, 0.95),\n"
+    "                        vec3(0.13, 0.30, 0.88));\n"
+    "        away = sun_side;\n"
+    "    } else {\n"
+    "        sun_side = band(e, vec3(1.0, 0.46, 0.08), vec3(1.0, 0.30, 0.10),\n"
+    "                        vec3(0.92, 0.26, 0.40), vec3(0.42, 0.26, 0.70),\n"
+    "                        vec3(0.14, 0.18, 0.55));\n"
+    "        away = band(e, vec3(0.40, 0.34, 0.62), vec3(0.95, 0.42, 0.55),\n"
+    "                    vec3(0.55, 0.32, 0.68), vec3(0.28, 0.26, 0.66),\n"
+    "                    vec3(0.14, 0.18, 0.55));\n"
+    "    }\n"
+    "    return mix(away, sun_side, toward);\n"
     "}\n"
     "void main() {\n"
     "    vec3 d = air_dir(gl_FragCoord.xy / vec2(" SKY_NUMBER(AIR_W) ".0, " SKY_NUMBER(
@@ -605,34 +723,153 @@ static const char g_sky_air_text[] =
                "                                 normalize(u_sun.xz + vec2(1e-5)));\n"
                "    c += u_belt * away * smoothstep(0.0, 0.06, e)\n"
                "       * (1.0 - smoothstep(0.10, 0.32, e));\n"
+               /* the time's palette over the air's own: its brightness kept,
+                * its hue the painter's, the horizon under the sun lit up */
+               "    if (u_paint.x > 0.0) {\n"
+               "        const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);\n"
+               "        float toward = pow(1.0 - away, 1.6);\n"
+               "        vec3 hue = palette(e, toward, u_paint.y);\n"
+               "        float bright = dot(c, LUMA)\n"
+               "                     * (1.0 + u_paint.z * toward * toward * toward\n"
+               "                                    * exp(-e * 9.0))\n"
+               "                     * (1.0 - u_paint.w * smoothstep(0.02, 0.3, e));\n"
+               "        c = mix(c, hue / dot(hue, LUMA) * bright, u_paint.x);\n"
+               "    }\n"
                "    o_air = vec4(c, 1.0);\n"
                "}\n";
+
+/* What lies before the sky, below the horizon and on it, which the
+ * frame draws at its own resolution (g_sky_fragment_text) so that the
+ * ranges' ridges are sharp, and the light and colour functions the
+ * clouds share with it: the glow about the sun or the moon, at `apart`
+ * radians from it; light made a colour of the screen, by a curve that
+ * keeps a bright light's hue more than each channel's own would; the
+ * screen's colour made more vivid by the look; the ranges far off round
+ * the horizon, three of them one before another, the top of range `k`
+ * (0 the farthest) at a bearing a noise of the bearing alone, their
+ * ridges a noise folded at its middle so that it peaks; and the lands:
+ * the ranges low on the horizon, each paler the farther it is, their
+ * valleys in mist and their ridges caught by the light on its side;
+ * beyond the stage's ground, the sea with the sky in it and the light's
+ * path on it (a headland or an island here and there), or a plain in the
+ * haze; the whole running into the colour of the distance where the
+ * ground's fog meets it. */
+#define SKY_LANDS                                                              \
+    "uniform sampler2D u_air;\n"                                               \
+    "uniform sampler2D u_weather;\n"                                           \
+    "uniform vec3 u_light_way;\n"                                              \
+    "uniform vec3 u_light;\n"                                                  \
+    "uniform vec3 u_glow;\n"                                                   \
+    "uniform vec3 u_far;\n"                                                    \
+    "uniform float u_horizon;\n"                                               \
+    "uniform vec4 u_look;\n"                                                   \
+    "vec3 glow(float apart) {\n"                                               \
+    "    return u_glow * (0.5 * exp(-apart * 7.0)\n"                           \
+    "                     + 0.6 * exp(-apart * 22.0)\n"                        \
+    "                     + 1.2 * exp(-apart * 70.0));\n"                      \
+    "}\n"                                                                      \
+    "vec3 screen_of(vec3 c) {\n"                                               \
+    "    float most = max(max(c.r, c.g), max(c.b, 1e-5));\n"                   \
+    "    c = mix(1.0 - exp(-c), c * (1.0 - exp(-most)) / most, 0.7);\n"        \
+    "    return pow(c, vec3(1.0 / 2.2));\n"                                    \
+    "}\n"                                                                      \
+    "float range_top(vec2 bearing, float k) {\n"                               \
+    "    float n = textureLod(u_weather, bearing * (0.22 + 0.08 * k)\n"        \
+    "                         + vec2(0.31 + 0.17 * k, 0.62), 0.0).r;\n"        \
+    "    float ridge = textureLod(u_weather, bearing * (1.5 + 0.5 * k)\n"      \
+    "                             + vec2(0.13, 0.27 * k), 0.0).g;\n"           \
+    "    ridge = 1.0 - abs(ridge * 2.0 - 1.0);\n"                              \
+    "    float shape = smoothstep(0.28, 0.9, n) * (0.7 + 0.3 * ridge);\n"      \
+    "    return mix(-0.012, 0.052 - 0.012 * k, shape);\n"                      \
+    "}\n"                                                                      \
+    "vec3 vivid(vec3 c) {\n"                                                   \
+    "    float grey = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"                 \
+    "    return max(mix(vec3(grey), c, u_look.x), vec3(0.0));\n"               \
+    "}\n"                                                                      \
+    "vec4 lands(vec3 d, float e, float px, vec3 haze, vec3 shade,\n"           \
+    "           vec3 rim) {\n"                                                 \
+    "    vec2 bearing = normalize(d.xz + vec2(1e-5));\n"                       \
+    "    vec2 light_flat = normalize(u_light_way.xz + vec2(1e-5));\n"          \
+    "    float off = acos(clamp(dot(bearing, light_flat), -1.0, 1.0));\n"      \
+    "    float below = max(-e, 0.0);\n"                                        \
+    "    vec3 dark = mix(shade, u_far, 0.3);\n"                                \
+    "    vec3 c = mix(haze, dark, 0.35 * smoothstep(0.0, 0.05, below));\n"     \
+    "    if (u_look.w > 0.5) {\n"                                              \
+    "        vec3 m = normalize(vec3(d.x, below + 0.035, d.z));\n"             \
+    "        float m_apart = acos(clamp(dot(m, u_light_way), -1.0, 1.0));\n"   \
+    "        vec3 sky = screen_of(textureLod(u_air, air_at(m), 0.0).rgb\n"     \
+    "                             + glow(m_apart));\n"                         \
+    "        float fresnel = 0.15 + 0.55 * exp(-below * 30.0);\n"              \
+    "        c = mix(mix(u_far, shade, 0.25), sky, fresnel);\n"                \
+    "        float wide = 0.02 + 0.15 * below;\n"                              \
+    "        c += rim * 0.8 * exp(-off * off / (wide * wide))\n"               \
+    "           * exp(-below * 5.0) * smoothstep(0.0, 0.004, below);\n"        \
+    "    }\n"                                                                  \
+    "    float cover = 0.0;\n"                                                 \
+    "    for (int k = 0; k < 3; k++) {\n"                                      \
+    "        float top = range_top(bearing, float(k));\n"                      \
+    "        if (u_look.w > 0.5) {\n"                                          \
+    "            float land_here = textureLod(u_weather,\n"                    \
+    "                bearing * 0.07 + vec2(0.71, 0.19 + 0.2 * float(k)),\n"    \
+    "                0.0).r;\n"                                                \
+    "            top = mix(-0.03, top, smoothstep(0.52, 0.72, land_here));\n"  \
+    "        }\n"                                                              \
+    "        float on = 1.0 - smoothstep(top - px, top + px, e);\n"            \
+    "        float far = 0.66 - 0.25 * float(k);\n"                            \
+    "        vec3 land = mix(dark, haze, far);\n"                              \
+    "        land = mix(land, haze, 0.35 * smoothstep(0.0, 0.02, top - e));\n" \
+    "        land += rim * (1.0 - smoothstep(0.0, 4.0 * px, top - e))\n"       \
+    "              * pow(max(cos(off), 0.0), 8.0) * (1.0 - far) * 0.8;\n"      \
+    "        c = mix(c, land, on);\n"                                          \
+    "        cover = max(cover, on);\n"                                        \
+    "    }\n"                                                                  \
+    "    if (u_look.w < 0.5) {\n"                                              \
+    "        vec2 plain = d.xz / max(below, 0.004);\n"                         \
+    "        float field = textureLod(u_weather,\n"                            \
+    "            plain * 0.012 + vec2(0.4, 0.8), 0.0).a;\n"                    \
+    "        c *= 1.0 + (field - 0.5) * 0.4\n"                                 \
+    "                  * smoothstep(0.002, 0.03, below);\n"                    \
+    "    }\n"                                                                  \
+    "    c = vivid(c);\n"                                                      \
+    "    c = mix(c, u_far, smoothstep(0.02, 0.16, below));\n"                  \
+    "    return vec4(c, 1.0 - cover);\n"                                       \
+    "}\n"                                                                      \
+    "vec4 land_at(vec3 d, float px) {\n"                                       \
+    "    vec3 level = normalize(vec3(d.x, 0.0, d.z) + vec3(1e-5));\n"          \
+    "    level = normalize(vec3(level.x, 0.002, level.z));\n"                  \
+    "    float aside = acos(clamp(dot(level, u_light_way), -1.0, 1.0));\n"     \
+    "    vec3 haze = screen_of(textureLod(u_air, air_at(level), 0.0).rgb\n"    \
+    "                             + glow(aside));\n"                           \
+    "    haze = mix(haze, u_far, u_horizon * 0.5);\n"                          \
+    "    vec3 shade = screen_of(textureLod(u_air, vec2(0.5, 1.0), 0.0).rgb)\n" \
+    "               * 0.5;\n"                                                  \
+    "    vec3 rim = screen_of(u_light * 0.3 + u_glow * 1.5)\n"                 \
+    "             * (1.0 - smoothstep(0.15, 0.4, u_light_way.y));\n"           \
+    "    return lands(d, d.y, px, haze, shade, rim);\n"                        \
+    "}\n"
 
 /* The clouds' picture (g_sky_low_text): each pixel the air behind and the
  * clouds before it, in light (not yet a colour of the screen), made a
  * colour of the screen at its end; its alpha how much of what is behind
  * the clouds shows through them (the stars, the sun, the moon). */
 static const char g_sky_low_text[] =
-    "#version 330 core\n" SKY_VIEW
+    "#version 330 core\n" SKY_VIEW SKY_LANDS
     "uniform vec2 u_origin;\n" /* the frame's corner, the buffer's px */
     "uniform float u_low;\n"   /* the buffer's pixels to one of this */
-    "uniform sampler2D u_air;\n"
     "uniform sampler3D u_shape;\n"
     "uniform sampler3D u_detail;\n"
-    "uniform sampler2D u_weather;\n"
-    "uniform vec3 u_light_way;\n" /* towards the sun or the moon, y up */
-    "uniform vec3 u_light;\n"     /* its light on the clouds */
-    "uniform vec3 u_glow;\n"      /* the glow about it */
     "uniform float u_cover;\n"
     "uniform float u_clearing;\n" /* the clouds thinned about the light */
     "uniform float u_cirrus;\n"
     "uniform float u_dark;\n"
     "uniform vec2 u_drift;\n" /* how far the clouds have moved, metres */
-    "uniform vec3 u_far;\n"   /* the colour of the distance, of the screen */
-    "uniform float u_horizon;\n"
     "uniform float u_milky;\n"
     "uniform float u_shade;\n"
     "uniform int u_steps;\n"
+    "uniform vec3 u_under;\n" /* the low sun's light under the clouds */
+    "uniform vec3 u_layer;\n" /* metres: the tallest clouds' tops, how far
+                                 off the haze hides half of one; and how
+                                 much the far ones thin, 0-1 */
     /* each pixel here is the clouds' picture's pixel `u_spread` times
      * its place and `u_offset` on: every pixel (1), or one corner of each
      * square of four (2) */
@@ -643,7 +880,6 @@ static const char g_sky_low_text[] =
     "const float GROUND = 6360e3;\n"
     "const float EYE = 120.0;\n"
     "const float BASE = 1100.0;\n" /* the heaped clouds' layer, metres */
-    "const float TOPS = 5200.0;\n"
     "const float VEIL = 8500.0;\n" /* the high cloud's */
     "const float THICK = 0.026;\n" /* light lost a metre in a cloud */
     "float shell(vec3 d, float height) {\n"
@@ -664,7 +900,7 @@ static const char g_sky_low_text[] =
     "    vec3 q = p + vec3(u_drift.x, 0.0, u_drift.y);\n"
     "    vec4 w = textureLod(u_weather, q.xz / 90000.0, 0.0);\n"
     "    float cover = clamp(g_cover + (w.r - 0.5) * 1.3, 0.0, 1.0);\n"
-    "    float top = mix(0.35, 1.0, w.g * w.g);\n"
+    "    float top = mix(0.3, 1.0, w.g);\n"
     "    float shape = smoothstep(0.0, 0.08, h)\n"
     "                * (1.0 - smoothstep(top * 0.45, top, h));\n"
     "    vec4 s = textureLod(u_shape, q / 11000.0,\n"
@@ -679,80 +915,21 @@ static const char g_sky_low_text[] =
     "    wear = mix(1.0 - wear, wear, clamp(h * 3.0, 0.0, 1.0));\n"
     "    return max(remap(base, wear * 0.55, 1.0, 0.0, 1.0), 0.0);\n"
     "}\n"
-    /* the glow about the sun or the moon, at `apart` radians from it */
-    "vec3 glow(float apart) {\n"
-    "    return u_glow * (0.5 * exp(-apart * 7.0) + 0.6 * exp(-apart * 22.0)\n"
-    "                     + 1.2 * exp(-apart * 70.0));\n"
-    "}\n"
-    /* light made a colour of the screen: a curve that keeps a bright
-     * light's hue more than each channel's own would */
-    "vec3 screen_of(vec3 c) {\n"
-    "    float most = max(max(c.r, c.g), max(c.b, 1e-5));\n"
-    "    c = mix(1.0 - exp(-c), c * (1.0 - exp(-most)) / most, 0.7);\n"
-    "    return pow(c, vec3(1.0 / 2.2));\n"
-    "}\n"
-    /* The ranges far off round the horizon, three of them one before
-     * another: the top of range `k` (0 the farthest) at the bearing
-     * `bearing`, radians above the horizon, a noise of the bearing alone. */
-    "float range_top(vec2 bearing, float k) {\n"
-    "    float n = textureLod(u_weather, bearing * (0.08 + 0.05 * k)\n"
-    "                         + vec2(0.31 + 0.17 * k, 0.62), 0.0).r;\n"
-    /* the ridges: a noise folded at its middle, so that it peaks */
-    "    float ridge = textureLod(u_weather, bearing * (0.55 + 0.3 * k)\n"
-    "                             + vec2(0.13, 0.27 * k), 0.0).g;\n"
-    "    ridge = 1.0 - abs(ridge * 2.0 - 1.0);\n"
-    "    float shape = smoothstep(0.28, 0.9, n) * (0.7 + 0.3 * ridge);\n"
-    "    return mix(-0.015, 0.085 - 0.022 * k, shape);\n"
-    "}\n"
-    /* What lies before the sky at elevation `e`: the ranges, each paler
-     * the farther it is, its valleys in mist; and under them what is
-     * beyond the stage's ground, which runs into the colour of the
-     * distance where the ground's fog meets it. `haze` is the horizon's
-     * colour there; alpha how much of the sky shows. */
-    "vec4 lands(vec3 d, float e, float px, vec3 haze, vec3 shade) {\n"
-    "    vec2 bearing = normalize(d.xz + vec2(1e-5));\n"
-    "    vec3 dark = mix(u_far * 0.75, shade, 0.45);\n"
-    "    vec3 c = haze;\n"
-    "    float cover = 0.0;\n"
-    "    for (int k = 0; k < 3; k++) {\n"
-    "        float top = range_top(bearing, float(k));\n"
-    "        float on = 1.0 - smoothstep(top - px, top + px, e);\n"
-    "        float far = 0.78 - 0.2 * float(k);\n"
-    "        vec3 land = mix(dark, haze, far);\n"
-    "        land = mix(land, haze, 0.4 * smoothstep(0.0, 0.035, top - e));\n"
-    "        c = mix(c, land, on);\n"
-    "        cover = max(cover, on);\n"
-    "    }\n"
-    "    c = mix(c, u_far, smoothstep(0.02, 0.16, -e));\n"
-    "    return vec4(c, 1.0 - cover);\n"
-    "}\n"
     "float height_of(vec3 p) {\n"
     "    return (length(p + vec3(0.0, GROUND, 0.0)) - GROUND - BASE)\n"
-    "         / (TOPS - BASE);\n"
+    "         / (u_layer.x - BASE);\n"
     "}\n"
     "void main() {\n"
     "    vec2 cell = floor(gl_FragCoord.xy) * u_spread + u_offset;\n"
     "    vec2 at = u_origin + (cell + vec2(0.5)) * u_low;\n"
     "    vec3 d = sky_dir(at);\n"
     "    float e = d.y;\n"
-    /* Below the horizon: what lies beyond the stage's own ground, far
-     * off in the haze -- the horizon's own colour and glow where it meets
-     * the sky, the colour of the distance below, which the ground's fog
-     * runs into where the stage's ground ends. */
+    /* below the horizon, the lands (SKY_LANDS); the frame draws them
+     * again at its own resolution about the horizon, where the ranges'
+     * ridges are, and over the sky above it */
     "    float px = max(fwidth(e), 1e-4);\n"
-    /* the horizon's colour at this bearing, the haze the lands are in */
-    "    vec3 far_off = u_far;\n"
-    "    vec3 shade = screen_of(textureLod(u_air, vec2(0.5, 1.0), 0.0).rgb) * 0.5;\n"
-    "    if (e < 0.06) {\n"
-    "        vec3 level = normalize(vec3(d.x, 0.0, d.z) + vec3(1e-5));\n"
-    "        level = normalize(vec3(level.x, 0.002, level.z));\n"
-    "        float level_apart = acos(clamp(dot(level, u_light_way), -1.0, 1.0));\n"
-    "        far_off = screen_of(textureLod(u_air, air_at(level), 0.0).rgb\n"
-    "                            + glow(level_apart));\n"
-    "        far_off = mix(far_off, u_far, u_horizon * 0.5);\n"
-    "    }\n"
     "    if (e < 0.0) {\n"
-    "        o_sky = vec4(lands(d, e, px, far_off, shade).rgb, 0.0);\n"
+    "        o_sky = vec4(land_at(d, px).rgb, 0.0);\n"
     "        return;\n"
     "    }\n"
     "    vec3 air = textureLod(u_air, air_at(d), 0.0).rgb;\n"
@@ -765,8 +942,20 @@ static const char g_sky_low_text[] =
     "                 + textureLod(u_air, vec2(0.75, 0.62), 0.0).rgb) * 0.25;\n"
     "    float mu = dot(d, u_light_way);\n"
     "    float apart = acos(clamp(mu, -1.0, 1.0));\n"
-    /* the glow about the sun or the moon */
+    /* the glow about the sun or the moon, and the rays of a low sun
+     * through the gaps of clouds out of sight: the glow streaked round
+     * it, and beams of it fanning out */
     "    vec3 sky = air + glow(apart);\n"
+    "    if (u_look.z > 0.0) {\n"
+    "        vec3 side = normalize(cross(u_light_way, vec3(0.0, 1.0, 0.0)));\n"
+    "        vec3 lift = cross(side, u_light_way);\n"
+    "        vec2 ring = normalize(vec2(dot(d, side), dot(d, lift)) + vec2(1e-6));\n"
+    "        float ray = textureLod(u_weather, ring * 0.33 + vec2(0.5, 0.25)\n"
+    "                                          + u_drift * 2e-7, 0.0).g;\n"
+    "        ray = smoothstep(0.38, 0.72, ray);\n"
+    "        sky += glow(apart) * u_look.z * (ray - 0.4) * 0.8\n"
+    "             + u_glow * u_look.z * ray * 1.2 * exp(-apart * 2.2);\n"
+    "    }\n"
     /* the Milky Way, a band across the night, its stars' haze cut by its
      * lanes of dust */
     "    if (u_milky > 0.0 && e > 0.0) {\n"
@@ -801,7 +990,7 @@ static const char g_sky_low_text[] =
     "                   * (0.45 + 0.55 * v.a) * u_cirrus\n"
     "                   * exp(-t / 260000.0);\n"
     "        vec3 lit = u_light * (0.10 + 2.6 * scatter(mu, 0.6)) * 0.7\n"
-    "                 + above * 0.55 + around * 0.25;\n"
+    "                 + above * 0.55 + around * 0.25 + u_under * 1.5;\n"
     "        sky = mix(sky, lit, clamp(veil, 0.0, 1.0) * 0.75);\n"
     "    }\n"
     /* the heaped clouds, marched through from their base up */
@@ -811,7 +1000,7 @@ static const char g_sky_low_text[] =
     "    float seen_much = 0.0;\n"
     "    if (u_cover > 0.0 && e > -0.01) {\n"
     "        float t0 = shell(d, BASE);\n"
-    "        float t1 = min(shell(d, TOPS), t0 + 120000.0);\n"
+    "        float t1 = min(shell(d, u_layer.x), t0 + 120000.0);\n"
     /* a step through a cloud, longer the farther it is (where a pixel
      * covers more of it); three of them at once through the clear air
      * between, and back two where one meets a cloud */
@@ -824,7 +1013,11 @@ static const char g_sky_low_text[] =
     "                    + 0.33 * scatter(mu, -0.2);\n"
     /* a gap in the clouds about the sun or the moon low in the sky, which
      * the clouds about it catch the light at */
-    "        g_cover = u_cover * (1.0 - u_clearing * exp(-apart * apart / 0.035));\n"
+    "        float cover_here = u_cover * (1.0 - u_clearing * exp(-apart * apart / 0.012));\n"
+    /* a low sun lights the clouds' undersides, those on its side most */
+    "        float toward = 0.5 + 0.5 * dot(normalize(d.xz + vec2(1e-5)),\n"
+    "                                       normalize(u_light_way.xz + vec2(1e-5)));\n"
+    "        float under = 0.2 + 0.8 * toward * toward * toward;\n"
     "        float t = t0 + fine * start;\n"
     "        bool inside = false;\n"
     "        int quiet = 0;\n"
@@ -834,6 +1027,9 @@ static const char g_sky_low_text[] =
     "            float h = height_of(p);\n"
     "            float wide = t * u_footprint;\n"
     "            fine = clamp(60.0 + t * 0.012, 60.0, 1400.0);\n"
+    /* the far clouds thinned, by the look: a clear band of sky over the
+     * horizon under the heaps */
+    "            g_cover = cover_here * (1.0 - u_layer.z * smoothstep(25000.0, 90000.0, t));\n"
     "            if (!inside) {\n"
     "                if (cloud(p, h, false, wide * 2.0) > 0.0) {\n"
     "                    inside = true;\n"
@@ -863,12 +1059,14 @@ static const char g_sky_low_text[] =
      * (a cloud's edge that faces the light is darker than its depth) */
     "                float sun = phase * exp(-od) * 4.0 * PI\n"
     "                          * (1.0 - 0.6 * exp(-thick * 8.0 - od * 2.0))\n"
-    "                          + 0.45 * exp(-od * 0.25)\n"
-    "                          + 0.10 * exp(-od * 0.06);\n"
+    "                          + (0.45 * exp(-od * 0.25)\n"
+    "                          + 0.10 * exp(-od * 0.06)) * u_look.y;\n"
     "                vec3 sky_light = mix(around * 0.3 + above * 0.3, above * 1.0,\n"
     "                                     clamp(h * 1.4, 0.0, 1.0));\n"
     "                vec3 here = u_light * sun * (1.0 - u_dark)\n"
-    "                          + sky_light * u_shade * (1.0 - 0.5 * u_dark);\n"
+    "                          + sky_light * u_shade * (1.0 - 0.5 * u_dark)\n"
+    "                          + u_under * under * (1.0 - h) * (1.0 - h)\n"
+    "                            * exp(-thick * 1.5);\n"
     "                float kept = exp(-THICK * thick * fine);\n"
     "                lit += clear * here * (1.0 - kept);\n"
     "                seen_at += t * clear * (1.0 - kept);\n"
@@ -883,23 +1081,18 @@ static const char g_sky_low_text[] =
      * colour where they are */
     "        if (seen_much > 0.0) {\n"
     "            float far = seen_at / seen_much;\n"
-    "            float haze = 1.0 - exp(-far / 110000.0);\n"
+    "            float haze = 1.0 - exp(-far * 0.69 / u_layer.y);\n"
     "            lit = mix(lit, air * (1.0 - clear), haze);\n"
     "        }\n"
     "    }\n"
     "    vec3 c = sky * clear + lit;\n"
     /* the light made a colour of the screen */
-    "    c = screen_of(c);\n"
+    "    c = vivid(screen_of(c));\n"
     /* a haze at the horizon, the colour of the distance, which the
      * ground's fog runs into */
     "    float haze = u_horizon * exp(-e * 30.0);\n"
     "    c = mix(c, u_far, haze);\n"
     "    float shows = clear * (1.0 - haze) * smoothstep(0.0, 0.02, e);\n"
-    "    if (e < 0.06) {\n"
-    "        vec4 land = lands(d, e, px, far_off, shade);\n"
-    "        c = mix(land.rgb, c, land.a);\n"
-    "        shows *= land.a;\n"
-    "    }\n"
     "    o_sky = vec4(c, shows);\n"
     "}\n";
 
@@ -954,7 +1147,7 @@ static const char g_sky_mix_text[] =
  * over it at the frame's own resolution what must be sharp, as much as
  * the clouds leave clear; or a mod's picture of the sky. */
 static const char g_sky_fragment_text[] =
-    "#version 330 core\n" SKY_VIEW "uniform int u_has_picture;\n"
+    "#version 330 core\n" SKY_VIEW SKY_LANDS "uniform int u_has_picture;\n"
     "uniform sampler2D u_picture;\n"
     "uniform sampler2D u_low_sky;\n"
     "uniform vec2 u_origin;\n"
@@ -971,6 +1164,8 @@ static const char g_sky_fragment_text[] =
     "uniform vec3 u_moon_light;\n"
     "uniform int u_has_moon;\n"
     "uniform float u_moon_size;\n"
+    "uniform vec3 u_glint;\n" /* the light's glints on it */
+    "uniform float u_time;\n" /* seconds of the picture's clock */
     "layout(location = 0) out vec4 o_color;\n"
     "float hash(vec3 p) {\n"
     "    p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));\n"
@@ -1040,12 +1235,17 @@ static const char g_sky_fragment_text[] =
     "        float apart = acos(clamp(dot(d, u_sun), -1.0, 1.0));\n"
     "        float radius = 0.021;\n"
     "        float disc = 1.0 - smoothstep(radius - pixel, radius + pixel, apart);\n"
+    /* its bloom: the air's brightest light about it, low in the sky */
+    "        float out_of_disc = max(apart - radius, 0.0);\n"
+    "        float low = 1.0 - smoothstep(0.1, 0.35, u_sun.y);\n"
+    "        color += u_sun_light * clear * low\n"
+    "               * (0.55 * exp(-out_of_disc * 60.0) + 0.18 * exp(-out_of_disc * 14.0));\n"
     "        if (disc > 0.0) {\n"
     "            float r = clamp(apart / radius, 0.0, 1.0);\n"
-    "            float limb = 1.0 - 0.45 * (1.0 - sqrt(1.0 - r * r));\n"
-    "            vec3 face = min(u_sun_light * 1.3 * limb + vec3(0.2, 0.14, 0.08),\n"
-    "                            vec3(1.0));\n"
-    "            color = mix(color, face, disc * clear);\n"
+    "            float limb = 1.0 - 0.18 * (1.0 - sqrt(1.0 - r * r));\n"
+    "            vec3 face = min(mix(u_sun_light, vec3(1.0, 0.97, 0.86), 0.5)\n"
+    "                            * 1.6 * limb, vec3(1.0));\n"
+    "            color = mix(color, max(color, face), disc * clear);\n"
     "        }\n"
     "    }\n"
     /* the moon: its seas and craters on a sphere fixed to it, lit a
@@ -1098,6 +1298,30 @@ static const char g_sky_fragment_text[] =
     "                        edge * clamp(clear * 1.15, 0.0, 1.0));\n"
     "        }\n"
     "    }\n"
+    /* what lies before the sky, drawn over it about the horizon at the
+     * frame's own resolution, so that the ranges' ridges are sharp: the
+     * lands and the sea beyond the stage (SKY_LANDS); lower down, where
+     * nothing is sharp, the clouds' picture has them */
+    "    float px = max(fwidth(d.y), 1e-5);\n"
+    "    if (d.y > (u_look.w > 0.5 ? -0.032 : -0.014) && d.y < 0.054) {\n"
+    "        vec4 land = land_at(d, px);\n"
+    "        color = mix(land.rgb, color, d.y < 0.0 ? 0.0 : land.a);\n"
+    "    }\n"
+    /* the sea beyond the stage: glints of the sun or the moon on its
+     * waves, along the light's path, twinkling */
+    "    if (u_look.w > 0.5 && d.y < 0.0) {\n"
+    "        float below = -d.y;\n"
+    "        vec2 bearing = normalize(d.xz + vec2(1e-5));\n"
+    "        vec2 light_flat = normalize(u_sun.xz + vec2(1e-5));\n"
+    "        float off = acos(clamp(dot(bearing, light_flat), -1.0, 1.0));\n"
+    "        float wide = 0.012 + 0.1 * below;\n"
+    "        float path = exp(-off * off / (wide * wide)) * exp(-below * 5.0)\n"
+    "                   * smoothstep(0.0, 0.003, below)\n"
+    "                   * (1.0 - smoothstep(0.02, 0.12, below));\n"
+    "        vec2 cell = floor(gl_FragCoord.xy / vec2(2.0, 1.0));\n"
+    "        float glint = hash(vec3(cell, floor(u_time * 7.0)));\n"
+    "        color += u_glint * step(1.0 - 0.2 * path, glint) * path * 2.0;\n"
+    "    }\n"
     "    o_color = vec4(clamp(color, 0.0, 1.0), 1.0);\n"
     "}\n";
 
@@ -1123,6 +1347,7 @@ typedef struct {
     GLfloat high[3];
     GLfloat moon_light[3];
     GLfloat belt[3];
+    GLfloat paint[4];
 } SkyAirKey;
 
 static struct {
@@ -1150,6 +1375,16 @@ static struct {
     GLint at_moon_light;
     GLint at_has_moon;
     GLint at_moon_size;
+    GLint at_air;
+    GLint at_weather;
+    GLint at_light_way;
+    GLint at_light;
+    GLint at_glow;
+    GLint at_far;
+    GLint at_horizon;
+    GLint at_look;
+    GLint at_glint;
+    GLint at_time;
     /* the clouds' program and its picture */
     GLuint low_program;
     SkyViewAt low_view;
@@ -1175,6 +1410,9 @@ static struct {
     GLint low_at_spread;
     GLint low_at_footprint;
     GLint low_at_offset;
+    GLint low_at_look;
+    GLint low_at_under;
+    GLint low_at_layer;
     /* the program that puts the clouds' picture together */
     GLuint mix_program;
     SkyViewAt mix_view;
@@ -1219,6 +1457,7 @@ static struct {
     GLint air_at_high;
     GLint air_at_moon_light;
     GLint air_at_belt;
+    GLint air_at_paint;
     GLuint air;
     s32 has_air;
     SkyAirKey air_key;
@@ -1393,6 +1632,16 @@ const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
     g_sky.at_moon_light = glGetUniformLocation(p, "u_moon_light");
     g_sky.at_has_moon = glGetUniformLocation(p, "u_has_moon");
     g_sky.at_moon_size = glGetUniformLocation(p, "u_moon_size");
+    g_sky.at_air = glGetUniformLocation(p, "u_air");
+    g_sky.at_weather = glGetUniformLocation(p, "u_weather");
+    g_sky.at_light_way = glGetUniformLocation(p, "u_light_way");
+    g_sky.at_light = glGetUniformLocation(p, "u_light");
+    g_sky.at_glow = glGetUniformLocation(p, "u_glow");
+    g_sky.at_far = glGetUniformLocation(p, "u_far");
+    g_sky.at_horizon = glGetUniformLocation(p, "u_horizon");
+    g_sky.at_look = glGetUniformLocation(p, "u_look");
+    g_sky.at_glint = glGetUniformLocation(p, "u_glint");
+    g_sky.at_time = glGetUniformLocation(p, "u_time");
     p = g_sky.low_program;
     port_GlSkyViewAt(p, &g_sky.low_view);
     g_sky.low_at_origin = glGetUniformLocation(p, "u_origin");
@@ -1417,6 +1666,9 @@ const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
     g_sky.low_at_spread = glGetUniformLocation(p, "u_spread");
     g_sky.low_at_footprint = glGetUniformLocation(p, "u_footprint");
     g_sky.low_at_offset = glGetUniformLocation(p, "u_offset");
+    g_sky.low_at_look = glGetUniformLocation(p, "u_look");
+    g_sky.low_at_under = glGetUniformLocation(p, "u_under");
+    g_sky.low_at_layer = glGetUniformLocation(p, "u_layer");
     p = g_sky.mix_program;
     port_GlSkyViewAt(p, &g_sky.mix_view);
     g_sky.mix_at_origin = glGetUniformLocation(p, "u_origin");
@@ -1442,6 +1694,7 @@ const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
     g_sky.air_at_high = glGetUniformLocation(p, "u_high");
     g_sky.air_at_moon_light = glGetUniformLocation(p, "u_moon_light");
     g_sky.air_at_belt = glGetUniformLocation(p, "u_belt");
+    g_sky.air_at_paint = glGetUniformLocation(p, "u_paint");
     p = g_sky.noise_program;
     g_sky.noise_at_what = glGetUniformLocation(p, "u_what");
     g_sky.noise_at_side = glGetUniformLocation(p, "u_side");
@@ -1672,6 +1925,7 @@ static void port_GlSkyAir(const SkyAirKey *key) {
     glUniform3fv(g_sky.air_at_high, 1, key->high);
     glUniform3fv(g_sky.air_at_moon_light, 1, key->moon_light);
     glUniform3fv(g_sky.air_at_belt, 1, key->belt);
+    glUniform4fv(g_sky.air_at_paint, 1, key->paint);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
@@ -1731,6 +1985,8 @@ void port_GlSkyWarm(void) {
     port_GlSkyBind(GL_TEXTURE_2D, 1, g_sky.low[0], g_sky.at_low_sky);
     port_GlSkyBind(GL_TEXTURE_3D, 2, g_sky.shape, g_sky.at_shape);
     port_GlSkyBind(GL_TEXTURE_3D, 3, g_sky.detail, g_sky.at_detail);
+    port_GlSkyBind(GL_TEXTURE_2D, 4, g_sky.air, g_sky.at_air);
+    port_GlSkyBind(GL_TEXTURE_2D, 5, g_sky.weather, g_sky.at_weather);
     glEnable(GL_SCISSOR_TEST);
     glScissor(0, 0, 0, 0);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -1761,12 +2017,18 @@ typedef struct {
     GLfloat milky;
     GLfloat shade;
     GLfloat drift[2];
+    GLfloat look[4]; /* the clouds' program's u_look */
+    GLfloat under[3];
+    GLfloat layer[3]; /* the tallest tops, the haze's half distance, how much
+                         the far clouds thin */
+    GLfloat glint[3]; /* the light's glints on the sea */
+    GLfloat seconds;  /* the picture's clock */
     SkyAirKey air;
 } SkyLookNow;
 
 /* The look of the sky for the stage's light (its scenery setup, or the
  * time's), the time and the fill's colour (`color`, 0xFFRRGGBB). */
-static void port_GlSkyLookNow(SkyLookNow *now, u32 color) {
+static void port_GlSkyLookNow(SkyLookNow *now, u32 color, s32 stage) {
     const PortGlTime *look = port_GlTime();
     const LightSetup *lights = (const LightSetup *)port_GlTimeTileLights();
     s32 time = look->on ? look->time : PORT_TIME_OWN;
@@ -1846,6 +2108,7 @@ static void port_GlSkyLookNow(SkyLookNow *now, u32 color) {
      * sky (gl_dressing.h) */
     port_GlDressingWeather(wind, &is_raining);
     seconds = port_GlLightsClock() / FRAMES_A_SECOND;
+    now->seconds = seconds;
     speed = 9.0f + 22.0f * wind[2];
     now->drift[0] = -wind[0] * speed * seconds;
     now->drift[1] = -wind[1] * speed * seconds;
@@ -1855,6 +2118,13 @@ static void port_GlSkyLookNow(SkyLookNow *now, u32 color) {
     now->horizon = at->horizon;
     now->milky = is_raining ? 0.0f : at->milky;
     now->shade = at->shade;
+    now->layer[0] = at->tops;
+    now->layer[1] = at->far_haze;
+    now->layer[2] = at->thin_far;
+    now->look[0] = at->vivid;
+    now->look[1] = at->scattered;
+    now->look[2] = is_raining ? 0.0f : at->rays;
+    now->look[3] = g_sky_open[stage] == SKY_SEA ? 1.0f : 0.0f;
     now->stars = is_raining ? 0.0f : look->on ? look->stars : 1.0f;
     if (now->night) {
         /* the moon: pale, a little of the stage's light's hue in it */
@@ -1870,6 +2140,7 @@ static void port_GlSkyLookNow(SkyLookNow *now, u32 color) {
         }
         for (i = 0; i < 3; i++) {
             now->moon_light[i] = moon[i] * 1.05f;
+            now->glint[i] = is_raining ? 0.0f : moon[i] * 0.55f;
             now->light[i] = moon[i] * at->light * 0.18f;
             now->glow[i] = moon[i] * 0.09f * at->glow;
             /* the night's gradient: the colour of the distance at the
@@ -1903,7 +2174,9 @@ static void port_GlSkyLookNow(SkyLookNow *now, u32 color) {
             deep = hue * port_SkyRoot(hue);
         }
         now->sun_light[i] = hue;
+        now->glint[i] = is_raining || now->light_way[1] > 0.35f ? 0.0f : hue;
         now->light[i] = deep * at->light;
+        now->under[i] = is_raining ? 0.0f : deep * at->under;
         now->glow[i] = hue * hue * at->glow * 0.6f;
         now->air.sun[i] = now->light_way[i];
         now->air.sun_air[i] = now->light_way[i];
@@ -1923,6 +2196,10 @@ static void port_GlSkyLookNow(SkyLookNow *now, u32 color) {
     }
     now->air.haze = at->haze;
     now->air.power = at->power;
+    now->air.paint[0] = is_raining ? 0.0f : at->paint;
+    now->air.paint[1] = at->palette;
+    now->air.paint[2] = at->boost;
+    now->air.paint[3] = at->deepen_above;
     /* dawn's and dusk's Belt of Venus */
     if (at->air_height > 0.0f) {
         now->air.belt[0] = 0.10f;
@@ -2032,7 +2309,7 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     if (own == 0) {
-        port_GlSkyLookNow(&now, color);
+        port_GlSkyLookNow(&now, color, stage);
         port_GlSkyMakeNoise();
         port_GlSkyAir(&now.air);
         port_GlSkyMakeLow();
@@ -2088,6 +2365,9 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
         glUniform1f(g_sky.low_at_milky, now.milky);
         glUniform1f(g_sky.low_at_shade, now.shade);
         glUniform1i(g_sky.low_at_steps, CLOUD_STEPS);
+        glUniform4fv(g_sky.low_at_look, 1, now.look);
+        glUniform3fv(g_sky.low_at_under, 1, now.under);
+        glUniform3fv(g_sky.low_at_layer, 1, now.layer);
         port_GlSkyBind(GL_TEXTURE_2D, 0, g_sky.air, g_sky.low_at_air);
         port_GlSkyBind(GL_TEXTURE_3D, 1, g_sky.shape, g_sky.low_at_shape);
         port_GlSkyBind(GL_TEXTURE_3D, 2, g_sky.detail, g_sky.low_at_detail);
@@ -2173,12 +2453,23 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     glUniform3fv(g_sky.at_moon_light, 1, now.moon_light);
     glUniform1i(g_sky.at_has_moon, own == 0 && now.has_moon);
     glUniform1f(g_sky.at_moon_size, 0.058f);
+    /* what lies before the sky, which the frame draws (SKY_LANDS) */
+    glUniform3fv(g_sky.at_light_way, 1, now.light_way);
+    glUniform3fv(g_sky.at_light, 1, now.light);
+    glUniform3fv(g_sky.at_glow, 1, now.glow);
+    glUniform3fv(g_sky.at_far, 1, now.far);
+    glUniform1f(g_sky.at_horizon, now.horizon);
+    glUniform4fv(g_sky.at_look, 1, now.look);
+    glUniform3fv(g_sky.at_glint, 1, now.glint);
+    glUniform1f(g_sky.at_time, now.seconds);
     glUniform1i(g_sky.at_has_picture, own != 0);
     port_GlSkyBind(GL_TEXTURE_2D, 0, own, g_sky.at_picture);
     port_GlSkyBind(
         GL_TEXTURE_2D, 1, g_sky.low[g_sky.low_now], g_sky.at_low_sky);
     port_GlSkyBind(GL_TEXTURE_3D, 2, g_sky.shape, g_sky.at_shape);
     port_GlSkyBind(GL_TEXTURE_3D, 3, g_sky.detail, g_sky.at_detail);
+    port_GlSkyBind(GL_TEXTURE_2D, 4, g_sky.air, g_sky.at_air);
+    port_GlSkyBind(GL_TEXTURE_2D, 5, g_sky.weather, g_sky.at_weather);
     glActiveTexture(GL_TEXTURE0);
     glEnable(GL_SCISSOR_TEST);
     glScissor(rect[0], rect[1], rect[2], rect[3]);

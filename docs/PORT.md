@@ -3286,7 +3286,15 @@ sunsets and moon shots etc."; ROADMAP 17):
   each step dimmed by the air between it and the sun; at dawn and dusk
   that dimming is worked out as for a sun lower than the time's (4 to 6
   degrees), so that the sky's light is the time's own deep gold, the
-  colour the sun lights the ground with (`gl_time.c`). By night it is the
+  colour the sun lights the ground with (`gl_time.c`). Over that, by
+  each time's look, its **palette** (the second pass, 2026-11-26: worked
+  out alone the air at the horizon, all a fight's camera sees of it, is
+  pale): the air's brightness kept and its hue a painter's by height and
+  by how far round from the sun -- at dusk the gold and the flame at the
+  horizon under the sun, magenta and violet above them, the Earth's
+  shadow and a pink Belt of Venus opposite; at dawn the same in peach,
+  rose and lilac; by day a blue deepening upwards -- the horizon under a
+  low sun lit up and the sky darker upwards. By night it is the
   stage's own gradient: the colour of the distance at the horizon, a glow
   of the stage's ambient light (`LIGHT_SCENERY`'s colour of the dark) just
   above it darkening upwards -- a navy sky over the lost bridge, a purple
@@ -3300,22 +3308,34 @@ sunsets and moon shots etc."; ROADMAP 17):
   lit by the sun or the moon through the cloud towards it (the light that
   comes straight through, a forward lobe for the **silver lining** where
   one looks towards the light through a thin edge, wider lobes for the
-  light scattered many times, the powder of an edge that faces it), and by
-  the sky: overhead on their tops, the horizon's on their **dark
-  undersides**; far ones seen through the haze, which is the air's colour
-  there. Over them a veil of **high cloud**, streaks of ice bent by the
-  high wind's eddies, which catches the sunset; at night the **Milky
-  Way**, a band of haze cut by lanes of dust; the glow about the sun or
-  the moon; and the clouds part about a low sun or moon, which the clouds
-  round the gap catch. Everything **drifts with the stage's wind**, the
+  light scattered many times, fewer at dawn and dusk so that their faces
+  stand out against their shade, the powder of an edge that faces it),
+  by the sky: overhead on their tops, the horizon's on their **dark
+  undersides**; and at dawn and dusk by the low sun **from beneath**, hot
+  on the undersides of those on its side. Their tops are higher by day
+  (8,000 metres; 7,000 at dusk, 6,500 at dawn, 5,200 at night), and how
+  far off the haze hides them is each time's: by day the far ones thin
+  out, leaving a band of clear blue over the horizon under the heaps.
+  Far ones are seen through the haze, which is the air's colour there.
+  Over them a veil of **high cloud**, streaks of ice bent by the high
+  wind's eddies, which catches the sunset and the light beneath; at
+  night the **Milky Way**, a band of haze cut by lanes of dust; the glow
+  about the sun or the moon, at dawn and dusk streaked round the sun and
+  fanning out from it in **rays**; and the clouds part a little about a
+  low sun or moon, which the clouds round the gap catch. The whole is
+  made more vivid by each time's look. Everything **drifts with the
+  stage's wind**, the
   dressing's `[wind]` (`port_GlDressingWeather`), on the picture's clock
   (`port_GlLightsClock`); where the stage's dressing rains (the building's
   rooftop) the sky is a ceiling of dark cloud, with no sun, moon or stars.
 - **The frame** (`g_sky_fragment_text`): the clouds' picture, and over it
   at the frame's own resolution what must be sharp, as much as the clouds
   leave clear: **stars** in three layers, coloured, the faint ones thicker
-  in the Milky Way, fewer near the horizon; the **sun's disc**, darker at
-  its limb; and **the moon**, large (6.6 degrees across: a telephoto's
+  in the Milky Way, fewer near the horizon; the **sun's disc**, white-gold,
+  a little darker at its limb, never darker than the glow about it, and
+  its bloom low in the sky; the lands about the horizon (below); the
+  **glints** of the sun or the moon on the sea beyond the stage, along
+  its path, twinkling; and **the moon**, large (6.6 degrees across: a telephoto's
   moon), its seas and craters on a sphere fixed to it (cells of the
   clouds' noise for the craters, their floors shadowed and their rims
   bright), lit a little from one side so that they stand out, with a
@@ -3325,12 +3345,22 @@ sunsets and moon shots etc."; ROADMAP 17):
 which looks down at the fighters, the ground and its water end well
 below the true horizon, and between them is what lies beyond (on the
 coast, 15 degrees and more of the picture). There the sky draws **ranges
-far off in the haze**, three of them one before another, each paler the
-farther it is, their valleys misted, their slopes in the shade of the sky
-overhead and their ridges against the horizon's own colour and glow --
-the sunset's on its side -- running down into the colour of the distance
+far off in the haze**, three of them one before another, low on the
+horizon (3 degrees at the most, so that the sky above them carries the
+picture), each paler the farther it is, their valleys misted, their
+slopes in the shade of the sky overhead and their ridges against the
+horizon's own colour and glow, caught by a low sun or the moon on its
+side; the land beneath them mottled with fields in the haze. On the five
+stages by the water (the coast, the lighthouse, the abandoned ship, the
+ferry dock and the shipyard: `SKY_SEA` in `g_sky_open`) it is **the sea**
+instead, a headland or an island here and there: the sky in it, brighter
+towards the horizon, and the path of a low sun or the moon on it, where
+the frame glints. All of it runs down into the colour of the distance
 where the stage's ground ends, which the ground's fog runs into with no
-seam.
+seam. The clouds' picture has the lands (`SKY_LANDS`, shared by the two
+programs); the frame draws them again at its own resolution in the few
+degrees about the horizon where the ridges and the headlands are, so
+that they are sharp.
 
 **The sun and the moon in a fight's view.** That camera sees the sky only
 a few degrees up (about 8 on the coast). So that a sunset or a moonrise is
@@ -3360,9 +3390,11 @@ pixel was marched to tell -- and where it was not in the last picture,
 the nearest pixel marched. A step through a cloud is longer the farther
 it is, three at once through the clear air between; the noise is read at
 the mipmap that fits a pixel there. On the RTX 3090 at 2,560 by 1,440,
-the sky's pass is 0.54 ms of a fight frame's card (median, three pictures
-a frame with run-ahead 1), against 0.27 for the night sky it replaces
-(`port_bench.py --case ra1`, 6% of the processors busy).
+the sky's pass is 0.67 ms of a fight frame's card (median, three pictures
+a frame with run-ahead 1; `port_bench.py --case ra1`, 5% of the
+processors busy, the same at dusk), from 0.54 before the second pass --
+most of the difference the lands drawn again at the frame's resolution
+about the horizon -- and 0.27 for the night sky it replaced.
 
 **Which stages.** Looked at stage by stage over the prover's tour of
 each (`tools/port_stage_prove.py`, the pictures every 300 blanks of all
@@ -3397,8 +3429,10 @@ console's own: with nothing said `rebushido-gl` draws the game's fill
 draws it, as does a time of day of the port's own. The window starts
 with `night` -- the owner's call. The look of each time (`g_sky_looks`:
 the clouds' cover, the high veil, the haze, the light on the clouds, the
-gap about the sun) is a judgement on the pictures of the work
-(`tmp/skies/`, not committed), and wants the owner's eye.
+gap about the sun, the palette, the light beneath, the rays, the tops)
+is a judgement on the pictures of the work (`tmp/skies/` for the first
+pass, `tmp/skies2/` for the second: the old sky, the first pass and the
+second side by side; not committed), and wants the owner's eye.
 
 | Measured | |
 |---|---|
@@ -8833,7 +8867,10 @@ the picture changes (the provers, the bench, the play tests).
   dawn and dusk and the night's moon are low (8, 7 and 11 degrees, from
   14, 12 and 35 before the skies, 2026-11-25) so that a fight's camera,
   which sees the sky only a few degrees up, has them in view; the shadows
-  run long. A mod's picture of a sky is the stage's own time's. A time of
+  run long (kept by the skies' second pass, 2026-11-26: a sunset needs
+  its sun in view). Dusk's fog is a warmer rose (0.50, 0.32, 0.40, from
+  0.42, 0.32, 0.38), the colour the sunset's haze runs down into below
+  the horizon. A mod's picture of a sky is the stage's own time's. A time of
   the port's own has its sky whatever `sky` says (a day over a black fill
   is no day); a closed stage has none.
 - **Under a roof** (the halls, the dojos, the cave, the garage: the sky's

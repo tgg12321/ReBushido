@@ -400,18 +400,24 @@ the stage").
     camera sees, the bamboo's clumps as meshes. The skies (the
     owner, 2026-11-25: "I want striking skyboxes. With beautiful
     volumetric clouds, sunsets and moon shots etc"; PORT.md, "The sky"):
-    the air worked out as sunlight scattered through it, gold at dawn and
-    dusk; heaped clouds marched through as a volume, lit through
-    themselves by the sun or the moon, silver-lined and dark beneath,
-    drifting with the stage's wind, a high veil above them, a ceiling of
-    cloud where it rains; the sun's disc low over a sunset and a large
-    moon with its craters and corona, the clouds parting about them, the
-    suns of dawn and dusk and the night's moon lowered so that a fight's
-    camera sees them; stars and the Milky Way; ranges far off in the haze
-    below the horizon, running into the ground's fog; each time's own, a
-    mod's picture of a sky still its stage's; procedural, 0.54 ms of the
-    card's frame (a quarter of the clouds marched each picture, the rest
-    the last picture's).
+    the air worked out as sunlight scattered through it, with each time's
+    palette laid over it (the second pass, for the few degrees of sky a
+    fight's camera sees): a sunset's gold and flame under the sun, magenta
+    and violet above, the Earth's shadow opposite; dawn's peach, rose and
+    lilac; the day's deep blue, the far clouds thinned to a clear band
+    over the horizon; heaped clouds marched through as a volume, lit
+    through themselves by the sun or the moon, silver-lined, lit hot from
+    beneath by a low sun, drifting with the stage's wind, taller by day,
+    a high veil above them catching the sunset, a ceiling of cloud where
+    it rains; the sun's disc low over a sunset with its bloom and rays
+    fanning out, and a large moon with its craters and corona; stars and
+    the Milky Way; sharp ranges low on the horizon, their ridges caught by
+    the light on its side, and on the five stages by the water the sea
+    beyond, the sky in it and the sun's or the moon's path glinting on
+    it, running into the ground's fog; each time's own, a mod's picture of
+    a sky still its stage's; procedural, 0.67 ms of the card's frame (a
+    quarter of the clouds marched each picture, the rest the last
+    picture's).
 18. **Custom arenas**: a stage authored in Blender as a render mesh and
     a collision mesh with each face's surface (firm, sand, wet,
     barrier), compiled into the game's ground (`MODS.md`, "Stages");
