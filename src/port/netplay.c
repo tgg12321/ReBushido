@@ -1127,6 +1127,20 @@ static s32 port_NetplayMayTakeOver(s32 link) {
     return others > 0;
 }
 
+/* Whether a link not yet gone, of which this program has heard, may
+ * still be given to the CPU when its silence is long enough. */
+static s32 port_NetplayAnyMayTakeOver(void) {
+    s32 link;
+
+    for (link = 0; link < g_np_links; link++) {
+        if (!g_np_link[link].left && g_np_link[link].has_stamp &&
+            port_NetplayMayTakeOver(link)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 /* The host gives link `link`'s pads to the CPU: each from the first
  * frame of it this program does not have, played on as INPUT_CPU and
  * passed to the others with the rest; a frame already run past that on a
@@ -1263,8 +1277,15 @@ static void port_NetplayWait(s32 state, s32 (*enough)(void)) {
         }
         /* (a guest of four waits on another guest by way of the host,
          * who gives that one to the CPU: it gives up on the host's own
-         * silence alone) */
+         * silence alone; and the host, while a guest it waits on may
+         * still be given to the CPU, leaves it to the rule above, which
+         * counts from that guest's last word: a word come after this
+         * wait began would otherwise lose the race to this one, and end
+         * the session for all; one that answers and never sends what is
+         * waited on is given up on at twice the time) */
         if (now - from > NETPLAY_GIVE_UP_MS &&
+            (!port_NetplayAnyMayTakeOver() ||
+             now - from > 2 * NETPLAY_GIVE_UP_MS) &&
             (g_np_pads <= 2 || g_np_links > 1 || !g_np_link[0].has_stamp ||
              now - g_np_link[0].stamp_at > NETPLAY_GIVE_UP_MS)) {
             port_Log("netplay: nothing from the other program for %u "

@@ -112,6 +112,13 @@ lessons still holds unless this section says otherwise.
 
 ## Lessons of the session
 
+- **`four-silent` was a race** (fixed 2026-11-26): the host's wait gave
+  up on the whole session 15 s from the wait's start, the silent guest's
+  handover 15 s from his last word; a word come after the wait began
+  ended the session for all. The host now leaves it to the handover
+  while a guest may be handed over (twice the time at most). Once in 15
+  runs since, `four-silent-win` failed otherwise (chie did not end the
+  session at the match's end; the run's folder was overwritten).
 - **Open, no cause yet**: some Windows online window cases (`win-pages`
   three times, `rooms-four-win` and `room` once each) fail only inside a
   full gate on a loaded machine and pass alone every time (`win-pages`
