@@ -1,6 +1,6 @@
 format = 1
-# The bamboo thicket: bamboo leaves falling and drifting, and the earth
-# kicked up by steps.
+# The bamboo thicket: bamboo leaves falling and drifting, the earth kicked
+# up by steps, and the clumps' culms as round culms with nodes.
 
 [wind]
 strength = 0.55
@@ -18,3 +18,99 @@ count = 288
 size = 56
 top = 5000
 color = #A8B070
+
+# The clumps' culms (pieces 0 to 16): round and ridged at their nodes, each
+# set at its piece's own column, found from the piece's faces (culms),
+# so that it stands where the collision grid has the clump; the piece is
+# kept, its leaves hanging about the culm's top, its square column inside
+# the culm. Three culms whose nodes differ, in turn.
+
+[mesh culm_0]
+file = bamboo_culm_0
+piece = 0
+culms = yes
+
+[mesh culm_1]
+file = bamboo_culm_1
+piece = 1
+culms = yes
+
+[mesh culm_2]
+file = bamboo_culm_2
+piece = 2
+culms = yes
+
+[mesh culm_3]
+file = bamboo_culm_0
+piece = 3
+culms = yes
+
+[mesh culm_4]
+file = bamboo_culm_1
+piece = 4
+culms = yes
+
+[mesh culm_5]
+file = bamboo_culm_2
+piece = 5
+culms = yes
+
+[mesh culm_6]
+file = bamboo_culm_0
+piece = 6
+culms = yes
+
+[mesh culm_7]
+file = bamboo_culm_1
+piece = 7
+culms = yes
+
+[mesh culm_8]
+file = bamboo_culm_2
+piece = 8
+culms = yes
+
+[mesh culm_9]
+file = bamboo_culm_0
+piece = 9
+culms = yes
+
+[mesh culm_10]
+file = bamboo_culm_1
+piece = 10
+culms = yes
+
+[mesh culm_11]
+file = bamboo_culm_2
+piece = 11
+culms = yes
+
+[mesh culm_12]
+file = bamboo_culm_0
+piece = 12
+culms = yes
+
+[mesh culm_13]
+file = bamboo_culm_1
+piece = 13
+culms = yes
+
+[mesh culm_14]
+file = bamboo_culm_2
+piece = 14
+culms = yes
+
+[mesh culm_15]
+file = bamboo_culm_0
+piece = 15
+culms = yes
+
+[mesh culm_16]
+file = bamboo_culm_1
+piece = 16
+culms = yes
+
+# the cut culm by the path (piece 18), cut on the slant
+[mesh stump]
+file = bamboo_stump
+piece = 18

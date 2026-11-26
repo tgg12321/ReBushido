@@ -1774,7 +1774,7 @@ void port_GlGroundSlotsBegin(void) {
     /* The depth beside them only where the lighting's passes read it,
      * and not cleared: where the mesh draws nothing its slot says so, and
      * the take-down writes the far end there (g_gl_slot_fragment_text). */
-    g_gl.is_deep = port_GlPostNeedsDepth();
+    g_gl.is_deep = port_GlPostNeedsDepth() || port_GlDressingWantsDepth();
     glDrawBuffers(g_gl.is_deep ? 3 : 2, all);
     glClearBufferfv(GL_COLOR, 1, far);
 }
@@ -3515,6 +3515,8 @@ void port_GlGetPicture(PortGlPicture *picture) {
     picture->display_w = g_gl.display_w;
     picture->display_h = g_gl.display_h;
 }
+
+s32 port_GlGroundDepthIsWritten(void) { return g_gl.is_deep; }
 
 void port_GlFlushBatch(void) {
     port_GlFlush();

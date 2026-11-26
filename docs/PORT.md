@@ -9266,11 +9266,119 @@ The state is still the picture's alone: `tools/port_dressing.py hashes
 same with the dressing on and off, and a replay made with it on played
 with it off, every hash as recorded.
 
-**What is left.** The foliage does not cast into the lights' cubes. The
-`mist` kind is there, but no shipped stage's open water lies where the
-fight camera looks. The pieces as meshes are five stages' few; the
-bamboo wants its culms placed from the piece's own faces. The coast's
-backdrop sparkle over its near sand is the stage's own.
+**The fourth pass** (2026-11-26, ROADMAP 17's leftovers): the foliage in
+the lights' cubes, a mist the fight camera sees, the bamboo's culms as
+meshes. Pictures, before and after, from the fight's camera through the
+window's own pixels, with close-ups: the main checkout's `tmp/stages17d/`.
+
+- **The foliage casts into the lights' cubes.** The things of each
+  foliage block are put, as it grows, in the order of the squares of
+  1,024 units they stand in, and each square is a span of the buffer with
+  the box its things reach into (`DressSpan`, `port_DressSpanRun`). Each
+  picture, each face of each light that casts (`gl_lights.c`, the
+  strongest four) draws, after the stage's kept depth is copied in and
+  before the fighters, the spans within the light's reach and the face's
+  view by the foliage's own vertex shader, swayed and pushed as in the
+  picture (`port_GlDressingDrawLightCasters`), thinned by the distance
+  from the light (`FOLIAGE_LIGHT_THIN`, 1,500). It is drawn each picture
+  and not kept with the stage's depth, because the grass sways. A blade
+  reads each light's map 45 units nearer to that light
+  (`lights_add_lifted`, gl_lights.h), past its own shadow, as it reads the
+  sun's. The grass then throws its shadows across the lit ground about a
+  lamp; the shipped stages' lamps stand high or far from the grass the
+  fight camera sees (the Meikyokan's fire baskets, 1,600 up by the door:
+  short shadows, a few levels of colour), so the pictures show it also with
+  a lantern of a mod's, low on the lawn between the fighters
+  (`foliage-lights-stage08-night-demo-lantern-*`).
+- **A mist the fight camera sees.** The `mist` kind's banks of soft quads
+  were too faint and lay where no camera looked; it is now a volume. Its
+  block grows a map of the ground's height under its first area (160 a
+  side, the ground's own faces, not a piece's, and within `heights` where
+  it says, so a bridge over a gorge holds none: `port_DressGrowMist`) and
+  a box of air from the lowest ground to `top` over the highest. At the
+  picture's end, before the shafts (`port_GlDressingDrawLate`), the box's
+  first face seen gathers the mist along the line of sight in eight steps,
+  each shifted by the pixel, its noise read from a tile made once at the
+  start (`port_DressMakeNoise`: three octaves of a value noise that
+  repeats, and another; the noise worked out in the shader was 3 ms of the
+  card's frame at 2,560 by 1,440): thick at the ground under the point and
+  thinning upwards, its top ragged, in banks of a noise of `size` that
+  drift with the stage's wind, thinner towards the area's edges; ended
+  where the line meets the ground (the ground's depth a pixel,
+  `ground_depth`, which the ground's mesh now writes whenever a mist is
+  shown: `port_GlDressingWantsDepth`) or a fighter (the post's fighters'
+  depth). It is lit by the stage's light from above (or the time of day's),
+  the sun's or the moon's light brighter looking towards it (not the
+  lamps': their light gathered in it cost a quarter of a millisecond), and
+  far off takes the time's horizon colour, then the stage's
+  fog: blue-grey under the moon, rose at dawn. Shown on 5 (in the gorge
+  under the bridge), 6, 12, 14, 15 and 31, at dawn, and on 5, 6, 15 and 31
+  at night too.
+- **The depth the shafts were held by.** The ground's depth and the
+  fighters' are the world's units, the dressing's view the tiles' scale
+  (`1 << far_shift` smaller): the shafts compared the two as they were, so
+  on a stage of a far shift a shaft's light ran on past a fighter. Both are
+  now brought to the view's scale (times `u_depth` over the depth's range).
+- **The bamboo's culms as meshes.** A clump of the thicket (pieces 0 to
+  16) is one culm, an upright prism of 120 by 138 units and 4,000 tall,
+  and four cards of leaves hanging about its top; the leaves reach no foot.
+  A mesh block with `culms = yes` is set at each culm of its piece
+  (`port_DressFindCulms`, from the faces as the ground is noted): the
+  upright faces that reach down to the piece's foot, joined where their
+  boxes touch, made as tall as every face over their footprint, kept where
+  three times as tall as wide. The mesh is fitted to each culm's height and
+  to its wider side and 6% more both ways, so that the round culm keeps
+  the prism's corners inside it, and the piece is kept: its leaves stay,
+  its prism hidden in the culm. Three culms are made by
+  `tools/port_dressing.py meshes` (`bamboo_culm_N.obj`: round, tapering,
+  nodes ridged and paler with a dark band under each, closer together at
+  the foot, a slight lean, streaked), and the cut culm by the path (piece
+  18) is a culm cut on the slant showing its hollow (`bamboo_stump.obj`,
+  in the piece's place). A file several blocks name is read once a
+  growing (`port_DressReadObjKept`). The collision grid does not hold the culms (the
+  walk of the check reaches every culm's own place: a culm is thinner than
+  its step), so what is kept is the game's own: each culm stands exactly
+  where the piece's prism stands. A mesh of a piece (a culm, a trunk, a
+  bollard, a gravestone) now goes with its piece: it is drawn only where
+  the frame queued the piece as it was taken down (`queued`, so a culm the
+  fighters cut down is the game's own falling halves, and one right by the
+  camera, nearer than the frame's cutoff, is left out as the game leaves
+  out the piece), casts where the piece stands (`standing`), and is thinned
+  between the camera and a fighter as the ground's mesh thins the piece
+  (`see_through`).
+
+The state is still the picture's alone: `tools/port_dressing.py hashes
+--stages 7,31,15` gives each stage's state the same at every blank with the
+dressing on and off, and a replay made with it on played with it off,
+every hash as recorded.
+
+**What it costs** (the bench, `tools/port_bench.py`, the RTX 3090 at 2,560
+by 1,440, a quiet machine; main's program built from the same commit
+beside, `--program`, for the stages the bench does not keep):
+
+| case | card, median / 95% | `dress`, 95% | first blank |
+|---|---|---|---|
+| `ra1-dressed` (8, its fire baskets casting the lawn's grass), main's stored | 4.84 / 6.26 | 0.83 | 12.9 |
+| ... now, four runs | 4.47-4.72 / 6.20-6.38 | 0.80-0.85 | 13.7-14.7 |
+| 31 Shainto cemetery at night (`--dressed-stage 31`), main | 5.11 / 6.79 | 1.38 | 20.3 |
+| ... now, its mist and the candles' cubes | 5.53 / 7.22 | 1.94 | 16.4 |
+| 7 Bamboo thicket (`--dressed-stage 7`), main | 4.03 / 5.88 | 0.04 | 9.7 |
+| ... now, its seventeen culms | 4.50 / 6.12 | 0.47 | 19.8 |
+
+The mist is about half a millisecond of the card's frame wherever it
+lies over the picture (it was 2.2 with its noise worked out in the
+shader and the lamps' light gathered in it). A stage of meshes pays some
+ten milliseconds in its first picture, as the orchard's trunks did before
+(12 on main: 25.6); the bamboo's culms are read from three files once
+each. `ra1-dressed`'s first blank was over main's by more than the
+bench allows in one run of four. `ra1-rain`, which none of this draws,
+was flagged in one run (`settled_p99`) and in the next (`cpu_p95`), and
+main's own program, run beside, moved as much.
+
+**What is left.** The shipped stages' lamps stand where the grass's shadows
+from them are small in the fight's pictures; a mist lies at one height
+over its ground, without the light of a lamp shafting through it. The
+coast's backdrop sparkle over its near sand is the stage's own.
 
 ## Every stage in every mode, and every unlock
 

@@ -509,6 +509,7 @@ void port_GlSunWarm(void) {
         glBindFramebuffer(GL_FRAMEBUFFER, g_sun.framebuffer[i]);
         glClear(GL_DEPTH_BUFFER_BIT);
         port_GlShadowWarmSunCasters();
+        port_GlDressingWarmCasters();
     }
     port_SunMapsEnd(&picture);
 }

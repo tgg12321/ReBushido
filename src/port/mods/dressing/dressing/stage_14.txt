@@ -34,3 +34,13 @@ reflect = 0.6
 clarity = 0.45
 color = #1D4A5A
 shallow = #3E8C8A
+
+# mist along the stream at dawn, under the bridge
+[particles mist]
+kind = mist
+area = -12000 -12000 8500 19000
+size = 2600
+top = 420
+glow = 1
+color = #D0D6DC
+times = dawn

@@ -315,6 +315,9 @@ typedef struct {
 } PortGlPicture;
 
 extern void port_GlGetPicture(PortGlPicture *picture);
+/* Whether the ground's mesh wrote ground_depth when it was last drawn
+ * (for the lighting's passes, or the dressing's mist). */
+extern s32 port_GlGroundDepthIsWritten(void);
 /* The fighters' layer (gl_fighter.c) laid over the picture: its depth
  * (`depth`, the world's units) where its colour (`color`) covers a pixel,
  * the layer's corner at (x, y) of the buffer, `w` by `h`, into the

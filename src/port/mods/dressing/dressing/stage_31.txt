@@ -58,3 +58,14 @@ piece = 6
 [mesh grave_wide_west]
 file = grave_wide
 piece = 8
+
+# a ground mist at night and at dawn, lying low between the graves, in banks
+# that drift with the wind (drawn as a volume: PORT.md, "The dressing")
+[particles mist]
+kind = mist
+area = -17000 -10000 20500 9000
+size = 2600
+top = 420
+glow = 1
+color = #C8D0DC
+times = night dawn

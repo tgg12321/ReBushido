@@ -1163,7 +1163,7 @@ the stage's wind and pushed aside by the fighters and by a blade swept
 near the ground; water that reflects the sky, the stage and the fighters,
 deeper in colour where it is deep, foaming along its shore and rippling
 where a fighter wades or the rain falls; puddles; rain, candle smoke, sea
-spray and mist; shafts of light through a hall's doors and windows with
+spray, and mist lying on the ground in banks the fight's camera looks through; shafts of light through a hall's doors and windows with
 the dust hanging in them; dust kicked up by steps, leaves and petals
 falling, embers rising from the fires, fireflies; scenery meshes, alone or
 in a piece's place. ROADMAP 17; how it is drawn is PORT.md, "The
@@ -1227,7 +1227,7 @@ The world's units, the world's y running down, as the light files'.
 | `water` | a level surface that reflects the sky, the sun or the moon, the lamps, and the stage and the fighters; waved by the wind, rippled where a fighter wades, ringed by rain; deep or shallow by the ground under it, foaming along its shore; or puddles | `y`, `color`, `shallow`, `clarity`, `waves`, `foam`, `reflect`, `sky`, `flow`, `puddles`, `rain`, `on` |
 | `particles` | `kind = dust`, `leaves`, `embers`, `snow`, `petals`, `fireflies`, `rain`, `smoke`, `motes`, `spray`, `mist` or `gulls` | `size`, `top`, `count`, `on`, `glow` |
 | `shafts` | the light of the stage's own lights through a door or a window, as shafts in the air, with motes hanging in them | `light`, `at`, `size`, `count`, `glow` |
-| `mesh` | a scenery mesh of the mods' (`file`); **looks solid** | `file`, `at`, `turn`, `scale`, `sit`, `piece`, `color`, `tint` |
+| `mesh` | a scenery mesh of the mods' (`file`); **looks solid** | `file`, `at`, `turn`, `scale`, `sit`, `piece`, `culms`, `color`, `tint` |
 | `wind` | the stage's wind | `strength`, `direction`, `gusts` |
 
 What every kind may say: `area`, `avoid`, `count`, `color` (`#RRGGBB`,
@@ -1278,7 +1278,12 @@ counts as night, as the light files'), `solid`.
   area), spreading and thinning; `motes` hang in the air over the area
   and are seen where the stage's lights fall on them; `spray` is thrown
   up in bursts along the area, as waves break, and falls back; `mist` is
-  banks of `size` drifting low across the area with the wind; `gulls`
+  a volume of mist over the first area, thick at the ground under each
+  place (the ground's own faces, within `heights` where it says) and
+  thinning up to about `top` over it, in banks of `size` that drift with
+  the wind, seen through from the fight's camera, held by the ground and
+  the fighters, lit by the time of day (`glow` how thick, `color` its
+  own); `gulls`
   circle places of the area, each at its own height up to `top` over the
   ground and its own pace, banked into the turn, flapping a few seconds
   and gliding the rest, `size` half a wing's span (a gull is a body, a
@@ -1300,7 +1305,13 @@ counts as night, as the light files'), `solid`.
   and keeps its silhouette: it is fitted into the piece's own box, so it
   is never larger than the piece, a mesh whose proportions are more than
   a quarter from the box's is refused (the log says so), and the piece
-  is left out while it stands (a piece cut down takes its mesh with it).
+  is left out while it stands (a piece cut down takes its mesh with it;
+  so does a piece the game leaves out right by the camera). With
+  `culms = yes` as well it is set at **each culm of the piece** instead:
+  each upright column of the piece's faces that stands on the piece's
+  foot, fitted to the column's height and to its wider side (a little
+  more, so a round culm keeps a square column's corners inside it), and
+  the piece is kept (a bamboo clump's leaves stay).
 
 ### The check
 
@@ -1358,17 +1369,17 @@ written by hand from the stages' maps, walks and pictures:
 | 2 Shainto HQ | smoke rising from the candles, motes in their light |
 | 3 Tatara shrine | embers from the fire baskets; grass where the lawn is |
 | 4 Bus stop | dust off the road's earth, leaves along it |
-| 5 Lost bridge | the river far below, leaves into the gorge |
-| 6 Tatara shrine path | moss and grass along the path, flowers, shrubs on the hillsides, embers from the stone lanterns, fireflies |
-| 7 Bamboo thicket | bamboo leaves falling, dust off the earth |
+| 5 Lost bridge | the river far below, leaves into the gorge, mist in the gorge at dawn and at night |
+| 6 Tatara shrine path | moss and grass along the path, flowers, shrubs on the hillsides, embers from the stone lanterns, fireflies, a ground mist at night and at dawn |
+| 7 Bamboo thicket | bamboo leaves falling, dust off the earth; the clumps' seventeen culms round and ridged at their nodes, each at its piece's own column (`culms`), and the cut culm by the path cut on the slant |
 | 8 Outside Meikyokan | the dojo's lawn, clover, fireflies |
 | 9 Future dump site | rough grass, dust |
 | 10 Snake cliff | grass in a strong wind |
 | 11 Kimigaura coast | the sea, deep and shallow, foam along the shore and on the waves, mirroring the fighters; rocks in the shallows, sand kicked up |
-| 12 Orange tree fields | grass, white flowers, leaves falling, fireflies |
+| 12 Orange tree fields | grass, white flowers, leaves falling, fireflies, a morning mist |
 | 13 Castle rooftop | cherry petals past the moon |
-| 14 Under lost bridge | the stream painted across the ground as water, running along its bed; sand kicked up, leaves from the bridge |
-| 15 Terraced fields | grass on the banks, fireflies over the paddies |
+| 14 Under lost bridge | the stream painted across the ground as water, running along its bed; sand kicked up, leaves from the bridge, mist along the stream at dawn |
+| 15 Terraced fields | grass on the banks, fireflies over the paddies, mist over them at dawn and at night |
 | 16 Under railway | dust, leaves |
 | 17 Water tower dam | leaves over the concrete |
 | 18 Lumberyard | sawdust kicked up |
@@ -1384,7 +1395,7 @@ written by hand from the stages' maps, walks and pictures:
 | 28 Abandoned shipyard | dust off the sand |
 | 29 Building rooftop | rain blown across it and splashing on the roof, puddles ringed by it, mirroring the towers' lights and the fighters |
 | 30 Building parking lot | puddles on the concrete, mirroring the ceiling's lights and the fighters, drips from the ceiling |
-| 31 Shainto cemetery | grass between the graves, cherry petals, embers from the candles, fireflies; three of its gravestones (pieces 3, 6 and 8, bare blocks) as stepped stones with chamfered edges |
+| 31 Shainto cemetery | grass between the graves, cherry petals, embers from the candles, fireflies, a ground mist at night and at dawn; three of its gravestones (pieces 3, 6 and 8, bare blocks) as stepped stones with chamfered edges |
 | 32 Team battle 1 | three shafts through the band of windows in the south wall, motes |
 | 33 Team battle 2 | embers from the fire baskets, sand kicked up |
 | 34 Chanbara | three shafts through the paper windows along the north wall (lights of their own, `lights/stage_34.txt`), motes |
@@ -1397,7 +1408,8 @@ shaders from numbers (`src/port/gl/gl_dressing.c`), coloured by the
 stage's own textures as the game loaded them; the rocks are made by
 `tools/port_dressing.py rocks` from a seed, and the gravestones
 (`grave.obj`, `grave_wide.obj`), the ferry dock's bollards
-(`bollard.obj`) and the orange trees' trunks (`orange_trunk.obj`) by
+(`bollard.obj`), the orange trees' trunks (`orange_trunk.obj`) and the
+bamboo's culms and cut culm (`bamboo_culm_N.obj`, `bamboo_stump.obj`) by
 `tools/port_dressing.py meshes` from a few numbers (the last two turned
 about the upright from a profile, the trunk's bark furrowed by a sine of
 its angle and height); the gulls are the particles' shader's own geometry
@@ -1417,13 +1429,10 @@ dock's four bollards (22, pieces 0, 1, 2 and 5: blocks of eight sides by
 the rail, made round iron with flared heads) and the orange trees' five
 trunks (12, pieces 7 to 11: square columns, made round, flared at the
 roots and furrowed; the game's own leaves and fruit above them stay).
-They were chosen for being plain and many and seen near the fight: the
-bamboo thicket's seventeen clumps (7) would gain as much, but their culms
-stand where the collision grid has them, which a mesh fitted to the
-clump's box would not keep. What is left: a mist the fight camera would
-see (the `mist` kind is there, but no stage's open water lies where the
-fight looks); more pieces' meshes (a piece's mesh has to keep its box's
-proportions within a quarter).
+They were chosen for being plain and many and seen near the fight; the
+bamboo thicket's seventeen culms (7) are set at their pieces' own columns
+(`culms`), the clumps' leaves kept. What is left: more pieces' meshes (a
+piece's mesh has to keep its box's proportions within a quarter).
 
 ## Music
 
