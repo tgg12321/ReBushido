@@ -88,6 +88,25 @@ PORT_SETTING(difficulty,
             "fight",
     .shown = {"Hard", "Easy"})
 
+/* Which CPU plays the CPU's fighters (docs/CPU.md; port_cpu.h): the
+ * game's own, as it is, or one of the port's four levels, which see the
+ * fight as a player does and answer it after a player's time to react.
+ * From the next fight. A gameplay switch: in a session the host's holds,
+ * and a replay keeps it. */
+PORT_SETTING(cpu,
+    .name = "cpu", .value = "original",
+    .note = "original, novice, adept, veteran or master:\n"
+            "the game's own CPU, or one of ReBushido's\n"
+            "levels, which play as a player would",
+    .read = PORT_READ_WORDS,
+    .words = {"original", "novice", "adept", "veteran", "master"},
+    .is = "original, novice, adept, veteran or master",
+    .menu = PORT_MENU_GAME, .rank = 25, .takes = PORT_TAKES_NOW,
+    .label = "CPU",
+    .help = "The game's own CPU, or one of ReBushido's levels, which see "
+            "what a player sees and react as quickly; from the next fight",
+    .shown = {"Original", "Novice", "Adept", "Veteran", "Master"})
+
 PORT_SETTING(music,
     .name = "music", .value = "on",
     .note = "on or off: the game's music (its own option)",

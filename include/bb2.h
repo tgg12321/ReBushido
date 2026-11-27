@@ -90,6 +90,7 @@
 #include "port_top_menu.h"
 #include "port_match.h"
 #include "port_duo.h"
+#include "port_cpu.h"
 #endif
 
 #endif /* BB2_H */

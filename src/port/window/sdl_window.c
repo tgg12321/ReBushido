@@ -3148,6 +3148,7 @@ void port_WindowGameSwitches(void) {
     port_SetGameOptions((g_port_settings.monitor != 0 ? 1U : 0U) |
                         (g_port_settings.difficulty != 0 ? 2U : 0U) |
                         (g_port_settings.music == 0 ? 4U : 0U));
+    port_SetCpuLevels(g_port_settings.cpu, g_port_settings.cpu);
 }
 
 void port_WindowApplyChoice(s32 choice) {
@@ -3216,7 +3217,7 @@ void port_WindowApplyChoice(s32 choice) {
         strcmp(name, "replays_megabytes") == 0) {
         port_ApplyReplaySettings();
     } else if (strcmp(name, "difficulty") == 0 || strcmp(name, "music") == 0 ||
-               strcmp(name, "monitor") == 0) {
+               strcmp(name, "monitor") == 0 || strcmp(name, "cpu") == 0) {
         port_WindowGameSwitches();
     }
     /* the picture's size and filter on the card, the resolution, the

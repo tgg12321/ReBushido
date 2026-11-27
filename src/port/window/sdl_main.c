@@ -54,6 +54,7 @@
 #include "port_match.h"
 #include "port_ranked.h"
 #include "port_duo.h"
+#include "port_cpu.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -1404,6 +1405,11 @@ int main(int argc, char **argv) {
      * where (docs/PLAYING.md, "Replays") */
     port_StartReplayWindow(beside, has_end || export_path != NULL);
     port_WindowGameSwitches();
+    /* the CPU (port_cpu.h): the game's own in a test's run, unless its
+     * --cpu, which comes after, says otherwise */
+    if (has_end) {
+        port_SetCpuLevels(PORT_CPU_ORIGINAL, PORT_CPU_ORIGINAL);
+    }
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];

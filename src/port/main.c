@@ -81,6 +81,7 @@ static const char g_port_usage[] =
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
     "            [--dump-movie FOLDER]\n"
     "            [--arena NAME] [--fight-cpu] [--match RULE[:N]]\n"
+    "            [--cpu LEVEL[,LEVEL]] [--cpu-seed N] [--cpu-log FILE]\n"
     "            [--unlock-all] [--stage-select] [--menu rebushido|original]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
@@ -129,6 +130,12 @@ static const char g_port_usage[] =
     "                 it each team is two of its first\n"
     "  --fight-2p     ... the second fighter is the second pad's\n"
     "  --fight-cpu    ... the first fighter is the CPU's too\n"
+    "  --cpu A[,B]    which CPU plays a CPU's fighter, in the first place\n"
+    "                 and the second: original (the game's own), or the\n"
+    "                 port's novice, adept, veteran or master (0 to 4;\n"
+    "                 docs/CPU.md)\n"
+    "  --cpu-seed N   ... mixed into the port's CPU's dice\n"
+    "  --cpu-log FILE each fighter's pad and move, a line a frame\n"
     "  --rollback-test N   every so often save the game's state, run N\n"
     "                 frames, put it back and run them again; stop at the\n"
     "                 first difference, and report (docs/NETPLAY.md)\n"
@@ -525,6 +532,27 @@ s32 port_Main(s32 argc, char **argv) {
         } else if (port_TextsEqual(word, "--fight-cpu")) {
             port_ReplayLeadBreak("--fight-cpu");
             port_FightBothCpu();
+        } else if (port_TextsEqual(word, "--cpu") && has_value) {
+            if (!port_CpuParseLevels(argv[++i])) {
+                port_UsageError("--cpu takes original, novice, adept, veteran "
+                                "or master (0 to 4), or two of them with a "
+                                "comma, not ",
+                                argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--cpu-seed") && has_value) {
+            s32 seed;
+
+            if (!port_ParseNumber(argv[++i], &seed)) {
+                port_UsageError("--cpu-seed takes a number, not ", argv[i]);
+            }
+            port_CpuSetAskedSeed((u32)seed);
+        } else if (port_TextsEqual(word, "--cpu-tune") && has_value) {
+            if (!port_CpuParseTune(argv[++i])) {
+                port_UsageError(
+                    "--cpu-tune takes LEVEL:FIELD=VALUE,..., not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--cpu-log") && has_value) {
+            port_CpuSetLog(argv[++i]);
         } else if (port_TextsEqual(word, "--unlock-all")) {
             port_SetUnlockAll(1);
         } else if (port_TextsEqual(word, "--stage-select")) {

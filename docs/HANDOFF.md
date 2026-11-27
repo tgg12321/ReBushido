@@ -95,6 +95,14 @@ lessons still holds unless this section says otherwise.
 
 ## Next, what needs no owner
 
+- ROADMAP 27, the CPU's levels (2026-11-26, CPU.md): the study and the
+  port's four levels are in (`cpu` setting; against the original 34%,
+  46%, 61%, 67% over 96 fights). Left: the select screens' choice (the
+  training mode's agent is on the menus), the port's CPU in two on two
+  and for an online takeover (its memory is by place; the duo swaps four
+  fighters through two), walking round obstacles, dirt and thrown
+  weapons and guns, levels learned from real players' replays; the
+  owner's hands on how each level feels.
 - ROADMAP 24's leftovers: four real PCs. (Partners' own voices, mods'
   pages on the second bank, the silent guest and a leave between fights
   are done, 2026-11-25: NETPLAY.md, section 19; MODS.md, "A fighter's

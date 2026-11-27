@@ -409,4 +409,12 @@ extern void cpu_FadeAttacks(s32 fighter_index);
 /* The "easy CPU" option is on (menu). */
 extern u32 cpu_IsEasy(void);
 
+#if RB_PORT
+/* For the port's CPU (port_cpu.h): the eight probes of the ground round
+ * the fighter, two a frame, into Fighter.cpu_probes; how far the attack
+ * the opponent is making reaches, by its motion and its weapon. */
+extern void cpu_PortProbeGround(struct Fighter *fighter);
+extern s32 cpu_PortAttackReach(struct Fighter *fighter);
+#endif
+
 #endif /* CPU_H */

@@ -37,7 +37,17 @@ void fighter_ReadPad(s32 fighter_index, PadState *pad_out) {
         g_fight_mode == FIGHT_MODE_PRACTICE && g_fight_practice_round == 0 &&
         fighter_index == 0 && ((g_pad_state.pressed >> 8) & 1);
     if (g_fighters[fighter_index].is_cpu) {
+#if RB_PORT
+        /* the port's CPU, where the run asked for one of its levels */
+        if (port_CpuPlays(fighter_index)) {
+            port_CpuBuildPad(fighter_index, pad_out);
+        } else {
+            cpu_BuildPad(fighter_index, pad_out);
+        }
+        port_CpuLogPad(fighter_index, pad_out);
+#else
         cpu_BuildPad(fighter_index, pad_out);
+#endif
         return;
     }
     *pad_out = g_pad_state;
@@ -183,4 +193,7 @@ void fighter_ReadPad(s32 fighter_index, PadState *pad_out) {
             ((pad_out->unheld & PADLdown) >> 2) |
             ((pad_out->unheld & PADLup) << 2);
     }
+#if RB_PORT
+    port_CpuLogPad(fighter_index, pad_out);
+#endif
 }
