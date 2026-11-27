@@ -79,7 +79,14 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   pages, the slash mode, the staff roll, REMATCH): every piece inside its
   block with its picture, of one block alone and holding letters, a rule
   or a panel; the staff roll a name a piece; the cursor's gold cut where
-  the white is.
+  the white is. `rebushido/bbm_join` is the tool that joins a move to
+  another motion file's motion (`tools/bbm_join.py`): two motion files
+  made up in the test, with frames that need each of the four codes and
+  one whose frames end within a group, joined, and the joined file read
+  by `tests/motion_decode.py`'s decoder (written from the format apart
+  from the tool) frame by frame; the moves, marks and sections checked,
+  and a place that is not a move refused. With the disc's motion files,
+  each fighter file's stream packed again is the disc's, byte for byte.
 - A test of one of ReBushido's fixes is `tests/rebushido/fix_NAME.c`: it
   includes the game's file that has the fix and runs the function with
   the "Bugfixes" setting off, for what the original does, and on

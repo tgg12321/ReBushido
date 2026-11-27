@@ -2151,6 +2151,53 @@ moves), when its weapon can hit (the marks), the frames themselves, and
 the CPU's scripts. The log says it: `motions: u123 from ..., 252816
 bytes over the disc's sectors 3871 to 3994`.
 
+### A move joined to another file's motion
+
+A move plays a motion of its own file: the motion is a number in the
+file's table, its marks are in the file's marks, and its frames are in
+the file's stream, packed with codes of the file's own
+([`formats/BBM.md`](formats/BBM.md)). So a move cannot name another
+file's motion; **`tools/bbm_join.py`** copies the motion in:
+
+```
+python tools/bbm_join.py moves disc/MOTION/K123.BBM
+python tools/bbm_join.py join disc/MOTION/U123.BBM disc/MOTION/K123.BBM \
+    --move 2100 --from-move 2098 --move 2046 --from-move 2090 -o kanabo.bbm
+```
+
+`moves` lists a file's moves by their place (in halfwords, as the file
+names them), the motion each plays and its frames, the motion's kind and
+length, and what leads to the move: the header's name for it (standing
+in a stance, a row of the per-stance moves) or the command that leads to
+it from standing in a stance. The same command leads to the moves two
+files have for the same thing: in U123.BBM and K123.BBM command `00d5`
+from standing in the first stance leads to the moves at 2100 and 2098,
+the stance's first blow, and `00d6` to 2046 and 2090.
+
+`join` decodes the other file's motion, adds it after the file's
+motions, its marks after the file's marks, its frames after the file's
+(in whole groups of eight, from the one its first frame is in), and
+points the move at it: the move plays the other move's frames of it and
+takes commands to the other move's last frame for them; everything else
+of the move (what follows it, its commands, its flags) and of the file
+(the other moves, the CPU's scripts) stays. The whole stream is packed
+again with the codes that hold both files' frames, and decoded again
+before anything is written: every frame of the file and of the motion is
+the one it was, or the tool stops and writes nothing. (Packed so, the
+disc's own files come back byte for byte: `bbm_join.py check`.)
+
+The joined file is larger than the disc's: a mod uses it as a weapon's
+own motions (`motions = KEY`, below), whose room is the disc's largest
+set's file, not in place of the disc's file of its name, which must not
+grow.
+
+**The kanabo's**: `python3 tools/weapon_kanabo.py --motions disc/MOTION
+--mod DIR` makes, from your disc, the club's own motions into a copy of
+the mod at DIR: U123.BBM, the katana's, with the first stance's two blows
+(`00d5`, `00d6`) the broadsword's of K123.BBM (`motions/kanabo.bbm`), and
+`motions = kanabo` in its weapon's file. Nothing of the disc is in the
+mod the program ships, which keeps the katana's motions.
+
 ### A mod's weapon on the select screens
 
 Every new slot (a weapon file with `replaces = no`) is on the **weapon
@@ -2255,12 +2302,6 @@ any other game's, and no AI-made or bought mesh.
   (`select_data.c`, `SelectFile.weapon_pixels`) and a `weapon_id` of its
   own everywhere the game indexes by weapon (the tables above, the
   sounds', the CPU's, the dropped object's).
-- **One move attached to another file's motion**: a move's motion is a
-  number in its own file's table, and its frames are in that file's
-  stream, so a move of another file's is the file's own after a merge:
-  a tool (beside `tools/inspect_bbm.py`) that adds a motion, its marks
-  and its frames to a file and points a move at it. A weapon's own motion
-  file is whole, made from a disc file by such a tool or by hand.
 - **A weapon's own recorded sounds**: `sounds =` takes one of the
   game's banks; a bank of the mod's own (a VAB of its own samples, laid
   out as the game's weapon banks are, read in place of the pair's file,
@@ -2335,6 +2376,22 @@ away with the reason on the online page.
   (`--wav`) differs from 51.9 to 78.4 seconds; each size's trace and
   sound the other's. The remastered picture draws the club lying loose
   where the katana lay. Both are in `tmp/modsleft/listen/` of the work.
+- **A move joined to another file's motion**: the kanabo's own motions
+  made by `tools/weapon_kanabo.py --motions` (U123.BBM with K123.BBM's two
+  first blows, 257,640 bytes for 252,816; its stream, packed again by
+  `bbm_join.py check`, the same); the game's own decoder
+  (`tests/motion_decode.c`, with `BB2_DISC` at a folder of the file) and
+  the format's decoder in Python agree on all its 4,190 frames. The
+  kanabo picked with it (both sizes, each size's trace the other's): its
+  fighter plays motion 166, the broadsword's first blow, on the first
+  press (`p1_motion` of a play test's `[state]` at Fighter's
+  `motion_index`, the PlayStation's offset 0x5C), then 167; the fight is
+  another from the load on (26 frames shorter, the file read from the
+  mod). The rollback self-test passes with it picked (94 rounds, 752
+  frames, both sizes). The club swung in the broadsword's blow, in the
+  remastered picture: `tmp/modsleft/listen/` of the work.
+  `tests/rebushido/bbm_join.py`: two made-up files joined, read by the
+  format's decoder; the disc's files packed again byte for byte.
 - `tests/port/weapons.c`: a weapon's file read, every line that can be
   wrong refused with its reason (the sounds' and the dropped weapon's
   among them), the factors, a folder of mods with a
@@ -2361,6 +2418,7 @@ away with the reason on the online page.
 | `src/port/vorbis.c`, `src/port/vendor/` | stb_vorbis as it ships, and the empty C library headers it is compiled over |
 | `src/port/xa.c`, `src/port/spu.c`, `src/port/sound.c`, `src/port/cd.c` | the hooks: the drive's volumes on other samples (`port_MixCdAudio`), the chip's `heard`, the call in the mix, the stream playing (`port_GetCdStream`) |
 | `include/port_discfiles.h`, `src/port/discfiles.c` | the disc's directory, a stage's files by key, `--dump-stages`, the mods' files over the disc's sectors (stages and motions); `src/port/disc.c` calls it for every sector it reads |
+| `tools/bbm_join.py`, `tests/rebushido/bbm_join.py` | a move joined to another file's motion: the frames decoded, the motion, its marks and frames copied in, the stream packed again and checked |
 | `include/port_weapons.h`, `src/port/weapons.c` | the weapons' files read and checked, `--weapon`, the answers to the game (`fighter_pose.c`, `fighter.c`, `cpu.c` under `RB_PORT`), the session's hash of the gameplay mods (`port_ModsGameplayHash`, `mods.c`) |
 | `tests/port/weapons.c` | the weapons' files, the folder, the answers and the hash |
 | `tests/port/music.c`, `music.py`, `tests/port/discfiles.c` | the music's keys, loops, files and player; the directory and the stage files |

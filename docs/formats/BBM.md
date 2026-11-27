@@ -103,7 +103,9 @@ Read as 32-bit words, most significant bit first.
 1. The opening pose: 63 values of 12 bits.
 2. 63 codes of 2 bits: how each value is packed in what follows.
 3. At byte 0x70, the group table: three bytes (big-endian) for every eighth
-   frame, the bit at which the frame begins, counted from the table.
+   frame, the bit at which the frame begins, counted from the table; then
+   zeros to a word, so that the frames begin on one (the files whose
+   frames are a multiple of eight have one entry of zeros more).
 4. The frames, in groups of eight.
 
 A decoded frame (`MotionFrame`) is 66 halfwords: the root's height, direction
@@ -139,6 +141,14 @@ bits are sign-extended at the end. The others are left as they come out.
 
 `tests/motion_decode.py` is a decoder written from this page; `make test`
 compares it with the game's on every frame of every file.
+
+The disc's streams are packed in the fewest bits: each value's code is
+the one of the four that says every change the value needs in the
+fewest bits, a group's first frame gives a value whose 12 bits are the
+opening pose's with a clear bit, a root value of 0 is a clear bit, and
+nothing is left between the groups. `tools/bbm_join.py check`, which
+packs a stream again so, gives every fighter file's stream back byte for
+byte.
 
 ## Sizes
 
@@ -179,6 +189,9 @@ frame by frame.
 ```
 python tools/inspect_bbm.py <file.bbm>             # the sections and their sizes
 python tools/inspect_windat.py disc/MOTION/WIN.DAT # the records
+python tools/bbm_join.py moves <file.bbm>           # the moves, what leads to each
+python tools/bbm_join.py join INTO FROM --move P --from-move Q -o OUT
+                                                   # a move of INTO plays FROM's motion
 ```
 
 ## Not known
