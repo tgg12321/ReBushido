@@ -158,6 +158,9 @@ void port_TakeInput(void) {
     if (g_port_take_hook != NULL) {
         g_port_take_hook(&g_port_input);
     }
+    /* in a fight of training, Select's presses are training's and the
+     * second pad is the dummy's (port_training.h) */
+    port_TrainingTakeInput(&g_port_input);
     port_TakeTopMenuCover();
     port_ReplayTook(&g_port_input, g_port_input_count);
     port_PlayAskedSound();

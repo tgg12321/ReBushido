@@ -11,9 +11,11 @@
  *   straight to its opening;
  * - the game's top menu has five rows in place of its eight: Singleplayer,
  *   a page of its own with Story, Vs. CPU, Slash and Group Battle;
- *   Versus; Training; Online Play, the settings menu's Play online page;
- *   and Options, the settings menu, in place of the game's own options
- *   page and its memory card and key configuration;
+ *   Versus; Training, a page of its own with training against a dummy
+ *   (port_training.h), the game's own training (Classic Training) and
+ *   the settings menu's Training page; Online Play, the settings menu's
+ *   Play online page; and Options, the settings menu, in place of the
+ *   game's own options page and its memory card and key configuration;
  * - the view is always the side view: no row offers the first person's
  *   (POV), and no fight is played in it;
  * - the game's options (Difficulty, Music, Monitor) are the window's
@@ -39,16 +41,23 @@
 /* The two pages, and what a row of one does. */
 enum {
     PORT_TOP_PAGE_TOP = 0,
-    PORT_TOP_PAGE_SINGLE = 1, /* Singleplayer */
-    PORT_TOP_PAGES = 2,
+    PORT_TOP_PAGE_SINGLE = 1,   /* Singleplayer */
+    PORT_TOP_PAGE_TRAINING = 2, /* Training */
+    PORT_TOP_PAGES = 3,
 };
 
 enum {
-    PORT_TOP_MODE = 0,    /* a mode: the game's own row `row` is chosen */
-    PORT_TOP_SINGLE = 1,  /* on to the Singleplayer page */
-    PORT_TOP_BACK = 2,    /* back to the top page */
-    PORT_TOP_ONLINE = 3,  /* the window's online pages */
-    PORT_TOP_OPTIONS = 4, /* the settings menu */
+    PORT_TOP_MODE = 0,     /* a mode: the game's own row `row` is chosen */
+    PORT_TOP_SINGLE = 1,   /* on to the Singleplayer page */
+    PORT_TOP_BACK = 2,     /* back to the top page */
+    PORT_TOP_ONLINE = 3,   /* the window's online pages */
+    PORT_TOP_OPTIONS = 4,  /* the settings menu */
+    PORT_TOP_TRAINING = 5, /* on to the Training page */
+    /* training against a dummy: the game's row `row` (Versus) is chosen,
+     * with training on (port_training.h) */
+    PORT_TOP_TRAIN = 6,
+    PORT_TOP_TRAINING_OPTIONS = 7, /* the settings menu's Training page */
+    PORT_TOP_EMPTY = 8,            /* no row: nothing drawn, never lit */
 };
 
 /* Rows a page: four in the places of the game's first four, and the last
@@ -81,6 +90,7 @@ enum {
 enum {
     PORT_TOP_ASK_OPTIONS = 0,
     PORT_TOP_ASK_ONLINE = 1,
+    PORT_TOP_ASK_TRAINING = 2,
 };
 
 typedef struct {
@@ -149,6 +159,8 @@ extern s32 port_TopMenuCursor(void);
 extern void port_TopMenuMove(s32 step, u32 rows_on);
 /* Whether a row of the page is lit: one that can be chosen. */
 extern s32 port_TopMenuRowIsOn(s32 row, u32 rows_on);
+/* ... of any page, for the window, which reads the state the step left */
+extern s32 port_TopRowIsLit(const PortTopRow *of, u32 rows_on);
 /* The page changed: `page`, its cursor where it was. */
 extern void port_TopMenuOpenPage(s32 page);
 /* The settings menu asked for (PORT_TOP_ASK_...). */

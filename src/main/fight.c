@@ -318,6 +318,11 @@ static inline void fight_AfterDefeat(void) {
         return;
     }
 #if RB_PORT
+    /* training: both fighters start again where they are, as practice's
+     * do, with no replay (port_training.h) */
+    if (port_TrainingRestart()) {
+        return;
+    }
     /* the fight counted into the match in play (port_match.h): who fell,
      * both for a draw */
     port_MatchFightOver(

@@ -60,6 +60,7 @@
 #include "port_remaster.h"
 #include "port_spu.h"
 #include "port_play.h"
+#include "port_training.h"
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
 #include "port_match.h"
@@ -3150,10 +3151,24 @@ void port_WindowGameSwitches(void) {
                         (g_port_settings.music == 0 ? 4U : 0U));
 }
 
+void port_WindowTrainingSwitches(void) {
+    PortTrainingSwitches switches;
+
+    switches.dummy = g_port_settings.training_dummy;
+    switches.slot = g_port_settings.training_slot - 1;
+    switches.random = g_port_settings.training_random;
+    switches.slow = g_port_settings.training_slow;
+    port_SetTrainingSwitches(&switches);
+}
+
 void port_WindowApplyChoice(s32 choice) {
     const char *name = port_FindChoice(choice)->name;
 
-    if (strcmp(name, "fullscreen") == 0) {
+    if (strncmp(name, "training_", 9) == 0) {
+        /* the dummy, the slot and slow motion from the next frame of
+         * training; what is shown is read as it is drawn */
+        port_WindowTrainingSwitches();
+    } else if (strcmp(name, "fullscreen") == 0) {
         port_SetFullscreen(g_port_settings.is_fullscreen);
     } else if (strcmp(name, "fps") == 0) {
         port_SetCounter(g_port_settings.fps);

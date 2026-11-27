@@ -9,7 +9,7 @@
 
 #define LINE_BYTES_MAX 128
 /* The most settings the menu has room for. */
-#define PORT_SETTINGS_IN_MENU_MAX 64
+#define PORT_SETTINGS_IN_MENU_MAX 80
 
 /* The menu's groups, by PORT_MENU_... less one: each one's title and the
  * line about it on the menu's first page. */
@@ -22,6 +22,8 @@ static const char * const g_port_group_titles[PORT_CHOICE_GROUPS][2] = {
      "The scene drawn again: resolution, shadows, light, sky and effects"},
     {"Controls", "The keys and controller buttons of both players"},
     {"Mods", "The mods beside the program, and the menus the program ships"},
+    {"Training",
+     "The dummy, its recordings, slow motion, the presses and hit areas"},
 };
 
 /* What the menu shows of a switch. */

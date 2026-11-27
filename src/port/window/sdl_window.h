@@ -195,6 +195,8 @@ extern void port_ToggleFullscreen(void);
  * options -- given to the run (port_top_menu.h): as it starts, and as the
  * settings menu changes one. */
 extern void port_WindowGameSwitches(void);
+/* The window's training_ settings, into the run's (port_training.h). */
+extern void port_WindowTrainingSwitches(void);
 
 /* ---- netplay in the window (sdl_net.c; docs/NETPLAY.md, section 13)
  * ---- */

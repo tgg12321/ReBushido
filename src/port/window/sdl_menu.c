@@ -756,6 +756,10 @@ void port_MaybeRunMenu(u32 blank) {
         g_port_menu.asks_seen = now.menu_asks;
         if (now.menu_ask_page == PORT_TOP_ASK_ONLINE) {
             port_AskForOnlinePages("Online Play");
+        } else if (now.menu_ask_page == PORT_TOP_ASK_TRAINING) {
+            /* Training Options: the Training page, Back out of the menu */
+            port_MenuOpenOn(PORT_MENU_OPEN_TRAINING);
+            port_AskForMenu("Training Options");
         } else {
             port_MenuOpenOn(PORT_MENU_OPEN_MAIN);
             port_AskForMenu("Options");

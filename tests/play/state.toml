@@ -138,6 +138,22 @@ port_match_body_p2 = "g_port_match+75:s8"
 port_match_to_top = "g_port_match+76:u8"      # the match decided went back to the top menu
 port_match_page_teams = "g_port_match+78:u8"  # the rule page's teams: 0 one on one, 1 two on two (CPU partners), 2 (pads)
 port_match_teams = "g_port_match+80:u8"       # the match in play's
+# -- the native port's training (port_training.h) --
+port_training_on = "g_port_training+0:u8"           # the mode's fights are training's
+port_training_recording = "g_port_training+2:u8"    # the slot being recorded, and one
+port_training_playing = "g_port_training+3:u8"      # the slot being played, and one
+port_training_frozen = "g_port_training+4:u8"       # held until a step or a run on
+port_training_slow = "g_port_training+5:u8"         # slow motion's frames shown for each
+port_training_holding = "g_port_training+6:u8"      # held between two frames now
+port_training_dummy = "g_port_training+10:u8"       # what the dummy did: 0 stood, 1 guarded, 2 played back
+port_training_record_at = "g_port_training+20:u16"  # the frame of the slot recorded next
+port_training_play_at = "g_port_training+22:u16"    # ... played next
+port_training_played_slot = "g_port_training+24:u16"
+port_training_frames = "g_port_training+32:u32"     # frames of training's fights
+port_training_restarts = "g_port_training+36:u32"   # kills that started both again
+port_training_holds = "g_port_training+40:u32"      # frames held
+port_training_p1_shown = "g_port_training+44:u16"   # the first pad's newest buttons shown
+port_training_p2_shown = "g_port_training+108:u16"  # the second's (the dummy's)
 # -- the native port's two on two (port_duo.h): fighter 1 and 3 the first team, 2 and 4 the second --
 port_duo_on = "g_port_duo+0:u8"               # this fight is two on two
 port_duo_decided = "g_port_duo+2:u8"          # a team is out

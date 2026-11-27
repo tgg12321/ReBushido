@@ -304,9 +304,10 @@ enum {
     PORT_MENU_REMASTER = 3,
     PORT_MENU_CONTROLS = 4,
     PORT_MENU_MODS = 5,
+    PORT_MENU_TRAINING = 6,
 };
 
-#define PORT_CHOICE_GROUPS 5
+#define PORT_CHOICE_GROUPS 6
 
 /* A number as the text of it, for a setting built in as a constant. */
 #define PORT_QUOTE(number) PORT_QUOTE_TEXT(number)

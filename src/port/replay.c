@@ -840,8 +840,10 @@ static s32 port_ReplayWrites(void) {
 /* Whether fights are recorded: written, or their starts given to a
  * room's spectators (port_ReplayServe). */
 static s32 port_ReplayMayRecord(void) {
+    /* not training's fights: their moments put back and the dummy's
+     * recordings are not the replay's (port_training.h) */
     return (port_ReplayWrites() || g_serve.on) && !port_LinkIsUp() &&
-           g_play.state == PLAY_OFF;
+           g_play.state == PLAY_OFF && !port_TrainingIsOn();
 }
 
 /* ---- what the disc holds already ----
