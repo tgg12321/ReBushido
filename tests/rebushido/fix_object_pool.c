@@ -13,6 +13,12 @@ LooseObjectKind g_object_kinds[30];
 
 static Fighter g_test_fighter;
 
+/* Two on two's thrower of each object (duo.c): none here. */
+void port_DuoObjectLaunched(s32 index, s32 slot) {
+    (void)index;
+    (void)slot;
+}
+
 /* Every place free. */
 static void test_EmptyPool(void) {
     s32 i;

@@ -71,10 +71,11 @@ const PortDiscFile *port_DiscFileNumber(u32 index) {
     return index == 0 ? &g_made_file : NULL;
 }
 
-/* netplay's session: none, or one (which offers no mod's own piece) */
+/* netplay's session (or a replay of one): none, or one (which offers no
+ * mod's own piece) */
 static s32 g_made_role;
 
-s32 port_GetSessionRole(void) { return g_made_role; }
+s32 port_SessionIsOn(void) { return g_made_role != 0; }
 
 /* the mods: bb2_m1-3 is the looped WAV, bb2_m1-5 the other, and
  * my_theme, a piece of its own, the other again; bb2_m1-5 a second
