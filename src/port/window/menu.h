@@ -249,8 +249,11 @@ extern void port_ReplaysFilmDescribe(
     char *label, u32 label_room, char *value, u32 value_room);
 extern const char *port_ReplaysFilmHelp(void);
 extern void port_ReplaysFilmAccept(void);
-/* The settings of a film shown on the page as well, by name. */
-extern const char * const g_port_replays_film_settings[2];
+/* The settings of a film and of the theatre's clip shown on the page as
+ * well, by name. */
+#define PORT_REPLAYS_FILM_SETTINGS 3
+extern const char
+    * const g_port_replays_film_settings[PORT_REPLAYS_FILM_SETTINGS];
 
 /* ---- the settings menu's Stats page (menu_stats.c) ---- */
 

@@ -939,6 +939,23 @@ PORT_SETTING(film_picture,
             "settings draw it, or the console's own",
     .shown = {"Remastered", "Original"})
 
+/* The replay theatre's clip (docs/PLAYING.md, "The replay theatre"; G
+ * while a replay plays): a GIF (the port's own, no sound, 640 across) or
+ * a film as the Replays page makes one, of the frames marked, in the
+ * theatre's view */
+PORT_SETTING(clip_kind,
+    .name = "clip", .value = "gif",
+    .note = "the replay theatre's clip of the frames\n"
+            "marked: gif (640 across, no sound) or film\n"
+            "(as film_size and film_picture make one)",
+    .read = PORT_READ_WORDS, .words = {"gif", "film"},
+    .is = "gif or film",
+    .menu = PORT_MENU_GAME, .rank = 150, .takes = PORT_TAKES_NOW,
+    .label = "Theatre's clip",
+    .help = "The replay theatre's clip of the frames marked: a GIF, or a "
+            "film as the Replays page makes one",
+    .shown = {"GIF", "Film"})
+
 /* ---- playing online ---- */
 
 PORT_SETTINGS_HEADING(

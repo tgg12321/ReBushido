@@ -11356,6 +11356,162 @@ lag of 0 and alike 0.9997. Linux: `python3 tools/port_film.py`, offscreen
 on llvmpipe, an .avi; Windows: `python tools/port_film.py`, on the card,
 an .mp4 and an .avi.
 
+## The replay theatre and photo mode
+
+ROADMAP 29. How a player uses them: [`PLAYING.md`](PLAYING.md), "The
+replay theatre" and "Photo mode". The code: `src/port/theatre.c` and
+`include/port_theatre.h` (the looks, outside the state), the game's three
+questions under `RB_PORT` (`src/main/fight.c`'s two scene beginnings,
+`src/main/main.c`'s frame), `port_RunLook` in `step.c`, the keyframes and
+the seek in `replay.c`; the window's part `src/port/window/sdl_theatre.c`
+(the keys, the mouse, the sticks, photo mode's wait, a test's words) and
+the GIF `film_gif.c`.
+
+**A look.** The picture is what the game's own steps draw, so another
+picture of a frame (another camera, no HUD, another time of day) is that
+frame's step run again with something else asked of it, and its state
+put back. The theatre keeps the state of the last three boundaries (a
+ring of snapshots, `port_StateSave`, whose saves copy only the pages
+written since) and the inputs the game took there (`port_TheatreInput`,
+in `port_TakeInput` after every other hook). At a boundary
+(`port_BeforeStep`, before the step) a look puts the state of two
+boundaries back in, runs those two steps again with the inputs they took,
+as frames run ahead are run (`g_port_ahead`: drawn, never heard, the
+window given no turn, nothing recorded, nothing counted in the stats),
+and puts this boundary's state back (`port_RunLook`). The step itself then
+runs as ever, heard and paced, but unseen (`g_port_unseen`): the window
+shows what the look left, as it shows what frames run ahead left. While a
+replay is paused, or photo mode waits, a change of view is a look again at
+the same boundary.
+
+*Two steps*, because the display a step leaves is the frame the step
+before it drew: the game draws one buffer while the other is shown
+(`main.c`'s frame: `PutDispEnv`, then `DrawOTag`). The first step draws
+the frame; the second puts it up. The card is given only the second's
+writes into video memory (`g_port_ahead_kept`, as run-ahead does for a
+frame drawn already), so that it draws one frame a look as it draws one a
+step, and the picture's own clock (the lights' flicker, the sky, the
+dressing) keeps the game's pace. One step left the window showing the
+frame before, drawn by nobody; two give, paused, the picture the playback
+without looks shows, pixel for pixel in Original (`port_theatre.py look`).
+
+*In a look alone* (`g_theatre.looking`):
+
+- the camera: `port_TheatreScene` in `camera_BeginFightScene` and
+  `camera_BeginReplayScene` replaces the view's point looked at, its
+  angles and its distance before `scene_Begin` places the camera, so the
+  stage's cells, the effects facing the eye, the remastered ground's mesh,
+  the fighters' models, the sky and the shadows all follow, in both
+  pictures. Outside a look it notes the game's own, which the free camera
+  starts from;
+- the HUD: `port_TheatreCutHud` before the frame's `DrawOTag` ends the
+  ordering table at its fourth entry: the 2D layer is linked in the first
+  four (the HUD at 1, the scene from 4, `g_render_ot`); the window leaves
+  its own lettering over the fight out too (the match strip, training's
+  lines and hit areas);
+- the time of day: `port_StageTime`, which the picture alone asks
+  (`gl_time.c`), answers the theatre's while it has one.
+
+**Why nothing of it reaches the game.** Every look ends with this
+boundary's state put back, so whatever the free camera changed (the eye,
+the cells opened, the effects' facing, the ordering table cut) is gone
+before the step. The theatre's own variables are outside the state
+(`config/port_state.txt`). Its ring is of one run of moments: a load not
+its own (a seek, the training's moment, a rollback, the playback's end)
+empties it (`g_port_state_loads`), however its counts read. Never online
+nor over a link cable (`port_IsNetplayOn`, `port_LinkIsUp`): no look is
+run there at all. A replay played in the theatre holds every hash the
+recording has, as ever, and photo mode's fight is the same hash for hash
+as the fight without it.
+
+**The seek** (`port_ReplaySeekTo`). The playback keeps a keyframe, the
+state at every 150th frame as it passes (eight at most: then every other
+one is let go and they are twice as far apart, `port_ReplayKeyframe`). A
+seek goes to the latest keyframe not past the frame (or the start, or
+where it is, if that is nearer) and runs on unseen
+(`port_ReplayQuietStep`, as the skips always did), every hash held, the
+last two boundaries before it kept for the theatre's look there. A frame
+back is so a load and under five seconds of steps run unseen: a few
+milliseconds. `--replay-check`'s restart and skip use the keyframes too.
+
+**A still** (`port_WriteWindowStill`): the picture alone as the window
+draws it under the counter, the line and the pages, at the window's own
+size, a PNG, written at once (a test finds it when the line says so).
+
+**A clip** is made as a replay's film is ("A replay as a film"): another
+run plays the replay, `--export OUT --export-from F --export-to F
+--theatre-view ...` (the ten numbers of the theatre's view as G was
+pressed), sought to its first frame at once and stopped after its last.
+Its kind is the setting `clip`: a GIF, or the film the Replays page makes.
+
+- *The GIF* is the port's own (`film_gif.c`): GIF89a looping, the film's
+  every second blank (a frame of the fight is two), its time in
+  hundredths counted from the clip's start so that it never drifts
+  (3, 3, 4, 3: 33.43 ms a frame), at most 640 pixels across (the film's
+  run draws at 1280 by 720 and each pixel of the GIF is the mean of its
+  block), a palette of 256 colours of each picture's own by the median
+  cut over 32,768 boxes, an ordered dither of four by four (still from
+  picture to picture where the scene is), LZW as GIF has it. After the
+  first picture a pixel within 6 of each channel of what it was last
+  drawn from is left as it is (the transparent index): four seconds of a
+  remastered fight from a still camera, 1.9 MB against 15.4 with every
+  pixel drawn again. No sound.
+- *A film*: the MP4 of Windows' own encoders, or the port's AVI. MP4
+  elsewhere was weighed and left: no encoder is in the program (the AVI
+  is the port's own), and an ffmpeg found on the PATH would be a second
+  way to the same file that nothing else of the port needs; the AVI
+  plays in VLC and mpv, and PLAYING.md gives the one line of ffmpeg that
+  makes it an MP4.
+
+**Photo mode** (F4). In a fight offline (not online, a link cable, a
+replay, whose theatre has the same keys, or a film's run), the theatre is
+turned on with the free camera where the game's is; at the first boundary
+whose state two before is kept (two frames on) the window holds the
+boundary (`port_PhotoWait`, in its boundary hook): it reads the window,
+moves the camera, runs a look again where the view changed and shows it,
+a blank at a time, stepping no frame, until F4 or Escape. Then the view
+goes back to the game's, the theatre off, and the step runs from the state
+it was left in.
+
+**What it costs.** A look is two steps and three snapshots' worth of
+copies (the pages written since); the card draws one frame a look and
+none for the step unseen. Measured, the first 200 frames of a fight's
+replay at 640 by 360 as fast as they run (`--fast`, the program's start
+and the fight's load among them): on the owner's PC and its card, 4.0
+seconds with looks against 3.1 without (Remastered), 4.8 against 2.5
+(Original, drawn by the port's software GPU); on llvmpipe (WSL) 33
+against 21 (Remastered) and 4.9 against 3.4 (Original). At the game's
+own pace that is well inside a frame.
+
+**Proved** by `tools/port_theatre.py` (WSL: the Linux window's program,
+offscreen on llvmpipe; Windows: the .exe): a fight of two CPUs recorded,
+then played with `--theatre-keys` (the theatre's words, a test's keys:
+`at:F`, `hold`, `step`, `back`, `seek:F`, `free`, `orbit:`, `move:`,
+`zoom:`, `hud`, `time:`, `still:`, `hash`, `photo`, `clip:`,
+`clip-wait`, `plain`). `look`: frame 200 paused, a look's picture the
+playback's own without looks (`plain`), 0 pixels of 230,400 differing in
+Original, and within a channel's mean of 2 of 255 in Remastered;
+`seek`: the state's hash at frames 100, 320 and 460 played through, sought
+on from frame 10, and sought back from 470 (to a keyframe and on, and to
+the start and on), the same, every recorded hash held; `step`: a wait
+paused stays, a step is a frame on, `back` a frame back to the hash it
+had; `still`: PNGs of the window's size, the free camera turned another
+picture, the HUD hidden a small part of it, the hash the same; `gif`: a
+clip of frames 200 to 260 by `--export` and by the theatre's `clip:`
+(another run beside the playback), each decoded whole by the tool's own
+LZW: 640 by 360, 61 pictures, 203 hundredths, and the first's pictures,
+laid one over another as a viewer shows them, within a channel's mean of
+3.4 of 255 of the window's own pixels at their blanks (`--tap-window`,
+taken down to the GIF's size); `photo`: a fight of two
+CPUs paused in photo mode (the camera turned, the HUD hidden, four
+times of day, four stills) has at inputs 300, 600 and 900 the state's
+hash of the same fight without it, and photo mode is refused in a
+replay. Every check passed both ways (2026-11-27): the Linux program
+on llvmpipe (the remastered look within 1.51 of 255) and the Windows
+program on the owner's card (1.40). Examples for the eye in
+`tmp/theatre/`. The rollback self-test
+(`port-rollback`) runs the core with the theatre's hooks in.
+
 ## Stats
 
 ROADMAP 30; the owner, 2026-11-26: "a player's record kept by the

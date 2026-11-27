@@ -84,6 +84,9 @@ extern u32 port_StateSize(void);
 extern void port_StateSave(void *buf);
 /* The state of `buf` back, exactly as port_StateSave took it. */
 extern void port_StateLoad(const void *buf);
+/* How many loads there have been: a snapshot kept of a moment is of
+ * another moment once a load not its keeper's has come (port_theatre.h). */
+extern u32 g_port_state_loads;
 /* The state saved for the frames run ahead after the step itself (step.c):
  * as port_StateSave, but for video memory, which is neither waited for
  * (the painters may still be painting the step) nor kept. What the frames

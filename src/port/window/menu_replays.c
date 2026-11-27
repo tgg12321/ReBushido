@@ -94,8 +94,8 @@ const char *port_ReplaysHelp(s32 item) {
 
 /* ---- a replay as a film (sdl_export.c) ---- */
 
-const char * const g_port_replays_film_settings[2] = {
-    "film_size", "film_picture"};
+const char * const g_port_replays_film_settings[PORT_REPLAYS_FILM_SETTINGS] = {
+    "film_size", "film_picture", "clip"};
 
 s32 port_ReplaysExport(s32 item, char *note, u32 room) {
     char why[PORT_REPLAY_WHY_BYTES];

@@ -81,6 +81,10 @@ FixedMemory the port's own: a piece of memory at a fixed address and its name
 # word into a file, never laid over one.
 ReplayLead  the port's own: a run from power on, kept for the fights' replays
 
+# The theatre's ring of states (src/port/theatre.c): a snapshot the host
+# allocated and the input count it was kept at, outside the state.
+TheatreKept the port's own: a snapshot of a boundary kept for the theatre's looks
+
 # stb_vorbis (src/port/vorbis.c, src/port/vendor/stb_vorbis.c): the Ogg
 # decoder of a mod's music, as it ships. Its structures live in the memory
 # music.c gives it and are reached by their members' names; nothing of the

@@ -1141,6 +1141,11 @@ static void camera_BeginFightScene(void) {
         local = *view;
     }
 
+#if RB_PORT
+    /* the theatre's free camera, in a look of its own alone, whose state
+     * is put back after it (port_theatre.h) */
+    port_TheatreScene(&local.focus.x, &local.angles.vx, &local.eye_distance);
+#endif
     scene_Begin(&local.focus, &local.angles, local.eye_distance);
     camera_CalcEye(&local, &view->eye.x);
     eff_Update(&local.angles.vx, &view->eye.x);
@@ -1169,6 +1174,9 @@ void camera_BeginReplayScene(s32 progress) {
     local.angles.vz = view->angles.vz + g_camera_offset.angles.vz;
     local.eye_distance = view->eye_distance + g_camera_offset.eye_distance;
 
+#if RB_PORT
+    port_TheatreScene(&local.focus.x, &local.angles.vx, &local.eye_distance);
+#endif
     scene_Begin(&local.focus, &local.angles, local.eye_distance);
     camera_CalcEye(&local, &view->eye.x);
     eff_Update(&local.angles.vx, &view->eye.x);

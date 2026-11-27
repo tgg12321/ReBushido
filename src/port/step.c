@@ -49,6 +49,8 @@ static s32 g_port_ahead_frames;
 static u8 *g_port_ahead_state;
 static s32 g_port_ahead_given_up;
 static u32 g_port_ahead_blanks;
+/* the frames the steps ahead being run are, whose blanks they may pass */
+static s32 g_port_ahead_running;
 
 void port_StartGame(void (*function)(void)) {
     port_HostStartGame(function, PORT_STACK_ADDR + PORT_STACK_SIZE);
@@ -91,7 +93,7 @@ void port_GiveUpAhead(void) {
 /* A vertical blank in an ahead step (clock.c). */
 void port_AheadBlank(u32 blank) {
     if (++g_port_ahead_blanks >
-        (u32)g_port_ahead_frames * AHEAD_BLANKS_A_FRAME) {
+        (u32)g_port_ahead_running * AHEAD_BLANKS_A_FRAME) {
         port_GiveUpAhead();
         return;
     }
@@ -141,6 +143,7 @@ static s32 port_RunAhead(s32 frames, s32 drawn_before, s32 is_after_step) {
     g_port_ahead = TRUE;
     g_port_ahead_given_up = FALSE;
     g_port_ahead_blanks = 0;
+    g_port_ahead_running = g_port_ahead_frames;
     for (i = 0; i < frames && !g_port_ahead_given_up; i++) {
         /* With two frames ahead and more, all but the last were run by the
          * boundary before too, and drawn by the card then: drawing them
@@ -164,6 +167,44 @@ static s32 port_RunAhead(s32 frames, s32 drawn_before, s32 is_after_step) {
         g_port_ahead_counts.given_up++;
     }
     g_port_ahead_counts.ticks += port_HostTicks() - start;
+    return !g_port_ahead_given_up;
+}
+
+/* A look of the theatre's (port_platform.h, port_theatre.h): the state
+ * `from` put in, `frames` steps run from it as frames ahead are run (drawn,
+ * not heard, the window given no turn but the ahead blank's and the
+ * done's), and the state `back` put in after them. TRUE where they ran to
+ * the end, FALSE where they were given up (a load). */
+s32 port_RunLook(const void *from, s32 frames, const void *back) {
+    s32 was = port_ProfileSwitch(PORT_PROFILE_AHEAD);
+    s32 i;
+
+    port_StateLoad(from);
+    /* a look again while the game waits comes after a step unseen: its
+     * own steps are the card's to draw */
+    g_port_unseen = FALSE;
+    g_port_ahead = TRUE;
+    g_port_ahead_kept = FALSE;
+    g_port_ahead_given_up = FALSE;
+    g_port_ahead_blanks = 0;
+    g_port_ahead_running = frames;
+    for (i = 0; i < frames && !g_port_ahead_given_up; i++) {
+        /* The display a step leaves is the frame the step before it drew
+         * (the game draws one buffer while the other is shown): the last
+         * step is run for the display it puts up, and the card is given
+         * only its writes into video memory, so that it draws one frame a
+         * look, as it draws one a step, and the picture's own clock (the
+         * flames, the sky, the dressing) keeps the game's pace. */
+        g_port_ahead_kept = i + 1 == frames && frames > 1;
+        port_StepGame();
+    }
+    g_port_ahead_kept = FALSE;
+    if (!g_port_ahead_given_up && g_port_ahead_done_hook != NULL) {
+        g_port_ahead_done_hook();
+    }
+    g_port_ahead = FALSE;
+    port_StateLoad(back);
+    port_ProfileSwitch(was);
     return !g_port_ahead_given_up;
 }
 
@@ -293,6 +334,15 @@ void port_BeforeStep(void) {
     g_port_ahead_kept = FALSE;
     if (g_port_boundary_hook != NULL) {
         g_port_boundary_hook();
+    }
+    /* the theatre's look (port_theatre.h): the frame on show drawn again,
+     * from the free camera or without the HUD, and the step itself unseen,
+     * as after frames run ahead; none is run ahead beside it */
+    port_TheatreKeep();
+    if (port_TheatreIsOn()) {
+        g_port_unseen = port_TheatreLook();
+        g_port_ahead_last = 0;
+        return;
     }
     if (!port_MayRunAhead()) {
         g_port_ahead_last = 0;

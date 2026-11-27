@@ -102,7 +102,8 @@ the counter in the corner: `59.8/30.0 100%` is the pictures shown a
 second, the game's own frames a second (30 in a fight and 60 in the
 main menu are full speed), and the speed against the console's.
 Online, **F5** resyncs a game that has fallen out of step with the
-other player's ("Playing online", below).
+other player's ("Playing online", below). In a fight offline, **F4** is
+photo mode ("Photo mode", below).
 
 **F9 keeps a report of a problem**: press it when something looked or
 sounded wrong, or the game stuttered, and a folder
@@ -1512,8 +1513,75 @@ one of the console's vertical blanks (59.83 a second, the rate the game
 and its sound keep), so its sound is the fight's own, frame for frame.
 
 From the command line: `rebushido --replay FILE --export OUT.mp4` (or
-`.avi`), with `--window 1280x720` for another size and `--graphics
-original` for the console's picture.
+`.avi`, or `.gif`), with `--window 1280x720` for another size and
+`--graphics original` for the console's picture.
+
+## The replay theatre
+
+A replay played from the Replays page is a theatre as well: besides the
+keys above, the camera can be let loose, the HUD hidden, the time of day
+turned, the fight gone to any frame, a still kept and a clip made. None
+of it changes the fight: every frame is played as it was recorded and
+held to the recording, and the picture is the fight drawn again from
+where you put the camera.
+
+| Key | Controller | What it does |
+|---|---|---|
+| C | left stick pressed | the free camera on (from where the game's was), or the game's camera again |
+| W, S, A, D | left stick | the free camera forward, back, left, right (along the ground) |
+| E, Q | | up, down |
+| the arrows, or the mouse with its left button held | right stick | turn round the point looked at (while the free camera is on; otherwise Right is a frame on as above) |
+| the mouse with its right button held | | slide the camera sideways and up |
+| Z, X, or the mouse's wheel | the triggers | nearer, farther |
+| Shift held | | four times as fast |
+| H | right stick pressed | the HUD hidden or shown (the game's and the window's own: the match strip, training's lines) |
+| T | | the time of day: dawn, day, dusk, night, the stage's own, and back to the fight's |
+| V | | a still: the picture alone, at the window's full size, as a PNG in `screenshots/` (`still-...png`) |
+| `,` (or Left with the free camera off) | | a frame back (and pause) |
+| `.` | D-pad right, R1 | a frame on (and pause) |
+| Page Up, Page Down | | five seconds back, on |
+| 1 to 9, 0 | | a tenth of the way on each, 0 the start |
+| `[`, `]` | | the clip's first frame, its last |
+| G | | a clip of the frames marked (or five seconds from the frame on show) |
+| Tab | | the line of keys hidden or shown |
+
+The free camera moving a fight that plays shows it from there as it
+goes; paused, it is the frame on show seen from wherever you turn. Going
+back is quick: the theatre keeps the fight's state every five seconds as
+it passes, and a frame back runs on from the nearest of those. The time
+of day changes a **Remastered Classic** stage or an arena (as on the
+stage page) in the Remastered picture.
+
+**A clip** (G) is made beside the game, as a film is: another run of the
+program plays the replay from the clip's first frame to its last, in the
+theatre's view as it is when G is pressed (the free camera where it is,
+the HUD as it is), and writes it into `films/` beside the program, named
+by the replay and its frames (`...-clip-200-350.gif`). The settings
+menu's Replays page, **Theatre's clip** (`clip`): **GIF** (built in), 640
+pixels across, the fight's own 30 frames a second and no sound, which
+every chat and browser shows; or **Film**, an .mp4 (Windows) or .avi as
+"A film of a replay" above makes, of `film_size` and with the sound. The
+line says when it is made.
+
+From the command line: `--export OUT.gif` (or .mp4, .avi) `--export-from
+F --export-to F` makes a clip of those frames, and `--theatre-view
+free,x,y,z,pitch,yaw,roll,distance,hud,time` (ten numbers) puts the
+camera there.
+
+## Photo mode
+
+In a fight, **F4** stops the fight where it is, for a picture: the game
+waits, nothing of it moves, and the keys are the theatre's (above): the
+free camera (W A S D, Q E, the arrows or the mouse, Z X, Shift), **H**
+the HUD, **T** the time of day, **V** a still into `screenshots/`. **F4**
+or **Escape** (or a controller's B or Back) and the fight goes on from
+exactly where it stopped, as if nothing had happened: the free camera,
+the HUD and the time go back to the fight's own. It is there to show the
+stages' skies and dressing: with Remastered and a Remastered Classic
+stage, turn the time to dawn or dusk and the camera to the sky.
+
+Not online (the other player would not wait), nor over a link cable;
+in a replay the theatre's keys are the same.
 
 ## Stats
 

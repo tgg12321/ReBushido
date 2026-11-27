@@ -65,6 +65,7 @@
 #include "port_fight_music.h"
 #include "port_match.h"
 #include "port_duo.h"
+#include "port_theatre.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "portmap.h"
@@ -1948,6 +1949,50 @@ static void port_WriteShot(void) {
         path);
 }
 
+static void port_DrawPicture(u32 blank, s32 may_tap);
+
+/* The theatre's still (sdl_theatre.c): the picture alone, as the window
+ * draws it under the counter, the line and the pages, at the window's
+ * size, a PNG at `path`, or in screenshots/ beside the program as
+ * `still-YYYYMMDD-HHMMSS-NNN.png` where `path` is NULL. Written here, so
+ * that a test finds it as soon as the line says so. */
+s32 port_WriteWindowStill(
+    const char *path, char *written, u32 room, s32 *w, s32 *h) {
+    char folder[PATH_BYTES_MAX];
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    if (path == NULL) {
+        char *base = SDL_GetBasePath();
+        time_t now = time(NULL);
+        const struct tm *when = localtime(&now);
+
+        snprintf(folder, sizeof(folder), "%s%s", base != NULL ? base : "",
+                 SHOTS_FOLDER);
+        SDL_free(base);
+        if (when == NULL) {
+            return FALSE;
+        }
+        port_MakeFolder(folder);
+        snprintf(written, room, "%s/still-%04d%02d%02d-%02d%02d%02d-%03u.png",
+                 folder, when->tm_year + SHOT_EPOCH_YEAR, when->tm_mon + 1,
+                 when->tm_mday, when->tm_hour, when->tm_min, when->tm_sec,
+                 g_port_shots_taken % SHOT_NUMBERS);
+        g_port_shots_taken++;
+    } else {
+        snprintf(written, room, "%s", path);
+    }
+    port_OpenWindow();
+    port_DrawPicture(port_GetBlankCount(), FALSE);
+    port_WindowSize(&window_w, &window_h);
+    if (!port_ReadWindowPixels(window_w, window_h)) {
+        return FALSE;
+    }
+    *w = window_w;
+    *h = window_h;
+    return port_WritePngFile(written, g_port_window_pixels, window_w, window_h);
+}
+
 /* The displayed rectangle of video memory into the window: black where
  * the display is off or has no size. */
 static void port_DrawPicture(u32 blank, s32 may_tap) {
@@ -2569,9 +2614,13 @@ static void port_DrawCounter(void) {
 
     /* what is laid over the picture's corner is laid over it with the
      * stage pages' kinds of stage (stage_page.c) */
-    port_DrawStagePage();
-    port_DrawMatchPage();
-    port_DrawTopPage();
+    /* the theatre's picture without the HUD has none of the window's own
+     * over the fight either (sdl_theatre.c) */
+    if (!port_TheatreHidesOverlays()) {
+        port_DrawStagePage();
+        port_DrawMatchPage();
+        port_DrawTopPage();
+    }
     port_DrawWindowPage();
     if (!g_port_show_fps) {
         return;
@@ -3445,6 +3494,11 @@ static void port_ReadEvents(void) {
     s32 pad;
 
     while (SDL_PollEvent(&event)) {
+        if (port_TheatreWindowEvent(&event)) {
+            /* the theatre's or photo mode's key, button or mouse
+             * (sdl_theatre.c) */
+            continue;
+        }
         if (port_ReplayWindowEvent(&event)) {
             /* a playback's key or button (sdl_replay.c) */
             continue;
@@ -3534,6 +3588,9 @@ static void port_ReadInput(u32 blank) {
 static void port_ReadInputLate(void) {
     s32 was;
 
+    /* the theatre's turn: its view for the look about to be run, photo
+     * mode's wait (sdl_theatre.c) */
+    port_TheatreBoundary();
     if (!g_port_is_open) {
         return;
     }
@@ -3553,7 +3610,8 @@ static void port_ReadInputLate(void) {
     }
     /* in a load, no frame is run ahead across it (step.c) */
     g_port_ahead_held = port_LoadKind() != PORT_LOAD_NONE;
-    if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0 &&
+    if (g_port_has_gl && g_port_tween_on &&
+        (port_GetRunAhead() > 0 || port_TheatreIsOn()) &&
         port_TweenTakeMirrorBehind()) {
         /* A picture between frames that could not keep what it changed of
          * the card's mirror of video memory put back what video memory
