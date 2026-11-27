@@ -43,6 +43,9 @@ void fight_ApplyConfig(void) {
     g_fight_wins_p2 = 0;
     g_fight_wins_p1 = 0;
 #if RB_PORT
+    /* a local tournament's match: each side a player's or the CPU's
+     * (port_tournament.h) */
+    port_TournamentApplyConfig();
     /* a match begins with the rule chosen (port_match.h) */
     port_MatchBegin(mode);
 #endif

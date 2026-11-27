@@ -102,6 +102,7 @@ enum {
 
 #define PORT_STATS_NAME_BYTES 24
 #define PORT_STATS_REPLAY_BYTES 64
+#define PORT_STATS_DATE_BYTES 24
 
 typedef struct {
     /* when it was decided, the PC's own time */
@@ -136,12 +137,61 @@ typedef struct {
     u32 frames;                           /* the game's frames, 30 a second */
     char opponent[PORT_STATS_NAME_BYTES]; /* an online one's name, or "" */
     char replay[PORT_STATS_REPLAY_BYTES]; /* its file in replays/, or "" */
+    /* a local tournament's fight (port_tournament.h): the tournament's
+     * date as its own line has it (`begun`), or "" */
+    char tournament[PORT_STATS_DATE_BYTES];
 } PortStatsFight;
+
+/* A local tournament over (port_tournament.h): its own line of the
+ * record, `tournament`, beside the fights. Its entrants in their order of
+ * entry, each a person (`cpu` PORT_STATS_PERSON, the pad) or a CPU of a
+ * level, with its place, its matches lost and its seed; its matches in
+ * the order they were played, each its part of the bracket
+ * (port_bracket.h, PORT_BRACKET_WINNERS...) and round, its two entrants
+ * and its winner. */
+#define PORT_STATS_TOURNAMENT_ENTRANTS 8
+#define PORT_STATS_TOURNAMENT_MATCHES 15
+
+typedef struct {
+    char name[PORT_STATS_NAME_BYTES];
+    s8 cpu;
+    u8 pad;
+    u8 place;
+    u8 losses;
+    u8 seed;
+} PortStatsTournamentEntrant;
+
+typedef struct {
+    u8 part;
+    u8 round;
+    u8 first;
+    u8 second;
+    u8 winner;
+} PortStatsTournamentMatch;
+
+typedef struct {
+    /* when it was over, the PC's own time; and when it was begun, as the
+     * fights of it have it */
+    u16 year;
+    u8 month, day, hour, minute, second;
+    char begun[PORT_STATS_DATE_BYTES];
+    u8 count;
+    u8 is_double;
+    u8 seeding; /* PORT_TOURNAMENT_SEED_... */
+    u8 rule;    /* PORT_MATCH_FIRST_TO or PORT_MATCH_STOCK */
+    u8 rule_count;
+    u8 champion; /* an entrant's number */
+    u8 played;   /* matches */
+    PortStatsTournamentEntrant entrant[PORT_STATS_TOURNAMENT_ENTRANTS];
+    PortStatsTournamentMatch match[PORT_STATS_TOURNAMENT_MATCHES];
+} PortStatsTournament;
 
 /* ---- the file (stats_store.c) ---- */
 
-/* The format's version, the file's first line's number. */
-#define PORT_STATS_VERSION 1
+/* The format's version, the file's first line's number: 2 since the
+ * tournaments' lines (a version 1 program keeps a file of 2 aside, as it
+ * keeps any later version's; this one reads both). */
+#define PORT_STATS_VERSION 2
 #define PORT_STATS_PATH_BYTES 512
 
 /* The file is `path` (the window: rebushido-stats.txt beside the
@@ -162,11 +212,21 @@ extern u32 port_StatsGeneration(void);
 extern s32 port_StatsAdd(PortStatsFight *fight);
 /* The replay's name given to the fight `index` and the file written. */
 extern void port_StatsSetReplay(s32 index, const char *name);
+/* The tournaments kept, oldest first; one added and the file written
+ * again (FALSE as port_StatsAdd's). */
+extern s32 port_StatsTournamentCount(void);
+extern const PortStatsTournament *port_StatsTournamentAt(s32 index);
+extern s32 port_StatsAddTournament(const PortStatsTournament *tournament);
 
 /* A fight as the file's line, and back: the line's length (0: no room),
  * or FALSE for a line that is not a fight. */
 extern u32 port_StatsFormat(const PortStatsFight *fight, char *out, u32 room);
 extern s32 port_StatsParse(const char *line, u32 length, PortStatsFight *out);
+/* ... and a tournament's */
+extern u32 port_StatsFormatTournament(
+    const PortStatsTournament *tournament, char *out, u32 room);
+extern s32 port_StatsParseTournament(
+    const char *line, u32 length, PortStatsTournament *out);
 
 /* ---- the counting (stats_store.c), for the page and the tests ---- */
 
@@ -192,7 +252,8 @@ enum {
     PORT_STATS_BY_ONLINE = 6,
     PORT_STATS_BY_RANKED = 7,
     PORT_STATS_BY_TWO_ON_TWO = 8, /* beside its mode's */
-    PORT_STATS_MODES = 9
+    PORT_STATS_BY_TOURNAMENT = 9, /* ... and a tournament's fights */
+    PORT_STATS_MODES = 10
 };
 
 typedef struct {

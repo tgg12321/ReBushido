@@ -141,6 +141,13 @@ const char *port_NameRoster(s32 roster) {
         g_port_roster_names, NAME_COUNT(g_port_roster_names), roster);
 }
 
+const char *port_NameCharacter(s32 character) {
+    if (character < 0 || character > CHARACTER_COUNT) {
+        return "?";
+    }
+    return port_NameRoster(g_fighter_character_rosters[character]);
+}
+
 const char *port_NameWeapon(s32 weapon) {
     return port_NameOf(
         g_port_weapon_names, NAME_COUNT(g_port_weapon_names), weapon);

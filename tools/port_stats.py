@@ -39,7 +39,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, 'tools'))
 
 HEAD_WORD = 'rebushido-stats'
-VERSION = 1
+VERSION = 2
 CASES = ['kill', 'surrender', 'rollback', 'replay']
 PROGRAMS = {64: 'build/port/rebushido', 32: 'build/port32/rebushido'}
 SECONDS = 1800
@@ -57,6 +57,9 @@ def read_record(path):
         if not line:
             continue
         words = line.split(' ')
+        if words[0] == 'tournament':
+            # a local tournament's line (version 2; tools/port_tournament.py)
+            continue
         if words[0] != 'fight':
             raise ValueError('%s: a line that is not a fight: %s' % (path, line))
         fights.append(dict(w.split('=', 1) for w in words[1:]))

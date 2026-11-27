@@ -47,6 +47,7 @@ state    src/port/sound.c       libsnd's tick and the mixer
 state    src/port/spu.c         the sound chip and its memory
 state    src/port/stage_choice.c  the kinds of stage chosen on the stage pages, and the arena in play
 state    src/port/top_menu.c      ReBushido's top menu: its page, its cursor, the settings menu asked for
+state    src/port/tournament.c    a local tournament: its setup, its bracket, the match in play
 state    src/port/training.c      the training mode: its fight, the dummy's place in its slot, the freeze, the presses shown
 state    src/port/stream.c      the movie's ring of sectors
 state    src/port/stub.c        the counts of what the port does not do yet
@@ -73,6 +74,8 @@ outside  src/port/arenas.c      the mods' arenas, read once as the program start
 outside  src/port/weapons.c     the mods' weapons, read once as the program starts and only read after
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/paint.c       the software GPU's painter: its settings, its ring and its thread
+outside  src/port/tournament_ask.c  a local tournament's asks from the window, the record written, --tournament's own play
+outside  src/port/bracket.c     a bracket's arithmetic: no variable of its own
 outside  src/port/training_kept.c  training's switches the run asked for, the dummy's recorded slots, the moment kept
 outside  src/port/play_switches.c  the gameplay switches the run asked for (unlock_all, stage_select_everywhere, menu, bugfixes, the game's options, the CPU's levels)
 outside  src/port/cpu_run.c     the port's CPU's seed asked for (--cpu-seed) and its log (--cpu-log)

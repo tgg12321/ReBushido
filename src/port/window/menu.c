@@ -10,6 +10,7 @@
 
 #include "menu.h"
 #include "port_stats.h"
+#include "port_tournament.h"
 #include "shared.h"
 #include "sdl_window.h"
 #include "update.h"
@@ -38,7 +39,20 @@ enum {
     PAGE_UPDATE,  /* Updates: the newer release, its notes (update.h) */
     PAGE_REPLAYS, /* the replays kept, to watch (menu_replays.c) */
     PAGE_STATS,   /* the player's record (menu_stats.c): a view of it */
+    /* a local tournament (tournament_page.c): the page it is begun from,
+     * an entrant's, the bracket between matches */
+    PAGE_TOURNAMENT,
+    PAGE_ENTRANT,
+    PAGE_BRACKET,
 };
+
+/* The tournament's page's own settings, by name, above its entrants. */
+static const char * const g_menu_tournament_settings[] = {
+    "tournament_entrants", "tournament_elimination", "tournament_seeding",
+    "tournament_match"};
+#define TOURNAMENT_SETTINGS 4
+/* the menu's turns on the bracket before a test's picture of it */
+#define BRACKET_SHOT_TURNS 12
 
 /* What can be typed into a row of the Play online page. */
 #define TYPED_BYTES PORT_NET_ADDRESS_BYTES
@@ -67,6 +81,7 @@ enum {
     ROW_STATS_VIEW,   /* a list of it: `index` the view (menu.h) */
     ROW_STAT_LINE,    /* a line of a view: `index` (menu_stats.c) */
     ROW_STAT_FIGHT,   /* a fight of the history: `index` its row */
+    ROW_TOUR_ITEM,    /* a tournament page's: `index` its item */
 };
 
 typedef struct {
@@ -122,6 +137,13 @@ static struct {
     s32 stats_view;
     s32 stats_cursor;
     u32 stats_generation;
+    /* the tournament's pages: the bracket's count of changes the page was
+     * built for, where the setup page's cursor was, the bracket's turns
+     * since it came up and whether a test's picture of it was taken */
+    u32 tour_generation;
+    s32 tour_cursor;
+    s32 bracket_turns;
+    s32 bracket_shot;
     /* frames since the cursor last moved (its glow), and of the page's
      * fade in */
     s32 pulse;
@@ -167,6 +189,8 @@ static void port_MenuBuild(s32 page, s32 cursor) {
     if (page != g_menu.page) {
         /* another page fades in, as the game's pages come up */
         g_menu.fade = 0;
+        g_menu.bracket_turns = 0;
+        g_menu.bracket_shot = FALSE;
     }
     g_menu.page = page;
     g_menu.pulse = 0;
@@ -283,6 +307,35 @@ static void port_MenuBuild(s32 page, s32 cursor) {
                             -1);
         }
         port_MenuAddRow(ROW_BACK, 0);
+    } else if (page == PAGE_TOURNAMENT || page == PAGE_ENTRANT ||
+               page == PAGE_BRACKET) {
+        s32 items[PORT_TOUR_ITEMS_MAX];
+        s32 count = port_TournamentPageItems(
+            page == PAGE_TOURNAMENT ? PORT_TOUR_PAGE_SETUP
+            : page == PAGE_ENTRANT  ? PORT_TOUR_PAGE_ENTRANT
+                                    : PORT_TOUR_PAGE_BRACKET,
+            items, PORT_TOUR_ITEMS_MAX);
+        s32 setting;
+
+        g_menu.tour_generation = port_TournamentPageGeneration();
+        if (page == PAGE_TOURNAMENT) {
+            for (setting = 0; setting < TOURNAMENT_SETTINGS; setting++) {
+                for (i = 0; i < port_CountChoices(); i++) {
+                    if (strcmp(port_FindChoice(i)->name,
+                               g_menu_tournament_settings[setting]) == 0) {
+                        port_MenuAddRow(ROW_CHOICE, i);
+                    }
+                }
+            }
+        }
+        for (i = 0; i < count; i++) {
+            port_MenuAddRow(ROW_TOUR_ITEM, items[i]);
+        }
+        if (page != PAGE_BRACKET || count == 0) {
+            /* (the bracket's page before the game has begun it: Back
+             * alone) */
+            port_MenuAddRow(ROW_BACK, 0);
+        }
     } else {
         for (i = 0; i < BUTTONS; i++) {
             port_MenuAddRow(ROW_BUTTON, i);
@@ -583,6 +636,14 @@ static void port_MenuDescribe(
         port_StatsPageDescribe(g_menu.stats_view, row->index, label,
                                LABEL_BYTES, value, VALUE_BYTES);
         break;
+    case ROW_TOUR_ITEM:
+        port_TournamentPageDescribe(
+            row->index,
+            g_menu.is_typing && row == &g_menu.rows[g_menu.cursor]
+                ? g_menu.typed
+                : NULL,
+            label, LABEL_BYTES, value, VALUE_BYTES, is_arrows);
+        break;
     case ROW_NET_ITEM:
         port_OnlineDescribe(
             row->index,
@@ -625,6 +686,8 @@ static const char *port_MenuHelp(void) {
         return "Rollback netplay with another PC: host a game, or join one";
     case ROW_NET_ITEM:
         return port_OnlineHelp(row->index, g_menu.is_typing);
+    case ROW_TOUR_ITEM:
+        return port_TournamentPageHelp(row->index, g_menu.is_typing);
     case ROW_UPDATES:
         return "Whether there is a newer ReBushido, what is new in it, and "
                "installing it";
@@ -676,7 +739,13 @@ static const char *port_MenuHelp(void) {
 static s32 port_MenuKeepTyped(void) {
     const MenuRow *row = &g_menu.rows[g_menu.cursor];
     s32 page_cursor = g_menu.cursor;
-    s32 what = port_OnlineKeep(
+    s32 what;
+
+    if (row->kind == ROW_TOUR_ITEM) {
+        /* an entrant's name */
+        return port_TournamentPageKeep(row->index, g_menu.typed);
+    }
+    what = port_OnlineKeep(
         row->index, g_menu.typed, g_menu.note, sizeof(g_menu.note));
 
     if (what == PORT_ONLINE_REBUILD && g_menu.is_open) {
@@ -706,6 +775,13 @@ void port_MenuType(char c) {
                 g_menu.note, sizeof(g_menu.note), "Not kept: %s", g_menu.typed);
         }
     } else if (length + 1 < sizeof(g_menu.typed) &&
+               length + 1 < PORT_TOURNAMENT_NAME_BYTES &&
+               g_menu.rows[g_menu.cursor].kind == ROW_TOUR_ITEM &&
+               port_TournamentPageTakes(g_menu.rows[g_menu.cursor].index, c)) {
+        g_menu.typed[length] = c;
+        g_menu.typed[length + 1] = 0;
+    } else if (length + 1 < sizeof(g_menu.typed) &&
+               g_menu.rows[g_menu.cursor].kind == ROW_NET_ITEM &&
                port_OnlineTakes(g_menu.rows[g_menu.cursor].index, c)) {
         g_menu.typed[length] = c;
         g_menu.typed[length + 1] = 0;
@@ -730,6 +806,10 @@ static void port_MenuStepChoice(s32 choice, s32 step) {
     if (of->takes == PORT_TAKES_NOW) {
         port_WindowApplyChoice(choice);
     }
+    if (g_menu.page == PAGE_TOURNAMENT) {
+        /* (more entrants or fewer) */
+        port_MenuBuild(PAGE_TOURNAMENT, g_menu.cursor);
+    }
 }
 
 static void port_MenuMove(s32 step) {
@@ -745,6 +825,17 @@ static void port_MenuMove(s32 step) {
  * or Play online to the first page, and from the first page (or a Play
  * online page the menu was opened on) out of the menu. */
 static void port_MenuBack(void) {
+    if (g_menu.page == PAGE_ENTRANT) {
+        port_MenuBuild(PAGE_TOURNAMENT, g_menu.tour_cursor);
+        return;
+    }
+    if (g_menu.page == PAGE_BRACKET ||
+        (g_menu.page == PAGE_TOURNAMENT &&
+         g_menu.opened_on == PORT_MENU_OPEN_TOURNAMENT)) {
+        /* to the main menu, whose Tournament comes back */
+        port_MenuClose();
+        return;
+    }
     if (g_menu.page == PAGE_BUTTONS) {
         port_MenuBuild(PAGE_GROUP, g_menu.group_cursor);
     } else if (g_menu.page == PAGE_STATS &&
@@ -850,6 +941,25 @@ static void port_MenuAccept(void) {
             port_MenuClose();
         }
         break;
+    case ROW_TOUR_ITEM: {
+        s32 what = port_TournamentPageAccept(
+            row->index, g_menu.typed, sizeof(g_menu.typed), g_menu.note,
+            sizeof(g_menu.note));
+
+        if (what == PORT_TOUR_TYPE) {
+            g_menu.is_typing = TRUE;
+        } else if (what == PORT_TOUR_ENTRANT) {
+            g_menu.tour_cursor = g_menu.cursor;
+            port_MenuBuild(PAGE_ENTRANT, 0);
+        } else if (what == PORT_TOUR_BRACKET) {
+            port_MenuBuild(PAGE_BRACKET, 0);
+        } else if (what == PORT_TOUR_CLOSE) {
+            port_MenuClose();
+        } else if (what == PORT_TOUR_REBUILD) {
+            port_MenuBuild(g_menu.page, g_menu.cursor);
+        }
+        break;
+    }
     case ROW_NET_ITEM: {
         s32 page_cursor = g_menu.cursor;
         s32 what =
@@ -936,6 +1046,12 @@ void port_MenuPress(s32 what) {
     case PORT_MENU_RIGHT:
         if (row->kind == ROW_CHOICE) {
             port_MenuStepChoice(row->index, what == PORT_MENU_LEFT ? -1 : 1);
+        } else if (row->kind == ROW_TOUR_ITEM) {
+            if (port_TournamentPageStep(
+                    row->index, what == PORT_MENU_LEFT ? -1 : 1) ==
+                PORT_TOUR_REBUILD) {
+                port_MenuBuild(g_menu.page, g_menu.cursor);
+            }
         } else if (g_menu.page == PAGE_ONLINE) {
             if (port_OnlineStep(row->index, what == PORT_MENU_LEFT ? -1 : 1) ==
                 PORT_ONLINE_REBUILD) {
@@ -1040,6 +1156,13 @@ void port_MenuOpen(const char *path) {
             }
         }
         port_MenuBuild(PAGE_ONLINE, 0);
+    } else if (g_menu.opened_on == PORT_MENU_OPEN_TOURNAMENT) {
+        /* Tournament: its page, Back out of the menu */
+        port_TournamentPageOpened();
+        port_MenuBuild(PAGE_TOURNAMENT, 0);
+    } else if (g_menu.opened_on == PORT_MENU_OPEN_BRACKET) {
+        port_TournamentPageOpened();
+        port_MenuBuild(PAGE_BRACKET, 0);
     } else if (g_menu.opened_on == PORT_MENU_OPEN_TRAINING) {
         /* Training Options: the Training group's page */
         for (i = 0; i < g_menu.row_count; i++) {
@@ -1055,6 +1178,15 @@ void port_MenuOpen(const char *path) {
 }
 
 void port_MenuOpenOn(s32 page) { g_menu.open_on = page; }
+
+s32 port_MenuBracketShotDue(void) {
+    if (!g_menu.is_open || g_menu.page != PAGE_BRACKET || g_menu.bracket_shot ||
+        g_menu.bracket_turns < BRACKET_SHOT_TURNS || g_menu.row_count == 0) {
+        return FALSE;
+    }
+    g_menu.bracket_shot = TRUE;
+    return TRUE;
+}
 
 s32 port_MenuIsOpen(void) { return g_menu.is_open; }
 
@@ -1144,6 +1276,13 @@ static void port_MenuTitle(char *out, u32 room) {
     }
     if (g_menu.page == PAGE_STATS) {
         snprintf(out, room, "%s", port_StatsViewName(g_menu.stats_view));
+        return;
+    }
+    if (g_menu.page == PAGE_TOURNAMENT || g_menu.page == PAGE_ENTRANT) {
+        snprintf(out, room, "%s",
+                 port_TournamentPageTitle(
+                     g_menu.page == PAGE_ENTRANT ? PORT_TOUR_PAGE_ENTRANT
+                                                 : PORT_TOUR_PAGE_SETUP));
         return;
     }
     snprintf(out, room, "%s",
@@ -1266,6 +1405,9 @@ void port_MenuTick(void) {
     if (g_menu.fade < PORT_LOOK_FADE_FRAMES) {
         g_menu.fade++;
     }
+    if (g_menu.page == PAGE_BRACKET) {
+        g_menu.bracket_turns++;
+    }
 }
 
 void port_MenuDrawLook(PortLook *look, s32 is_own) {
@@ -1293,7 +1435,23 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
             port_MenuBuild(PAGE_UPDATE, g_menu.cursor);
         }
     }
+    if ((g_menu.page == PAGE_BRACKET || g_menu.page == PAGE_TOURNAMENT) &&
+        port_TournamentPageGeneration() != g_menu.tour_generation) {
+        /* the bracket moved on (begun, a match decided, over) */
+        port_MenuBuild(g_menu.page, g_menu.cursor);
+    }
     port_LookPanel(look, is_own);
+    if (g_menu.page == PAGE_BRACKET) {
+        s32 items[ROWS_MAX];
+
+        for (i = 0; i < g_menu.row_count; i++) {
+            items[i] = g_menu.rows[i].index;
+        }
+        port_TournamentDrawBracket(look, items, g_menu.row_count, g_menu.cursor,
+                                   g_menu.pulse, g_menu.note);
+        port_LookFade(look, g_menu.fade, PORT_LOOK_FADE_FRAMES);
+        return;
+    }
     port_MenuTitle(label, sizeof(label));
     port_LookTitle(look, label);
     if (g_menu.page == PAGE_BUTTONS) {

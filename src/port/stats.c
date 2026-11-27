@@ -433,6 +433,20 @@ static s32 port_StatsMake(u32 count, s32 side_won, s32 how) {
     line->cpu = (s8)(!g_fighters[other].is_cpu ? PORT_STATS_PERSON
                      : port_CpuPlays(other)    ? port_GetCpuLevel(other)
                                                : PORT_CPU_ORIGINAL);
+    if (port_TournamentIsPlaying()) {
+        /* a local tournament's fight: its CPU's level the entrant's, and
+         * the tournament's date (port_tournament.h) */
+        const char *begun = port_TournamentDate();
+        s32 level;
+
+        if (port_CpuPlays(other) && port_TournamentCpuLevel(other, &level)) {
+            line->cpu = (s8)level;
+        }
+        for (i = 0; begun[i] != 0 && i + 1 < PORT_STATS_DATE_BYTES; i++) {
+            line->tournament[i] = begun[i];
+        }
+        line->tournament[i] = 0;
+    }
     line->result = port_ResultFor(me, side_won);
     line->how = (u8)how;
     line->frames = end - start;

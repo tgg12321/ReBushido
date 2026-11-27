@@ -108,10 +108,11 @@ shot = false
 BOOT = ["movie+300 START", "movie+600 CROSS", "movie+900 START"]
 # the game's own sounds first: Singleplayer and back (confirm, cancel),
 # the cursor down three rows to Online Play (the cursor), and Online Play
-# (confirm); after the pages, down to Options; after the menu, up to
-# Online Play again
+# (confirm); after the pages, down past Tournament to Options; after the
+# menu, up to Online Play again
 MENU_PRESSES = ["menu+20 CROSS", "menu+50 TRIANGLE", "menu+80 DOWN", "menu+100 DOWN", "menu+120 DOWN",
-                "menu+160 CROSS", "menu+300 DOWN", "menu+340 CROSS", "menu+480 UP", "menu+520 CROSS"]
+                "menu+160 CROSS", "menu+300 DOWN", "menu+320 DOWN", "menu+340 CROSS", "menu+480 UP",
+                "menu+500 UP", "menu+520 CROSS"]
 # the game's own presses' sounds: (press's offset, sound)
 GAME_SOUNDS = [(20, 'confirm'), (50, 'cancel'), (80, 'cursor'), (100, 'cursor'), (120, 'cursor'), (160, 'confirm')]
 # on the pages: down, down, up (the cursor), Host a room (confirm), back,

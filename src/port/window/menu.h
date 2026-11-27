@@ -198,6 +198,10 @@ enum {
     PORT_MENU_OPEN_MAIN = 0,
     PORT_MENU_OPEN_ONLINE = 1,
     PORT_MENU_OPEN_TRAINING = 2, /* the Training group's page */
+    /* a local tournament's page, to begin one, and the bracket of the one
+     * on (tournament_page.c) */
+    PORT_MENU_OPEN_TOURNAMENT = 3,
+    PORT_MENU_OPEN_BRACKET = 4,
 };
 
 extern void port_MenuOpenOn(s32 page);
@@ -264,7 +268,8 @@ enum {
     PORT_STATS_VIEW_OPPONENTS = 5,
     PORT_STATS_VIEW_KILLS = 6,
     PORT_STATS_VIEW_HISTORY = 7,
-    PORT_STATS_VIEWS = 8
+    PORT_STATS_VIEW_TOURNAMENTS = 8, /* the local tournaments over */
+    PORT_STATS_VIEWS = 9
 };
 
 /* The record counted again: the lines of a view (the totals' lines, a
@@ -282,6 +287,58 @@ extern const char *port_StatsViewName(s32 view);
 /* A fight of the history: its replay played (TRUE, the menu closes), or
  * FALSE with why in `note`. */
 extern s32 port_StatsPageAccept(s32 item, char *note, u32 room);
+
+/* ---- the settings menu's pages of a local tournament (tournament_page.c)
+ * ---- */
+
+/* The pages: the tournament's (to begin one), an entrant's, the
+ * bracket's. */
+enum {
+    PORT_TOUR_PAGE_SETUP = 0,
+    PORT_TOUR_PAGE_ENTRANT = 1,
+    PORT_TOUR_PAGE_BRACKET = 2,
+};
+
+/* What a press on an item asks of the menu. */
+enum {
+    PORT_TOUR_NOTHING = 0,
+    PORT_TOUR_REBUILD = 1, /* the page's rows are others now */
+    PORT_TOUR_TYPE = 2,    /* the row is typed into, from `typed` */
+    PORT_TOUR_ENTRANT = 3, /* the entrant's page */
+    PORT_TOUR_BRACKET = 4, /* the bracket's page */
+    PORT_TOUR_CLOSE = 5,   /* the menu closed: the game goes on */
+};
+
+#define PORT_TOUR_ITEMS_MAX 12
+
+/* A page's items (the setup page's settings are the menu's own rows,
+ * before them), and a number that changes where the bracket has. */
+extern s32 port_TournamentPageItems(s32 page, s32 *items, s32 most);
+extern u32 port_TournamentPageGeneration(void);
+/* An item's label and value; `typed` what is being typed into it, or
+ * NULL. */
+extern void port_TournamentPageDescribe(
+    s32 item, const char *typed, char *label, u32 label_room, char *value,
+    u32 value_room, s32 *is_arrows);
+extern const char *port_TournamentPageHelp(s32 item, s32 is_typing);
+extern s32 port_TournamentPageAccept(
+    s32 item, char *typed, u32 typed_room, char *note, u32 note_room);
+/* Left or Right on an item (PORT_TOUR_...). */
+extern s32 port_TournamentPageStep(s32 item, s32 step);
+/* Whether a name's row takes the letter `c`, and what was typed kept. */
+extern s32 port_TournamentPageTakes(s32 item, char c);
+extern s32 port_TournamentPageKeep(s32 item, const char *typed);
+extern const char *port_TournamentPageTitle(s32 page);
+/* The menu opened on one of them: a Leave half pressed forgotten. */
+extern void port_TournamentPageOpened(void);
+/* The bracket's page drawn whole: the bracket, its rows (`items`, the
+ * cursor's lit), the line under them (`note` where there is one). */
+extern void port_TournamentDrawBracket(
+    PortLook *look, const s32 *items, s32 count, s32 cursor, s32 pulse,
+    const char *note);
+/* A test's picture of the bracket (--menu-shots) due: once each time the
+ * bracket's page has come up and faded in. */
+extern s32 port_MenuBracketShotDue(void);
 
 /* ---- the settings menu's Play online page (menu_online.c) ---- */
 

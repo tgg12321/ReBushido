@@ -787,6 +787,33 @@ the stage").
     (item 27's levels) on one machine or in a room (item 22), single or
     double elimination, under the match rules of item 21, the bracket
     shown between matches and its result kept in the stats (item 30).
+    **Done on one machine** ([`PORT.md`](PORT.md), "A local tournament";
+    [`PLAYING.md`](PLAYING.md), "Tournament"): the main menu's
+    Tournament (its fifth row) opens its page: 2 to 8 entrants, each a
+    pad's player or the CPU at a level (a CPU's fighter and weapon set or
+    drawn each match), single or double elimination (a losers' bracket,
+    the grand final with a bracket reset), the seeds drawn or in order,
+    byes to the top seeds, each match one fight (a draw fought again),
+    First to 2 or 3, or Stock 2 or 3; the bracket's page between matches
+    (each round's matches, the next lit, the lines on to the champion),
+    Play or Leave (not kept, never resumed); a player's match at versus
+    mode's select screen with his own pad, the CPU's side picked for it
+    there; two CPUs straight to their fight, judged after three minutes
+    with neither fallen (the CPU can circle for ever); the result a line
+    of the record (version 2: entrants, places, every match), the fights
+    a person played counted as versus and as the tournament's, the Stats
+    page's Tournaments. Proved by `tests/port/bracket.c` (2 to 8, single
+    and double, byes, resets, 73,974 checks), `tests/port/stats.c` and
+    `tools/port_tournament.py` (eight CPUs to the champion in the
+    window's program begun from its page, the same on both sizes of the
+    headless port, byes, a person's match at the select screen, the
+    rollback self-test with run-ahead; pictures in `tmp/tournament/`).
+    Left: **in a room** (item 22) -- not done: the lobby and the session
+    stay as they are (protocol 21, lobby 4); a room's tournament needs the
+    lobby to carry the bracket and the rotation to follow it, a change of
+    both, so it waits for its own work; a tournament resumed after the
+    program closes; Crew and two on two as a tournament's rule; the
+    owner's eye on the pages.
 32. **The sound remastered**, as a setting (the original's sound stays):
     a reverb of each stage's own (the dojo, the cave, the open), sound
     placed for headphones (HRTF), and better resampling of the game's
