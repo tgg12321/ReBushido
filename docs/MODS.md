@@ -2413,7 +2413,14 @@ away with the reason on the online page.
   another from the load on (26 frames shorter, the file read from the
   mod). The rollback self-test passes with it picked (94 rounds, 752
   frames, both sizes). The club swung in the broadsword's blow, in the
-  remastered picture: `tmp/modsleft/listen/` of the work.
+  remastered picture: `tmp/modsleft/listen/` of the work. Online
+  (`tools/port_net.py`'s session, the host's R1, both machines with the
+  kanabo of its own motions, sounds and dropped weapon; both sizes): both
+  say the first fighter picks the kanabo and reads its motions, 73 state
+  hashes the same; each machine's replay plays back with the mod (26
+  hashes as recorded) and is refused without it; a guest with the shipped
+  kanabo (its file and motions not the same) is turned away before the
+  game, "gameplay mods ... are not the same".
   `tests/rebushido/bbm_join.py`: two made-up files joined, read by the
   format's decoder; the disc's files packed again byte for byte.
 - `tests/port/weapons.c`: a weapon's file read, every line that can be
