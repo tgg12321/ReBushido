@@ -119,18 +119,59 @@
 #define HALF_BYTES 2
 #define WORD_BITS 32
 #define BITS_PER_BYTE 8
+/* A resync (docs/NETPLAY.md, section 21): the host's state in chunks of
+ * this many bytes, at most this many of them; a guest's acknowledgement
+ * says the first it lacks and which of the next RESYNC_ACK_SPAN it has. */
+#define RESYNC_CHUNK_BYTES 1024
+#define RESYNC_CHUNKS_MAX 8192
+#define RESYNC_MAP_BYTES (RESYNC_CHUNKS_MAX / BITS_PER_BYTE)
+#define RESYNC_ACK_SPAN 256
+/* Chunks sent and not yet acknowledged, at most, on a link; and a second
+ * at most, on a direct way and through the lobby's relay, which passes
+ * 240 datagrams a second of a pair on. */
+#define RESYNC_WINDOW 64
+#define RESYNC_RATE 3000
+#define RESYNC_RATE_RELAYED 150
+/* A chunk not acknowledged is sent again after twice the round trip and
+ * this; a guest acknowledges after so many chunks or so long. */
+#define RESYNC_RESEND_MS 40
+#define RESYNC_ACK_EVERY 8
+#define RESYNC_ACK_MS 20
+/* While a resync's state goes over, the inputs are sent again this
+ * often, to say each is still there. */
+#define RESYNC_ALIVE_MS 100
+/* Parted, the host resyncs by itself after this many frames (three
+ * seconds); again so soon after the last, only at a press. A resync is at
+ * a frame this far ahead of the host's when it says so: past every frame a
+ * guest can have run on the host's inputs it had before (the most delay,
+ * and the most frames run on a guess), so that every machine stops at
+ * that frame's boundary, its own state and its plan there. */
+#define RESYNC_LEAD (NETPLAY_DELAY_MAX + NETPLAY_PREDICT_MAX + 4)
+#define RESYNC_AUTO_FRAMES 180
+#define RESYNC_AGAIN_FRAMES 1200
+#define PERCENT 100
+#define DECIMAL 10
+#define RESYNC_LINE_BYTES 96
+/* --net-part-at: the RAM's word so far below its top, and what is added */
+#define PART_FROM_TOP 16
+#define PART_BY 0x9E3779B9U
 
 enum {
-    KIND_INPUT = PORT_NET_KIND_NETPLAY,  /* inputs, acks and a hash */
-    KIND_BYE = PORT_NET_KIND_NETPLAY + 1 /* the other has ended */
+    KIND_INPUT = PORT_NET_KIND_NETPLAY,      /* inputs, acks and a hash */
+    KIND_BYE = PORT_NET_KIND_NETPLAY + 1,    /* the other has ended */
+    KIND_RESYNC = PORT_NET_KIND_NETPLAY + 2, /* a chunk of the host's state */
+    KIND_RESYNC_ACK = PORT_NET_KIND_NETPLAY + 3 /* ... the chunks had */
 };
 
 /* An input datagram after the header: how many of each pad's inputs its
  * sender has, the frame of its last final hash and that hash, the frame
  * it is at, how far ahead of this program it reckons itself (sixteenths
  * of a frame), its clock, the last clock of this program's it had and how
- * long ago, how many pads' inputs it carries; then for each, the pad, how
- * many and the frame of the first, and those inputs, a half-word each. */
+ * long ago, the resyncs it has had (its hashes are of the state after the
+ * last), a resync asked for (the resyncs it has had, plus one; 0: none),
+ * the frame the host's next resync is at (0: none), how many pads' inputs
+ * it carries; then for each, the pad, how many and
+ * the frame of the first, and those inputs, a half-word each. */
 enum {
     INPUT_HAS = PORT_NET_HEADER_BYTES,
     INPUT_HASH_FRAME = INPUT_HAS + NETPLAY_PADS * WORD_BYTES,
@@ -140,8 +181,33 @@ enum {
     INPUT_STAMP = INPUT_AHEAD + WORD_BYTES,
     INPUT_ECHO = INPUT_STAMP + WORD_BYTES,
     INPUT_HELD = INPUT_ECHO + WORD_BYTES,
-    INPUT_BLOCKS = INPUT_HELD + WORD_BYTES,
+    INPUT_EPOCH = INPUT_HELD + WORD_BYTES,
+    INPUT_ASK = INPUT_EPOCH + WORD_BYTES,
+    INPUT_RESYNC_AT = INPUT_ASK + WORD_BYTES,
+    INPUT_BLOCKS = INPUT_RESYNC_AT + WORD_BYTES,
     INPUT_FIRST_BLOCK = INPUT_BLOCKS + WORD_BYTES
+};
+
+/* A chunk of a resync's state after the header (whose number is the
+ * chunk's): the resync's number (the resyncs had, with it), the frame it
+ * is put in at, the last frame before it whose hash all held the same,
+ * the state's bytes, the host's build (port_StateBuildSum), then the
+ * chunk's bytes. An acknowledgement's header's number is the first chunk
+ * its sender lacks; after it, the resync's number and a bit for each of
+ * the RESYNC_ACK_SPAN chunks after that one, set for one it has. */
+enum {
+    RESYNC_EPOCH = PORT_NET_HEADER_BYTES,
+    RESYNC_FRAME = RESYNC_EPOCH + WORD_BYTES,
+    RESYNC_AGREED = RESYNC_FRAME + WORD_BYTES,
+    RESYNC_SIZE = RESYNC_AGREED + WORD_BYTES,
+    RESYNC_BUILD = RESYNC_SIZE + WORD_BYTES,
+    RESYNC_DATA = RESYNC_BUILD + 2 * WORD_BYTES
+};
+
+enum {
+    ACK_EPOCH = PORT_NET_HEADER_BYTES,
+    ACK_MAP = ACK_EPOCH + WORD_BYTES,
+    ACK_BYTES = ACK_MAP + RESYNC_ACK_SPAN / BITS_PER_BYTE
 };
 
 /* A pad's block: its pad, how many, the first frame, then the inputs. */
@@ -195,6 +261,12 @@ typedef struct {
     u32 bye_at;
     s32 bye_pad;
     s32 bye_desync;
+    u32 agreed; /* the last hashed frame whose hash was this program's */
+    /* a resync's state going to it: the chunks it has said it has, and
+     * when it last said anything of them */
+    u32 resync_had;
+    u32 resync_heard_at;
+    u32 resync_next;
 } PortNetplayLink;
 
 static s32 g_np_on;
@@ -287,6 +359,67 @@ static s32 g_np_watch;
 static u32 g_np_watch_known;
 static PortNetplayHash g_np_watch_hashes[NETPLAY_HASHES];
 static u32 g_np_watch_held;
+/* ... and, parted from the players' (a hash that was not theirs), the
+ * frame of that hash, and when: it waits for a resync's state (or the
+ * next fight's start) the lobby has from the match's host */
+static s32 g_np_watch_parted;
+static u32 g_np_watch_parted_frame;
+static u32 g_np_watch_parted_at;
+static u32 g_np_watch_agreed;
+
+/* A resync (docs/NETPLAY.md, section 21). The resyncs had in the session,
+ * the frame of the last (no hash before it is held to another's), and
+ * how many frames back it was. Parted: a hash of another's was not this
+ * program's own, at that hashed frame and this program's frame then; the
+ * last hashed frame every link held the same. Asked for by this player
+ * (F5, --resync-ask-at), or by a guest (the host). By itself so many
+ * frames after the parting (0: only at a press). --net-part-at. */
+static u32 g_np_epoch;
+static u32 g_np_resync_frame;
+static u32 g_np_resynced_at;
+static s32 g_np_parted;
+static u32 g_np_parted_hash;
+static u32 g_np_parted_frame;
+static u32 g_np_parted_clock;
+static s32 g_np_resync_asked;
+static u32 g_np_resync_ask_at;
+static s32 g_np_resync_wanted;
+static u32 g_np_resync_auto = RESYNC_AUTO_FRAMES;
+/* the frame the next resync is at, the host's word (0: none) */
+static u32 g_np_resync_at;
+static u32 g_np_part_at;
+static s32 g_np_part_done;
+/* the frame the last resync was put in at, for the next's by itself */
+static u32 g_np_resyncs_at_last;
+
+/* The state going over: its number, frame, last frame all held the same,
+ * bytes and chunks; on a guest, the chunks it has (a bit each), how many,
+ * when it last had one and last acknowledged them, and whether all have
+ * come; and a figure of how far it has got, for the window's line. */
+static struct {
+    s32 coming; /* a guest: a chunk of a new one has come */
+    s32 sending;
+    u32 epoch;
+    u32 frame;
+    u32 agreed;
+    u32 size;
+    u32 count;
+    const u8 *blob;
+    u8 *room;
+    u32 room_bytes;
+    u8 map[RESYNC_MAP_BYTES];
+    u32 have;
+    u32 had_at;
+    u32 acked_at;
+    u32 unacked;
+    u32 began_at;
+    u32 percent;
+} g_np_rs;
+
+/* The host: each link's chunks it has said it has (a bit each), and when
+ * each was last sent to it. */
+static u8 g_np_rs_had[PORT_NET_LINKS][RESYNC_MAP_BYTES];
+static u32 g_np_rs_sent[PORT_NET_LINKS][RESYNC_CHUNKS_MAX];
 
 void (*g_port_net_hold_hook)(u32 blanks);
 void (*g_port_net_wait_hook)(const char *status);
@@ -340,6 +473,22 @@ void port_SetNetplayInProcess(s32 on) { g_np_in_process = on; }
 void port_SetNetplayOwnPadOnly(s32 on) { g_np_own_pad_only = on; }
 
 void port_SetNetplayLeaveAt(u32 frame) { g_np_leave_at = frame; }
+
+void port_SetNetplayResyncAuto(u32 frames) { g_np_resync_auto = frames; }
+
+void port_SetNetplayPartAt(u32 frame) { g_np_part_at = frame; }
+
+void port_SetNetplayResyncAskAt(u32 frame) { g_np_resync_ask_at = frame; }
+
+/* The player asks for a resync (F5): heard only where this program has
+ * found the session's machines parted, or a spectator its players'. */
+void port_NetplayAskResync(void) {
+    if (g_np_on && g_np_parted && !g_np_resync_asked) {
+        port_Log(
+            "netplay: this player asks for a resync at frame %u\n", g_np_frame);
+        g_np_resync_asked = TRUE;
+    }
+}
 
 void port_NetplayLeave(void) {
     if (g_np_on) {
@@ -467,6 +616,20 @@ void port_ResetNetplay(void) {
     for (i = 0; i < NETPLAY_HASHES; i++) {
         g_np_watch_hashes[i].frame = (u32)-1;
     }
+    g_np_watch_parted = FALSE;
+    g_np_watch_agreed = 0;
+    g_np_epoch = 0;
+    g_np_resync_frame = 0;
+    g_np_resynced_at = 0;
+    g_np_parted = FALSE;
+    g_np_resync_asked = FALSE;
+    g_np_resync_wanted = FALSE;
+    g_np_resync_at = 0;
+    g_np_part_done = FALSE;
+    g_np_resyncs_at_last = 0;
+    g_np_rs.coming = FALSE;
+    g_np_rs.sending = FALSE;
+    g_np_rs.epoch = 0;
     for (pad = 0; pad < NETPLAY_PADS; pad++) {
         g_np_input.buttons[pad] = 0;
         g_np_input.present[pad] = 0;
@@ -524,6 +687,9 @@ static void port_NetplaySendTo(s32 link) {
     port_NetPutWord(out + INPUT_STAMP, now);
     port_NetPutWord(out + INPUT_ECHO, to->stamp);
     port_NetPutWord(out + INPUT_HELD, to->has_stamp ? now - to->stamp_at : 0);
+    port_NetPutWord(out + INPUT_EPOCH, g_np_epoch);
+    port_NetPutWord(out + INPUT_ASK, g_np_resync_asked ? g_np_epoch + 1 : 0);
+    port_NetPutWord(out + INPUT_RESYNC_AT, g_np_resync_at);
     for (pad = 0; pad < g_np_pads; pad++) {
         u32 first = to->has[pad];
         u32 count;
@@ -572,6 +738,8 @@ static void port_NetplaySendInputs(void) {
     }
 }
 
+static u32 port_NetplayAgreed(void);
+
 /* Link `link`'s hash of `frame` against this program's own, once both
  * are final. This program's is not before every input ahead of the frame
  * is known and the rollback a wrong guess among them asks for is done: a
@@ -585,7 +753,8 @@ static void port_NetplayCompareHash(s32 link, u32 frame) {
     const PortNetplayHash *theirs = &from->hashes[slot];
 
     if (frame == 0 || frame > g_np_last_final.frame || mine->frame != frame ||
-        theirs->frame != frame || from->compared[slot] == frame) {
+        theirs->frame != frame || from->compared[slot] == frame ||
+        frame < g_np_resync_frame || g_np_parted) {
         return;
     }
     from->compared[slot] = frame;
@@ -596,11 +765,41 @@ static void port_NetplayCompareHash(s32 link, u32 frame) {
                  mine->frame, (u32)(mine->hash >> WORD_BITS), (u32)mine->hash,
                  (u32)(theirs->hash >> WORD_BITS), (u32)theirs->hash,
                  g_np_links > 1 ? " (a guest's)" : "");
-        if (!g_np_in_process) {
-            port_Quit(PORT_EXIT_FAILED);
-        }
-        g_np_ended = PORT_NETPLAY_END_DESYNC;
+        /* the session goes on, parted, until a resync puts the host's
+         * state on every machine (docs/NETPLAY.md, section 21) */
+        g_np_parted = TRUE;
+        g_np_parted_hash = frame;
+        g_np_parted_frame = g_np_frame;
+        g_np_parted_clock = port_NetClock();
+        port_Log("netplay: the machines' games parted after frame %u; a "
+                 "resync puts the host's state on each (%s)\n",
+                 port_NetplayAgreed(),
+                 g_np_resync_auto != 0 ? "by itself in a moment, or F5" : "F5");
+        return;
     }
+    if (frame > from->agreed) {
+        from->agreed = frame;
+    }
+}
+
+/* The last hashed frame every link's hash was this program's of (none
+ * before the last resync's frame is held). */
+static u32 port_NetplayAgreed(void) {
+    u32 agreed = (u32)-1;
+    s32 link;
+
+    for (link = 0; link < g_np_links; link++) {
+        /* (none held since the last resync: its own frame, whose state
+         * all had) */
+        u32 of = g_np_link[link].agreed > g_np_resync_frame
+                     ? g_np_link[link].agreed
+                     : g_np_resync_frame;
+
+        if (!g_np_link[link].left && of < agreed) {
+            agreed = of;
+        }
+    }
+    return agreed == (u32)-1 ? g_np_resync_frame : agreed;
 }
 
 static void port_NetplayCompareAll(u32 frame) {
@@ -685,6 +884,167 @@ static void port_NetplayTakePad(s32 pad, u32 first, u32 count, const u8 *at) {
     }
 }
 
+/* ---- a resync's state over the links (docs/NETPLAY.md, section 21) ---- */
+
+/* The machines parted and no resync could put them together again: the
+ * session ends on the desync, as every one did before there were
+ * resyncs (the headless program, not begun in the running one, ends). */
+static void port_NetplayEndDesync(void) {
+    port_Log("netplay: DESYNC: no resync could be made; the session ends\n");
+    if (!g_np_in_process) {
+        port_Quit(PORT_EXIT_FAILED);
+    }
+    g_np_ended = PORT_NETPLAY_END_DESYNC;
+}
+
+static s32 port_MapHas(const u8 *map, u32 chunk) {
+    return (map[chunk / BITS_PER_BYTE] >> (chunk % BITS_PER_BYTE)) & 1;
+}
+
+static void port_MapSet(u8 *map, u32 chunk) {
+    map[chunk / BITS_PER_BYTE] |= (u8)(1 << (chunk % BITS_PER_BYTE));
+}
+
+/* A guest: what it has of the state coming, to the host. */
+static void port_NetplayAckChunks(void) {
+    u8 out[ACK_BYTES];
+    u32 first = 0;
+    u32 i;
+
+    while (first < g_np_rs.count && port_MapHas(g_np_rs.map, first)) {
+        first++;
+    }
+    port_NetHeader(out, KIND_RESYNC_ACK, 0, first);
+    port_NetPutWord(out + ACK_EPOCH, g_np_rs.epoch);
+    for (i = 0; i < RESYNC_ACK_SPAN / BITS_PER_BYTE; i++) {
+        out[ACK_MAP + i] = 0;
+    }
+    for (i = 0; i < RESYNC_ACK_SPAN && first + i < g_np_rs.count; i++) {
+        if (port_MapHas(g_np_rs.map, first + i)) {
+            port_MapSet(out + ACK_MAP, i);
+        }
+    }
+    port_NetSelectLink(0);
+    port_NetSend(out, sizeof(out));
+    g_np_rs.acked_at = port_NetClock();
+    g_np_rs.unacked = 0;
+}
+
+/* A guest: a chunk of the host's state. The first of a resync this
+ * program has not had begins it; one of a resync it has had already is
+ * acknowledged again (the host may not have heard it had them all). */
+static void port_NetplayTakeChunk(
+    s32 link, const u8 *in, s32 bytes, u32 chunk) {
+    u32 epoch;
+    u32 size;
+    u32 count;
+    u32 length;
+    u32 i;
+
+    if (link != 0 || g_np_links > 1 || (g_np_local_mask & 1) ||
+        bytes <= RESYNC_DATA) {
+        return;
+    }
+    epoch = port_NetGetWord(in + RESYNC_EPOCH);
+    size = port_NetGetWord(in + RESYNC_SIZE);
+    count = (size + RESYNC_CHUNK_BYTES - 1) / RESYNC_CHUNK_BYTES;
+    if (epoch <= g_np_epoch) {
+        if (epoch == g_np_epoch && epoch == g_np_rs.epoch) {
+            port_NetplayAckChunks();
+        }
+        return;
+    }
+    if (size == 0 || count > RESYNC_CHUNKS_MAX || chunk >= count) {
+        return;
+    }
+    if (!g_np_rs.coming || g_np_rs.epoch != epoch) {
+        u64 build =
+            port_NetGetWord(in + RESYNC_BUILD) |
+            ((u64)port_NetGetWord(in + RESYNC_BUILD + WORD_BYTES) << WORD_BITS);
+
+        if (build != port_StateBuildSum()) {
+            /* a state this program cannot put in: the session ends on
+             * the desync, as it did before there were resyncs */
+            port_Log("netplay: the host's state for the resync is another "
+                     "build's: it cannot be put in\n");
+            g_np_rs.coming = FALSE;
+            port_NetplayEndDesync();
+            return;
+        }
+        if (g_np_rs.room_bytes < size) {
+            g_np_rs.room = port_HostAllocate(size);
+            g_np_rs.room_bytes = g_np_rs.room != NULL ? size : 0;
+        }
+        if (g_np_rs.room == NULL) {
+            port_Log(
+                "netplay: no memory for the resync's state (%u bytes)\n", size);
+            port_NetplayEndDesync();
+            return;
+        }
+        g_np_rs.coming = TRUE;
+        g_np_rs.epoch = epoch;
+        g_np_rs.frame = port_NetGetWord(in + RESYNC_FRAME);
+        if (g_np_resync_at == 0) {
+            g_np_resync_at = g_np_rs.frame;
+        }
+        g_np_rs.agreed = port_NetGetWord(in + RESYNC_AGREED);
+        g_np_rs.size = size;
+        g_np_rs.count = count;
+        g_np_rs.have = 0;
+        g_np_rs.unacked = 0;
+        g_np_rs.began_at = port_NetClock();
+        g_np_rs.acked_at = g_np_rs.began_at;
+        for (i = 0; i < RESYNC_MAP_BYTES; i++) {
+            g_np_rs.map[i] = 0;
+        }
+        port_Log("netplay: the host's state for resync %u is coming: frame "
+                 "%u, %u bytes\n",
+                 epoch, g_np_rs.frame, size);
+    }
+    g_np_rs.had_at = port_NetClock();
+    length = chunk + 1 == count ? size - chunk * RESYNC_CHUNK_BYTES
+                                : RESYNC_CHUNK_BYTES;
+    if ((u32)bytes != RESYNC_DATA + length) {
+        return;
+    }
+    if (!port_MapHas(g_np_rs.map, chunk)) {
+        for (i = 0; i < length; i++) {
+            g_np_rs.room[chunk * RESYNC_CHUNK_BYTES + i] = in[RESYNC_DATA + i];
+        }
+        port_MapSet(g_np_rs.map, chunk);
+        g_np_rs.have++;
+    }
+    g_np_rs.unacked++;
+    if (g_np_rs.unacked >= RESYNC_ACK_EVERY || g_np_rs.have == count) {
+        port_NetplayAckChunks();
+    }
+}
+
+/* The host: link `link`'s word on the chunks it has. */
+static void port_NetplayTakeAck(s32 link, const u8 *in, s32 bytes, u32 first) {
+    PortNetplayLink *from = &g_np_link[link];
+    u32 i;
+
+    if (!g_np_rs.sending || bytes < ACK_BYTES ||
+        port_NetGetWord(in + ACK_EPOCH) != g_np_rs.epoch) {
+        return;
+    }
+    from->resync_heard_at = port_NetClock();
+    for (i = 0; i < first && i < g_np_rs.count; i++) {
+        if (!port_MapHas(g_np_rs_had[link], i)) {
+            port_MapSet(g_np_rs_had[link], i);
+            from->resync_had++;
+        }
+    }
+    for (i = 0; i < RESYNC_ACK_SPAN && first + i < g_np_rs.count; i++) {
+        if (port_MapHas(in + ACK_MAP, i) &&
+            !port_MapHas(g_np_rs_had[link], first + i)) {
+            port_MapSet(g_np_rs_had[link], first + i);
+            from->resync_had++;
+        }
+    }
+}
+
 /* One datagram of link `link`'s: what it has, its hash, its time and its
  * inputs, each pad's only where that pad comes from that link. */
 static void port_NetplayTake(s32 link, const u8 *in, s32 bytes) {
@@ -712,6 +1072,14 @@ static void port_NetplayTake(s32 link, const u8 *in, s32 bytes) {
         }
         return;
     }
+    if (kind == KIND_RESYNC) {
+        port_NetplayTakeChunk(link, in, bytes, number);
+        return;
+    }
+    if (kind == KIND_RESYNC_ACK) {
+        port_NetplayTakeAck(link, in, bytes, number);
+        return;
+    }
     if (kind != KIND_INPUT || bytes < INPUT_FIRST_BLOCK) {
         return;
     }
@@ -723,11 +1091,30 @@ static void port_NetplayTake(s32 link, const u8 *in, s32 bytes) {
         }
     }
     port_NetplayTakeTime(from, in);
+    /* the host's next resync: at that frame's boundary, which this guest
+     * does not run past */
+    if (!(g_np_local_mask & 1) && g_np_resync_at == 0 &&
+        port_NetGetWord(in + INPUT_EPOCH) == g_np_epoch &&
+        port_NetGetWord(in + INPUT_RESYNC_AT) != 0) {
+        g_np_resync_at = port_NetGetWord(in + INPUT_RESYNC_AT);
+        port_Log("netplay: the host resyncs at frame %u\n", g_np_resync_at);
+    }
+    /* a guest's player asks for a resync of the state it has (the host
+     * heeds it, once) */
+    if (port_NetGetWord(in + INPUT_ASK) == g_np_epoch + 1 &&
+        !g_np_resync_wanted) {
+        port_Log(
+            "netplay: the player of link %d asks for a resync\n", link + 1);
+        g_np_resync_wanted = TRUE;
+    }
     hash.frame = port_NetGetWord(in + INPUT_HASH_FRAME);
     hash.hash =
         port_NetGetWord(in + INPUT_HASH) |
         ((u64)port_NetGetWord(in + INPUT_HASH + WORD_BYTES) << WORD_BITS);
-    if (hash.frame != 0 && hash.frame % NETPLAY_HASH_EVERY == 0) {
+    /* (a hash of the state before a resync this program has had, or one
+     * it has not had yet, is of another game: not held to its own) */
+    if (port_NetGetWord(in + INPUT_EPOCH) == g_np_epoch && hash.frame != 0 &&
+        hash.frame % NETPLAY_HASH_EVERY == 0) {
         from->hashes[(hash.frame / NETPLAY_HASH_EVERY) % NETPLAY_HASHES] = hash;
         port_NetplayCompareHash(link, hash.frame);
     }
@@ -950,6 +1337,25 @@ static void port_NetplayFrameInput(u32 frame) {
     }
 }
 
+/* --net-part-at, for tests: this program's state parted from the
+ * others' at the boundary of frame `frame`, after its state there is
+ * saved, so that a rollback past it makes it again: by a word of the RAM
+ * nothing of the game reads (below the stack's top the port gives the
+ * game and never uses, port_platform.h) but the state's hash does. */
+static void port_NetplayPartOnPurpose(u32 frame) {
+    if (g_np_part_at == 0 || frame != g_np_part_at) {
+        return;
+    }
+    *(volatile u32 *)ADDR(PORT_RAM_ADDR + PORT_RAM_SIZE - PART_FROM_TOP) +=
+        PART_BY;
+    if (!g_np_part_done) {
+        g_np_part_done = TRUE;
+        port_Log("netplay: for the test, this program's state is made "
+                 "another's at frame %u\n",
+                 frame);
+    }
+}
+
 /* Runs the game's frame g_np_frame with every pad's input. */
 static void port_NetplayRunFrame(void) {
     u32 frame = g_np_frame;
@@ -958,6 +1364,7 @@ static void port_NetplayRunFrame(void) {
     u16 used;
 
     port_NetplaySave(frame);
+    port_NetplayPartOnPurpose(frame);
     if (frame == 0) {
         port_SessionSeed();
     }
@@ -1365,6 +1772,402 @@ static s32 port_NetplayLoadIsShared(void) {
     return port_NetplayKnown() >= g_np_sync_until;
 }
 
+/* ---- a resync (docs/NETPLAY.md, section 21) ---- */
+
+/* Whether every input before the frame now is in: the state there is
+ * final once a wrong guess among them is put right. */
+static s32 port_NetplayAllBefore(void) {
+    return port_NetplayKnown() >= g_np_frame;
+}
+
+/* The session's machines have the state of `frame` from here, resync
+ * number `epoch`, the last frame all held the same before it `agreed`:
+ * this program's hashes, and those it has of the others', are of the
+ * state before it, and no hash before the frame is held to another's. */
+static void port_NetplayResynced(u32 epoch, u32 frame, u32 agreed) {
+    s32 link;
+    s32 i;
+
+    g_np_epoch = epoch;
+    g_np_resync_frame = frame;
+    g_np_resyncs_at_last = frame;
+    g_np_resynced_at = port_NetClock();
+    g_np_parted = FALSE;
+    g_np_resync_asked = FALSE;
+    g_np_resync_wanted = FALSE;
+    g_np_resync_at = 0;
+    for (i = 0; i < NETPLAY_HASHES; i++) {
+        g_np_hashes[i].frame = (u32)-1;
+    }
+    /* the next hash made final is the first at or after the frame */
+    g_np_last_final.frame =
+        frame > 0 ? (frame - 1) / NETPLAY_HASH_EVERY * NETPLAY_HASH_EVERY : 0;
+    g_np_last_final.hash = 0;
+    for (link = 0; link < g_np_links; link++) {
+        PortNetplayLink *of = &g_np_link[link];
+
+        for (i = 0; i < NETPLAY_HASHES; i++) {
+            of->hashes[i].frame = 0;
+            of->compared[i] = 0;
+        }
+        of->agreed = frame;
+    }
+    port_RankedResynced(agreed);
+    port_Log("netplay: resync %u: every machine has the host's state of frame "
+             "%u; its hashes are held again from there (the last the same "
+             "before it, frame %u)\n",
+             epoch, frame, agreed);
+}
+
+/* The host: chunk `chunk` of the resync's state to link `link`. */
+static void port_NetplaySendChunk(s32 link, u32 chunk) {
+    u8 out[PORT_NET_DATAGRAM_MAX];
+    u64 build = port_StateBuildSum();
+    u32 length = chunk + 1 == g_np_rs.count
+                     ? g_np_rs.size - chunk * RESYNC_CHUNK_BYTES
+                     : RESYNC_CHUNK_BYTES;
+    u32 i;
+
+    port_NetHeader(out, KIND_RESYNC, 0, chunk);
+    port_NetPutWord(out + RESYNC_EPOCH, g_np_rs.epoch);
+    port_NetPutWord(out + RESYNC_FRAME, g_np_rs.frame);
+    port_NetPutWord(out + RESYNC_AGREED, g_np_rs.agreed);
+    port_NetPutWord(out + RESYNC_SIZE, g_np_rs.size);
+    port_NetPutWord(out + RESYNC_BUILD, (u32)build);
+    port_NetPutWord(out + RESYNC_BUILD + WORD_BYTES, (u32)(build >> WORD_BITS));
+    for (i = 0; i < length; i++) {
+        out[RESYNC_DATA + i] = g_np_rs.blob[chunk * RESYNC_CHUNK_BYTES + i];
+    }
+    port_NetSelectLink(link);
+    port_NetSend(out, RESYNC_DATA + length);
+    port_NetSelectLink(0);
+}
+
+/* The host's turn of sending: to each link, of the chunks it has not said
+ * it has, those not sent lately, no more in flight than RESYNC_WINDOW and
+ * no faster than the way allows. */
+static void port_NetplaySendChunks(u32 now) {
+    u32 rate = port_RelayIsRelayed() ? RESYNC_RATE_RELAYED : RESYNC_RATE;
+    s32 link;
+
+    for (link = 0; link < g_np_links; link++) {
+        PortNetplayLink *of = &g_np_link[link];
+        u32 again = 2 * of->ping_ms + RESYNC_RESEND_MS;
+        u32 allowed =
+            (now - g_np_rs.began_at) * rate / MS_PER_SECOND + RESYNC_WINDOW;
+        u32 flying = 0;
+        u32 chunk;
+
+        if (of->left || of->resync_had >= g_np_rs.count) {
+            continue;
+        }
+        for (chunk = 0; chunk < g_np_rs.count; chunk++) {
+            u32 sent = g_np_rs_sent[link][chunk];
+
+            if (sent != 0 && now - sent < again &&
+                !port_MapHas(g_np_rs_had[link], chunk)) {
+                flying++;
+            }
+        }
+        for (chunk = 0; chunk < g_np_rs.count && flying < RESYNC_WINDOW &&
+                        of->resync_next < allowed;
+             chunk++) {
+            u32 sent = g_np_rs_sent[link][chunk];
+
+            if (port_MapHas(g_np_rs_had[link], chunk) ||
+                (sent != 0 && now - sent < again)) {
+                continue;
+            }
+            port_NetplaySendChunk(link, chunk);
+            g_np_rs_sent[link][chunk] = now != 0 ? now : 1;
+            of->resync_next++;
+            flying++;
+        }
+    }
+}
+
+/* The least share of the state any link has had, in hundredths. */
+static u32 port_NetplayResyncPercent(void) {
+    u32 least = PERCENT;
+    s32 link;
+
+    for (link = 0; link < g_np_links; link++) {
+        const PortNetplayLink *of = &g_np_link[link];
+        u32 share;
+
+        if (of->left || g_np_rs.count == 0) {
+            continue;
+        }
+        share = of->resync_had * PERCENT / g_np_rs.count;
+        if (share < least) {
+            least = share;
+        }
+    }
+    return least;
+}
+
+/* The window's line while the state goes over. */
+static void port_NetplayResyncShown(const char *what) {
+    static char line[RESYNC_LINE_BYTES];
+    u32 at = 0;
+    u32 percent = g_np_rs.percent;
+
+    g_np_state = PORT_NETPLAY_RESYNCING;
+    if (g_port_net_wait_hook == NULL) {
+        return;
+    }
+    while (*what != 0 && at + sizeof("   100%") < sizeof(line)) {
+        line[at++] = *what++;
+    }
+    line[at++] = ' ';
+    line[at++] = ' ';
+    line[at++] = ' ';
+    if (percent >= PERCENT) {
+        line[at++] = '1';
+    }
+    if (percent >= DECIMAL) {
+        line[at++] = (char)('0' + percent / DECIMAL % DECIMAL);
+    }
+    line[at++] = (char)('0' + percent % DECIMAL);
+    line[at++] = '%';
+    line[at] = 0;
+    g_port_net_wait_hook(line);
+}
+
+/* The host's resync, at the frame it said (g_np_resync_at), where it
+ * stopped: once every input before it is in (so that its state there is
+ * final), the state packed and sent whole to every guest, each chunk until
+ * it says it has it; the session goes on from that frame on every
+ * machine. Spectators who parted are given it by
+ * the lobby, as a fight's start (watch.c), and each machine's replay of
+ * the fight keeps it. */
+static void port_NetplayResyncSend(void) {
+    u32 frame = g_np_frame;
+    u32 alive_at = 0;
+    const u8 *blob;
+    u32 size;
+    s32 link;
+
+    g_np_wait_from = port_NetClock();
+    port_NetplayWait(PORT_NETPLAY_RESYNCING, port_NetplayAllBefore);
+    if (!port_NetplayAllBefore() || g_np_ended) {
+        return;
+    }
+    if (g_np_is_wrong) {
+        port_NetplayRollBack();
+    }
+    port_NetplayFinalHashes();
+    g_np_rs.agreed = port_NetplayAgreed();
+    if (!port_ReplayResyncPack(frame, &blob, &size) ||
+        size > RESYNC_CHUNKS_MAX * RESYNC_CHUNK_BYTES) {
+        port_Log("netplay: the host's state could not be packed for the "
+                 "resync\n");
+        port_NetplayEndDesync();
+        return;
+    }
+    g_np_rs.sending = TRUE;
+    g_np_rs.epoch = g_np_epoch + 1;
+    g_np_rs.frame = frame;
+    g_np_rs.size = size;
+    g_np_rs.count = (size + RESYNC_CHUNK_BYTES - 1) / RESYNC_CHUNK_BYTES;
+    g_np_rs.blob = blob;
+    g_np_rs.began_at = port_NetClock();
+    g_np_rs.percent = 0;
+    for (link = 0; link < g_np_links; link++) {
+        PortNetplayLink *of = &g_np_link[link];
+        u32 i;
+
+        of->resync_had = 0;
+        of->resync_next = 0;
+        of->resync_heard_at = g_np_rs.began_at;
+        for (i = 0; i < RESYNC_MAP_BYTES; i++) {
+            g_np_rs_had[link][i] = 0;
+        }
+        for (i = 0; i < g_np_rs.count; i++) {
+            g_np_rs_sent[link][i] = 0;
+        }
+    }
+    port_NetplayResynced(g_np_rs.epoch, frame, g_np_rs.agreed);
+    port_ReplayResynced(g_np_rs.agreed);
+    for (;;) {
+        u32 now = port_NetClock();
+        s32 done = TRUE;
+
+        for (link = 0; link < g_np_links; link++) {
+            PortNetplayLink *of = &g_np_link[link];
+
+            if (of->left || of->resync_had >= g_np_rs.count) {
+                continue;
+            }
+            done = FALSE;
+            if (now - of->resync_heard_at > NETPLAY_GIVE_UP_MS) {
+                port_Log("netplay: link %d had none of the resync's state "
+                         "for %u seconds\n",
+                         link + 1, NETPLAY_GIVE_UP_MS / MS_PER_SECOND);
+                g_np_rs.sending = FALSE;
+                port_NetplayEndDesync();
+                return;
+            }
+        }
+        if (done || g_np_peer_left || g_np_ended || g_np_leave) {
+            break;
+        }
+        port_NetplaySendChunks(now);
+        if (now - alive_at >= RESYNC_ALIVE_MS) {
+            port_NetplaySendInputs();
+            alive_at = now;
+        }
+        port_RoomTick();
+        port_FeedTick();
+        g_np_rs.percent = port_NetplayResyncPercent();
+        port_NetplayResyncShown(g_np_pads > 2 || g_np_links > 1
+                                    ? "Resyncing: the game goes to the others"
+                                    : "Resyncing: the game goes to the other "
+                                      "player");
+        port_NetplayReceive(NETPLAY_POLL_MS);
+    }
+    g_np_rs.sending = FALSE;
+    g_np_state = PORT_NETPLAY_PLAYING;
+    port_Log("netplay: resync %u's state, %u bytes in %u chunks, had by every "
+             "guest in %u ms\n",
+             g_np_rs.epoch, g_np_rs.size, g_np_rs.count,
+             port_NetClock() - g_np_rs.began_at);
+}
+
+/* A guest's resync, at the frame the host said, where it stopped: the
+ * host's state, coming, had whole (each chunk said to the host as it
+ * comes) and put in; the session goes on from there. */
+static void port_NetplayResyncReceive(void) {
+    u32 alive_at = 0;
+    u32 waited_from = port_NetClock();
+    u32 frame;
+    s32 i;
+
+    port_Log("netplay: at frame %u, the host's state for the resync is "
+             "waited for\n",
+             g_np_frame);
+    while (!g_np_rs.coming || g_np_rs.have < g_np_rs.count) {
+        u32 now = port_NetClock();
+
+        if (g_np_peer_left || g_np_ended || g_np_leave) {
+            g_np_rs.coming = FALSE;
+            return;
+        }
+        if (now - (g_np_rs.coming ? g_np_rs.had_at : waited_from) >
+            NETPLAY_GIVE_UP_MS) {
+            port_Log("netplay: nothing of the resync's state for %u "
+                     "seconds\n",
+                     NETPLAY_GIVE_UP_MS / MS_PER_SECOND);
+            g_np_rs.coming = FALSE;
+            port_NetplayEndDesync();
+            return;
+        }
+        if (now - alive_at >= RESYNC_ALIVE_MS) {
+            port_NetplaySendInputs();
+            alive_at = now;
+        }
+        if (g_np_rs.unacked > 0 && now - g_np_rs.acked_at >= RESYNC_ACK_MS) {
+            port_NetplayAckChunks();
+        }
+        port_RoomTick();
+        port_FeedTick();
+        g_np_rs.percent =
+            g_np_rs.coming ? g_np_rs.have * PERCENT / g_np_rs.count : 0;
+        port_NetplayResyncShown("Resyncing: the host's game is coming");
+        port_NetplayReceive(NETPLAY_POLL_MS);
+    }
+    port_NetplayAckChunks();
+    /* every frame before it run on the inputs as they were, not on a
+     * guess: the fight's replay keeps those */
+    port_NetplayWait(PORT_NETPLAY_RESYNCING, port_NetplayAllBefore);
+    if (!port_NetplayAllBefore() || g_np_ended) {
+        g_np_rs.coming = FALSE;
+        return;
+    }
+    if (g_np_is_wrong) {
+        port_NetplayRollBack();
+    }
+    g_np_rs.coming = FALSE;
+    g_np_state = PORT_NETPLAY_PLAYING;
+    if (!port_ReplayResyncLoad(g_np_rs.room, g_np_rs.size, &frame) ||
+        frame != g_np_rs.frame) {
+        port_Log("netplay: the host's state for the resync could not be put "
+                 "in\n");
+        port_NetplayEndDesync();
+        return;
+    }
+    /* (a guest that had run past the frame, which the host's word ahead
+     * keeps from happening: the frames from there run again with the
+     * inputs as they are known, its plan's own where it was) nothing
+     * guessed before stands, and no state before it is gone back to */
+    if (frame != g_np_frame) {
+        port_Log("netplay: this guest was at frame %u, the resync's at %u\n",
+                 g_np_frame, frame);
+    }
+    g_np_frame = frame;
+    g_np_is_wrong = 0;
+    g_np_sync_until = frame;
+    for (i = 0; i < NETPLAY_SAVES; i++) {
+        g_np_save_frames[i] = (u32)-1;
+    }
+    port_NetplayResynced(g_np_rs.epoch, frame, g_np_rs.agreed);
+    port_ReplayResynced(g_np_rs.agreed);
+    port_Log("netplay: resync %u's state had in %u ms and put in\n",
+             g_np_rs.epoch, port_NetClock() - g_np_rs.began_at);
+}
+
+/* Whether the host resyncs now: a guest's player asked, or this program
+ * is parted and its player asked, or it is parted long enough (not again
+ * so soon after the last by itself). */
+static s32 port_NetplayResyncDue(void) {
+    if (g_np_resync_wanted) {
+        return TRUE;
+    }
+    if (!g_np_parted) {
+        return FALSE;
+    }
+    if (g_np_resync_asked) {
+        return TRUE;
+    }
+    if (g_np_resync_auto == 0 ||
+        (g_np_resyncs_at_last != 0 &&
+         g_np_frame - g_np_resyncs_at_last < RESYNC_AGAIN_FRAMES)) {
+        return FALSE;
+    }
+    return g_np_frame - g_np_parted_frame >= g_np_resync_auto;
+}
+
+/* The resync's turn of the session's loop: TRUE where it did one (the
+ * loop goes round again). */
+static s32 port_NetplayResyncTurn(void) {
+    if (g_np_ended || g_np_watch || g_np_peer_left || g_np_leave) {
+        /* (the loop's own way with an end, a goodbye or a leave first) */
+        g_np_rs.coming = FALSE;
+        return FALSE;
+    }
+    if (g_np_resync_ask_at != 0 && g_np_frame >= g_np_resync_ask_at &&
+        g_np_parted) {
+        g_np_resync_ask_at = 0;
+        port_NetplayAskResync();
+    }
+    if ((g_np_local_mask & 1) && g_np_resync_at == 0 &&
+        port_NetplayResyncDue()) {
+        g_np_resync_at = g_np_frame + RESYNC_LEAD;
+        port_Log("netplay: a resync at frame %u (now %u): every machine "
+                 "stops there\n",
+                 g_np_resync_at, g_np_frame);
+    }
+    if (g_np_resync_at == 0 || g_np_frame < g_np_resync_at) {
+        return FALSE;
+    }
+    if (g_np_local_mask & 1) {
+        port_NetplayResyncSend();
+    } else {
+        port_NetplayResyncReceive();
+    }
+    return TRUE;
+}
+
 /* A room's match's host: each frame whose pads are all known (none a
  * guess) to the match's feed, the first pad first; and the room stayed
  * in. */
@@ -1401,8 +2204,9 @@ static void port_NetplayFeed(void) {
 /* ---- a spectator (docs/NETPLAY.md, section 16) ---- */
 
 /* A spectator's own hash of a frame, kept to be held to the players' as
- * it comes; and each such pair held: FALSE at one that differs. */
-static s32 port_WatchHold(void) {
+ * it comes; and each such pair held: FALSE at one that differs, its frame
+ * in `parted`. */
+static s32 port_WatchHold(u32 *parted) {
     s32 i;
 
     for (i = 0; i < NETPLAY_HASHES; i++) {
@@ -1417,12 +2221,63 @@ static s32 port_WatchHold(void) {
                      "is %08X%08X, the players' %08X%08X\n",
                      mine->frame, (u32)(mine->hash >> WORD_BITS),
                      (u32)mine->hash, (u32)(theirs >> WORD_BITS), (u32)theirs);
+            *parted = mine->frame;
             return FALSE;
+        }
+        if (mine->frame > g_np_watch_agreed) {
+            g_np_watch_agreed = mine->frame;
         }
         mine->frame = (u32)-1;
         g_np_watch_held++;
     }
     return TRUE;
+}
+
+/* A spectator parted from its players (docs/NETPLAY.md, section 21): the
+ * match's host resyncs its players, and gives the lobby the state it put
+ * on them as a fight's start; the spectator asks for a start after the
+ * hash that parted, puts it in when it is whole and watches on from its
+ * frame. 1 once it has, 0 while it waits, -1 where none came. */
+static s32 port_WatchResync(void) {
+    const u8 *blob;
+    u32 size;
+    u32 frame;
+    s32 i;
+
+    if (port_WatchStart(&blob, &size)) {
+        if (!port_ReplayResyncLoad(blob, size, &frame)) {
+            port_Log("watch: the host's state of the resync could not be put "
+                     "in\n");
+            return -1;
+        }
+        g_np_frame = frame;
+        g_np_watch_parted = FALSE;
+        g_np_epoch++;
+        g_np_resynced_at = port_NetClock();
+        for (i = 0; i < NETPLAY_HASHES; i++) {
+            g_np_watch_hashes[i].frame = (u32)-1;
+        }
+        port_WatchStarted(frame);
+        port_ReplayResynced(g_np_watch_agreed);
+        g_np_watch_agreed = frame;
+        g_np_wait_from = 0;
+        port_Log("watch: resync %u: the host's state of frame %u put in; "
+                 "every hash is held to the players' again from there\n",
+                 g_np_epoch, frame);
+        return 1;
+    }
+    if (port_NetClock() - g_np_watch_parted_at > 2 * NETPLAY_GIVE_UP_MS) {
+        port_Log("watch: no resync came for %u seconds\n",
+                 2 * NETPLAY_GIVE_UP_MS / MS_PER_SECOND);
+        return -1;
+    }
+    g_np_state = PORT_NETPLAY_RESYNCING;
+    if (g_port_net_wait_hook != NULL) {
+        g_port_net_wait_hook("Watching: the game fell out of step with the "
+                             "players'; waiting for their resync");
+    }
+    port_RoomWait(NETPLAY_POLL_MS);
+    return 0;
 }
 
 /* Waits a moment for the match's next frames, the window told: FALSE
@@ -1469,8 +2324,35 @@ s32 port_RunWatch(u32 frame) {
 
         port_RoomTick();
         port_WatchTick();
-        if (!port_WatchHold()) {
-            return PORT_NETPLAY_END_DESYNC;
+        if (g_np_watch_parted) {
+            s32 resynced = port_WatchResync();
+
+            if (resynced < 0) {
+                return PORT_NETPLAY_END_DESYNC;
+            }
+            if (resynced == 0 && port_WatchEnd(&end_frame, &winner) &&
+                port_NetClock() - g_np_watch_parted_at > WATCH_END_WAIT_MS) {
+                port_Log("watch: the match's session ended, and no resync "
+                         "came\n");
+                return PORT_NETPLAY_END_DESYNC;
+            }
+            if (resynced == 0) {
+                continue;
+            }
+        }
+        {
+            u32 parted;
+
+            if (!port_WatchHold(&parted)) {
+                g_np_watch_parted = TRUE;
+                g_np_watch_parted_frame = parted;
+                g_np_watch_parted_at = port_NetClock();
+                port_WatchAskStart(parted);
+                port_Log("watch: parted from the players' game after frame "
+                         "%u: waiting for their host's resync\n",
+                         g_np_watch_agreed);
+                continue;
+            }
         }
         left = port_SessionLeftAt();
         if (left != 0 && left - 1 < g_np_frame) {
@@ -1593,6 +2475,11 @@ s32 port_RunNetplay(void) {
         port_NetplayKeepLocal();
         port_NetplaySendInputs();
         port_NetplayReceive(0);
+        /* the machines parted: the host's state on every one, and round
+         * again from its frame (docs/NETPLAY.md, section 21) */
+        if (port_NetplayResyncTurn()) {
+            continue;
+        }
         /* no further than NETPLAY_PREDICT_MAX past the others' inputs, and
          * past a load only with them */
         port_NetplayWait(PORT_NETPLAY_WAITING, port_NetplayInWindow);
@@ -1655,7 +2542,8 @@ s32 port_RunNetplay(void) {
         }
         /* never past the window: a wait cut short by a goodbye goes
          * round again (the end above, or the CPU taking over) */
-        if (!port_NetplayInWindow()) {
+        if (!port_NetplayInWindow() ||
+            (g_np_resync_at != 0 && g_np_frame >= g_np_resync_at)) {
             continue;
         }
         port_NetplayKeepTime();
@@ -1724,6 +2612,20 @@ void port_GetNetplayStats(PortNetplayStats *stats) {
     stats->cpu_on_leave = g_np_pads > 2 && g_np_links == 1 && !g_np_watch &&
                           port_NetplayInFightsOfFour() &&
                           (g_np_local_mask & (g_np_local_mask - 1)) == 0;
+    stats->parted = g_np_watch ? g_np_watch_parted : g_np_parted;
+    stats->resync_asked = g_np_resync_asked;
+    stats->resync_in = 0;
+    if (g_np_parted && !g_np_resync_asked && g_np_resync_auto != 0 &&
+        !(g_np_resyncs_at_last != 0 &&
+          g_np_frame - g_np_resyncs_at_last < RESYNC_AGAIN_FRAMES)) {
+        u32 parted_for = g_np_frame - g_np_parted_frame;
+
+        stats->resync_in =
+            parted_for < g_np_resync_auto ? g_np_resync_auto - parted_for : 1;
+    }
+    stats->resync_percent = g_np_rs.percent;
+    stats->resyncs = g_np_epoch;
+    stats->resynced_ms = g_np_epoch != 0 ? now - g_np_resynced_at + 1 : 0;
 }
 
 /* For a moment after this program ends, until the others have said
@@ -1830,6 +2732,10 @@ void port_EndNetplay(void) {
                                     SIXTEENTHS % HUNDREDTHS
                               : 0,
         g_np_holds, g_np_held_ms);
+    if (g_np_epoch != 0) {
+        port_Log("netplay: %u resync%s, the last at frame %u\n", g_np_epoch,
+                 g_np_epoch == 1 ? "" : "s", g_np_resync_frame);
+    }
     if (g_np_links > 1) {
         for (link = 0; link < g_np_links; link++) {
             port_Log("netplay: link %d: a round trip of %u ms%s\n", link + 1,

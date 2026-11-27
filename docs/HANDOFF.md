@@ -95,6 +95,15 @@ lessons still holds unless this section says otherwise.
 
 ## Next, what needs no owner
 
+- ROADMAP 28, the resync (2026-11-27, NETPLAY.md, section 21): done on
+  the port, proved on desyncs made on purpose (`port_net.py resync`,
+  `port_net_lobby.py` `relay-resync`, `rooms-resync`, `win-resync`).
+  Left: a spectator of a fight of four whose host parts (its state is
+  1.09 MB, over the lobby's 1 MB for a start: serve it as the difference
+  from the fight's start, which every spectator has); a controller's
+  press (F5 only; by itself after three seconds otherwise); the three
+  seconds tried with players. Session protocol 21.
+
 - ROADMAP 26, training (2026-11-26, PORT.md and PLAYING.md, "Training"):
   done but for a guard that weighs the distance, and the blade's sweep among the hit areas;
   the owner's eye on `tmp/training/` (the pages, the input display, the

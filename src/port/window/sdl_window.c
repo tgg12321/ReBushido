@@ -3323,6 +3323,14 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
         }
         return;
     }
+    if (key->keysym.scancode == SDL_SCANCODE_F5) {
+        /* the window's own: online, where the machines' games have parted,
+         * a resync now (docs/NETPLAY.md, section 21) */
+        if (down) {
+            port_NetplayAskResync();
+        }
+        return;
+    }
     if (key->keysym.scancode == SDL_SCANCODE_F1) {
         /* the window's own: the settings menu */
         if (down) {

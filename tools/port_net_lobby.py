@@ -65,6 +65,13 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
              on the three who stayed, the same on all, played back, and
              played from its session's power on by both sizes (alone,
              after those; -win in the Windows half)
+    relay-resync  a resync (docs/NETPLAY.md, section 21) through the
+             lobby's relay: the guest's state parts on purpose in the
+             fight, and the host's goes to it at the relay's pace
+    rooms-resync  a room's match whose host parts on purpose in the
+             fight, watched: the players resynced, and the spectator, who
+             parts too, given the host's state by the lobby as the match's
+             newest start (-win in the Windows half)
 
 `windows` (Windows' own Python) adds the window's programs: a session
 headless and with a window (tools/port_net.py's, with a window: in real
@@ -73,7 +80,8 @@ password browsed and joined from the page, the router's port mapped by a
 fake router (tools/relay/fake_router.py) and the guest coming through it,
 and the refusals of the window: another build, disc, mods or protocol,
 nobody at the address, the host gone quiet, a wrong password and an
-incompatible room, each said on the guest's screen and the host's.
+incompatible room, each said on the guest's screen and the host's; and
+a resync between two windows (win-resync), the guest's player asking.
 
 Every case runs at once, each with its own server and ports from
 --port-base (PORTS_PER_CASE apart). Outputs in build/net-lobby/
@@ -244,13 +252,16 @@ def plan_args(case, program, side):
     return ['--plan', path, '--trace', '--out', os.path.join(case.folder, 'side%d' % side)]
 
 
-def judge_session(case, labels, codes, path_words=None, both_paths=True):
+def judge_session(case, labels, codes, path_words=None, both_paths=True, resync=False):
     """Both ended well, neither found a desync, the hashes agree and are
-    enough, the guest's leaving was heard; and the way taken."""
+    enough, the guest's leaving was heard; and the way taken. `resync`:
+    the two parted on purpose, and a resync put them together again
+    (port_net.resync_problems): their hashes may differ where they had
+    parted alone."""
     hashes = []
     for side, label in enumerate(labels):
         err = case.err(label)
-        if 'DESYNC' in err:
+        if 'DESYNC' in err and not resync:
             case.fail('the %s found a desync' % label)
         if codes[side] != 0:
             case.fail('the %s ended with %s (%s)' % (label, codes[side], os.path.join(case.folder, label + '.err')))
@@ -260,8 +271,16 @@ def judge_session(case, labels, codes, path_words=None, both_paths=True):
             case.said.append('%s: %s' % (label, way.group(1) or 'the relay'))
         if path_words and (side == 1 or both_paths) and not re.search(path_words, err):
             case.fail('the %s did not take the way %r (%s)' % (label, path_words, way.group(0) if way else 'none'))
+    parted = []
+    if resync:
+        more, parted = port_net.resync_problems(case.name, [case.err(label) for label in labels], hashes)
+        case.problems += more
+        took = re.search(r"netplay: resync 1's state, (\d+) bytes in (\d+) chunks, had by every guest in (\d+) ms",
+                         case.err(labels[0]))
+        if took:
+            case.said.append('the resync: %s bytes in %s chunks, had in %s ms' % took.groups())
     common = sorted(set(hashes[0]) & set(hashes[1]))
-    differ = [f for f in common if hashes[0][f] != hashes[1][f]]
+    differ = [f for f in common if hashes[0][f] != hashes[1][f] and not port_net.in_parted(f, parted)]
     if differ:
         case.fail('the state hashes differ from frame %d' % differ[0])
     if len(common) < 40:
@@ -274,7 +293,7 @@ def judge_session(case, labels, codes, path_words=None, both_paths=True):
 
 
 def lobby_session(case, program, host_more, guest_more, path_words, lobby_at=None, host_ip='127.0.0.2',
-                  guest_ip='127.0.0.3', window=False, both_paths=True):
+                  guest_ip='127.0.0.3', window=False, both_paths=True, resync=False):
     """A room at the lobby (or `lobby_at`'s), hosted and joined by its code,
     with port_net's plan; judged by judge_session."""
     lobby = lobby_at or case.server()
@@ -303,7 +322,7 @@ def lobby_session(case, program, host_more, guest_more, path_words, lobby_at=Non
         '--join', code.group(1), '--net-bind', '%s:%d' % (guest_ip, case.port(2)), '--player', 'Guest',
         '--room-password', PASSWORD] + guest_more, env)
     codes = wait_session(case, ['host', 'guest'], [host, guest], SECONDS)
-    judge_session(case, ['host', 'guest'], codes, path_words, both_paths)
+    judge_session(case, ['host', 'guest'], codes, path_words, both_paths, resync)
     for card in ('card1.mcd', 'card2.mcd'):
         if os.path.exists(os.path.join(case.folder, card)):
             case.fail('%s was written, and nothing of a session is' % card)
@@ -317,6 +336,15 @@ def case_punch(case):
 
 def case_relay(case):
     lobby_session(case, HEADLESS, ['--net-paths', 'relay'], ['--net-paths', 'relay'], r'no hole could be punched')
+
+
+def case_relay_resync(case):
+    """A resync through the lobby's relay (docs/NETPLAY.md, section 21):
+    the guest parts on purpose in the fight, the host's state goes to it
+    at the relay's pace, and the session goes on to its end."""
+    lobby_session(case, HEADLESS, ['--net-paths', 'relay'],
+                  ['--net-paths', 'relay', '--net-part-at', str(port_net.RESYNC_PART_AT)],
+                  r'no hole could be punched', resync=True)
 
 
 def case_mapped(case):
@@ -429,6 +457,9 @@ def case_refused(case):
 ROOM_SERVER = ['--rooms-per-ip', '100', '--creations-per-min', '1000', '--hello-rate', '2000', '--query-rate', '1000',
                '--watch-rate', '100000']
 ROOM_SEED = 4242
+# rooms-resync: the host of the room's match parts at this frame, in the
+# fight (which begins near 1,450 and is decided near 2,000)
+ROOM_PART_AT = 1550
 # Bunta leaves the second match in the middle of its fight, at this frame
 # of the session (its fight begins near 1,450 and is decided near 2,000).
 LEAVE_FRAME = 1700
@@ -655,6 +686,79 @@ def case_rooms_duo(case):
         case.said.append('a two on two match in a room: Ayame and Bunta, their partners the CPU\'s, to a team '
                          'out; %d hashes the same on both players, %d of them Chie\'s watching'
                          % (len(common), len(watched)))
+
+
+def case_rooms_resync(case):
+    """A room's match watched as it parts (docs/NETPLAY.md, section 21):
+    Ayame opens a room and plays its match with Bunta, Chie watches from
+    the fight's start; Ayame's own state parts on purpose in the fight, so
+    that Bunta and Chie (who run the inputs as they are) part from her.
+    The host resyncs its players a second after (--resync-auto 60: the
+    match is decided soon), and gives the lobby its state as the
+    match's newest start; the spectator, parted, asks for it, puts it in
+    and watches on to the match's end, every hash after it the same on
+    all three."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(HEADLESS, case.folder)
+    base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--net-plan-pads',
+            '--net-seed', str(ROOM_SEED), '--plan', plan, '--trace'] + TROUBLE
+
+    def member(label, *more):
+        return case.start(label, base + ['--out', os.path.join(case.folder, label), '--player', label.capitalize()] +
+                          list(more))
+
+    host = member('ayame', '--room-open', 'Parted', '--room-rule', 'fixed', '--room-matches', '1',
+                  '--net-part-at', str(ROOM_PART_AT), '--resync-auto', '60')
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    if code is None:
+        case.fail('the room of several was given no code')
+        return
+    code = code.group(1)
+    procs = [host, member('bunta', '--room-enter', code, '--room-matches', '1')]
+    if case.wait_for('bunta', r'room: in room', 60) is None:
+        case.fail('Bunta never came into the room')
+    procs.append(member('chie', '--room-enter', code, '--room-watcher', '--room-matches', '1'))
+    labels = ['ayame', 'bunta', 'chie']
+    codes = wait_all(procs, SECONDS)
+    segments = {}
+    for label, code_ in zip(labels, codes):
+        if code_ != 0:
+            case.fail('%s ended with %s (%s)' % (label, code_, os.path.join(case.folder, label + '.err')))
+        segments[label] = room_segments(case.err(label))
+    who = {label: seg.get(1) for label, seg in segments.items()}
+    if any(part is None for part in who.values()):
+        case.fail('match 1 was not played and watched by all three: %s' % ', '.join(
+            label for label, part in who.items() if part is None))
+        return
+    players = [label for label in labels if who[label]['role'] != 'watch']
+    if players != ['ayame', 'bunta']:
+        case.fail('match 1 was played by %s' % ', '.join(players))
+        return
+    more, parted = port_net.resync_problems(case.name, ['\n'.join(who[label]['text']) for label in players],
+                                            [who[label]['hashes'] for label in players])
+    case.problems += more
+    chie = '\n'.join(who['chie']['text'])
+    watched = re.search(r"watch: resync 1: the host's state of frame (\d+) put in", chie)
+    if 'watch: parted from the players\' game after frame' not in chie or not watched:
+        case.fail('Chie did not part from the players and put the resync\'s state in')
+    reference = who['ayame']['hashes']
+    for label in ('bunta', 'chie'):
+        mine = who[label]['hashes']
+        differ = [f for f in sorted(set(mine) & set(reference))
+                  if mine[f] != reference[f] and not port_net.in_parted(f, parted)]
+        if differ:
+            case.fail('%s\'s hash of frame %d is not Ayame\'s' % (label, differ[0]))
+    if watched:
+        after = [f for f in who['chie']['hashes'] if f >= int(watched.group(1))]
+        held = re.search(r"(\d+) hashes the same as its players'", chie)
+        if len(after) < 5 or not held:
+            case.fail('Chie ran %d hashes after the resync, and said %s' % (
+                len(after), held.group(0) if held else 'nothing of the match\'s end'))
+        else:
+            case.said.append('Ayame parted at frame %d; the resync at frame %s put her state on Bunta, and on '
+                             'Chie by the lobby; Chie ran %d hashes after it, %s held in all' % (
+                                 ROOM_PART_AT, watched.group(1), len(after), held.group(1)))
 
 
 def judge_rooms(case, segments):
@@ -1551,7 +1655,11 @@ HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_
                   # (a name of each system's: the gate runs the Linux and the
                   # Windows halves at once, and this one is long enough for
                   # the two to meet in one folder)
-                  ('rooms-win' if IS_WINDOWS else 'rooms', case_rooms)]
+                  ('rooms-win' if IS_WINDOWS else 'rooms', case_rooms),
+                  # a resync (docs/NETPLAY.md, section 21): through the
+                  # relay, and a room's match watched as it parts
+                  ('relay-resync-win' if IS_WINDOWS else 'relay-resync', case_relay_resync),
+                  ('rooms-resync-win' if IS_WINDOWS else 'rooms-resync', case_rooms_resync)]
 # Run after the cases above, not beside them (they all run at once, and
 # three programs more starve those that count their round trips), and in
 # the Linux half alone: a room's Crew match.
@@ -1612,6 +1720,19 @@ def case_win_headless(case):
     args = argparse.Namespace(out=case.folder, latency=100, loss=5, delay=2)
     case.problems += port_net.check_session('windows-headless', os.path.join(REPO, HEADLESS), args,
                                             (case.port(1), case.port(2)), False)
+
+
+def case_win_resync(case):
+    """A resync between two windows (docs/NETPLAY.md, section 21): the
+    guest's state parts on purpose in the fight, neither resyncs by itself
+    (--resync-auto 0), and the guest's player asks (as F5 does,
+    --resync-ask-at); the host's state goes to it and the session goes on
+    to the guest's leaving, the window's replays the same on both."""
+    args = argparse.Namespace(out=case.folder, latency=60, loss=5, delay=2)
+    case.problems += port_net.check_session(
+        'windows-resync', os.path.join(REPO, WINDOW), args, (case.port(1), case.port(2)), True, 'stock',
+        [['--resync-auto', '0'], ['--resync-auto', '0', '--net-part-at', str(port_net.RESYNC_PART_AT),
+                                  '--resync-ask-at', str(port_net.RESYNC_ASK_AT)]], True)
 
 
 def case_win_window(case):
@@ -2159,7 +2280,7 @@ WINDOW_CASES = [('win-headless', case_win_headless), ('win-window', case_win_win
                 ('win-rooms', case_win_rooms), ('win-portmap', case_win_portmap), ('win-refused', case_win_refused),
                 ('win-quiet', case_win_quiet), ('win-lobby-refused', case_win_lobby_refused),
                 ('win-pages', case_pages), ('win-pages-refused', case_pages_refused), ('win-room', case_win_room),
-                ('win-pages-four', case_pages_four)]
+                ('win-pages-four', case_pages_four), ('win-resync', case_win_resync)]
 # (and the window's ranked page with a match, after the rest: WINDOWS_LATER_CASES)
 WINDOWS_LATER_CASES.append(('win-ranked', case_win_ranked))
 # the online pages' cases, which the window's half of tools/port_net.py runs on Linux too

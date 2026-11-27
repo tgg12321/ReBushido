@@ -178,6 +178,7 @@ typedef struct {
 
 static struct {
     s32 is_on;
+    s32 relayed; /* the way is the server's relay */
     PortNetAddress server;
     u32 paths; /* PORT_NET_PATH_... allowed */
     char code[PORT_RELAY_CODE_BYTES];
@@ -520,6 +521,8 @@ void port_SetRelayMapped(const PortNetAddress *mapped) {
 }
 
 s32 port_IsRelayOn(void) { return g_relay.is_on; }
+
+s32 port_RelayIsRelayed(void) { return g_relay.is_on && g_relay.relayed; }
 
 void port_ResetRelay(void) {
     u32 i;
@@ -1076,6 +1079,7 @@ s32 port_RelayMeet(s32 role, s32 again) {
                         return 0;
                     }
                     port_SetNetPeerNow(&g_relay.server);
+                    g_relay.relayed = TRUE;
                     port_NamePath(detail);
                     port_Log("relay: no hole could be punched: the lobby's "
                              "server passes the datagrams on\n");

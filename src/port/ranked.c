@@ -1350,6 +1350,14 @@ void port_RankedHash(u32 frame, u64 hash) {
     g_ranked.hash_count++;
 }
 
+void port_RankedResynced(u32 agreed) {
+    while (g_ranked.hash_count > 0 &&
+           port_NetGetWord(g_ranked.hashes +
+                           (g_ranked.hash_count - 1) * HASH_BYTES) > agreed) {
+        g_ranked.hash_count--;
+    }
+}
+
 void port_RankedReplayWritten(const char *path) {
     if (!g_ranked.playing || g_ranked.replay_count >= REPLAYS_MOST) {
         return;

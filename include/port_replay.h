@@ -121,6 +121,24 @@ extern s32 port_ReplayServedStart(
  * whole, or not the state its host had (its hash). */
 extern s32 port_ReplayLoadServed(const u8 *blob, u32 size, u32 *frame);
 
+/* ---- a resync online (docs/NETPLAY.md, section 21) ---- */
+
+/* The host: the state now, at netplay's frame `frame`, packed whole as a
+ * spectators' start is (this run's own left out, what the disc holds
+ * pointed at, the rest deflated): TRUE, its bytes. A fight's file or a
+ * start being made is finished first. */
+extern s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size);
+/* A guest or a spectator: a state so packed put in, this run's own kept:
+ * TRUE, netplay's frame it is of; FALSE where it is not whole, or not the
+ * state its host had (its hash). */
+extern s32 port_ReplayResyncLoad(const u8 *blob, u32 size, u32 *frame);
+/* The state packed or put in last is the session's from here: the fight
+ * being recorded keeps it at this input (RSYN), its hashes after
+ * netplay's frame `agreed_frame` (the last every machine held the same)
+ * not held by a playback; a room's spectators are served it; the
+ * session's run from power on is not whole from here. */
+extern void port_ReplayResynced(u32 agreed_frame);
+
 /* ---- playing back ---- */
 
 /* What a replay says of itself, read from its file. */

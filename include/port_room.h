@@ -183,6 +183,11 @@ extern s32 port_WatchStart(const u8 **blob, u32 *size);
 /* The start is in the state, at netplay's `frame`: inputs from there are
  * asked for. */
 extern void port_WatchStarted(u32 frame);
+/* Parted from the players at the hashed frame `frame` (docs/NETPLAY.md,
+ * section 21): a start of a later frame is asked for (the state the
+ * match's host resynced its players with, or the next fight's), and the
+ * one had kept but not given (port_WatchStart) until it comes. */
+extern void port_WatchAskStart(u32 frame);
 /* A frame's inputs, the four pads' into pads: 1 where they have come. The
  * frames had, from the start on; a final hash of the players', 1 where it has
  * come; the session's end, 1 and its frame where said; the time since the

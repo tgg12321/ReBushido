@@ -1,6 +1,7 @@
 /* Netplay's state hashes: the other's compared with this program's only once
- * both are final; a host of four passing each guest's inputs on; and a
- * guest who leaves a fight of four given to the CPU. */
+ * both are final; a host of four passing each guest's inputs on; a guest
+ * who leaves a fight of four given to the CPU; and a resync, the host's
+ * state sent in chunks and put in on a guest where the two have parted. */
 /* Rollback netplay (src/port/netplay.c; docs/NETPLAY.md, section 12)
  * prints and sends a state hash every 30 frames once both pads' inputs
  * before it are known, and stops on a hash of the other's that is not its
@@ -37,6 +38,10 @@ static u64 g_test_game;
 static u32 g_test_blank;
 static u32 g_test_desyncs;
 static u32 g_test_sessions;
+/* what the other's datagrams say of resyncs: those it has had, and the
+ * frame of the host's next */
+static u32 g_test_their_epoch;
+static u32 g_test_their_resync_at;
 
 static u64 test_Mix(u64 state, const PortInput *input) {
     state ^= (u64)input->buttons[0] | ((u64)input->buttons[1] << 16) |
@@ -78,6 +83,60 @@ void port_SessionSeed(void) {}
 
 /* no replay is recorded here (src/port/replay.c) */
 void port_ReplayBoundary(void) {}
+
+/* A resync's state as replay.c packs it, here: the game's state, the
+ * frame, then bytes of a pattern, RESYNC_TEST_BYTES in all (three chunks
+ * of RESYNC_CHUNK_BYTES, the last short). */
+#define RESYNC_TEST_BYTES (2 * RESYNC_CHUNK_BYTES + 300)
+static u8 g_test_packed[RESYNC_TEST_BYTES];
+static u32 g_test_resynced;
+static u32 g_test_resynced_agreed;
+
+static void test_PackState(u8 *out, u64 state, u32 frame) {
+    u32 i;
+
+    for (i = 0; i < RESYNC_TEST_BYTES; i++) {
+        out[i] = (u8)(i * 7 + 3);
+    }
+    test_Copy(out, &state, sizeof(state));
+    port_NetPutWord(out + sizeof(state), frame);
+}
+
+s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
+    test_PackState(g_test_packed, g_test_game, frame);
+    *blob = g_test_packed;
+    *size = RESYNC_TEST_BYTES;
+    return 1;
+}
+
+s32 port_ReplayResyncLoad(const u8 *blob, u32 size, u32 *frame) {
+    u8 want[RESYNC_TEST_BYTES];
+    u64 state;
+    u32 i;
+
+    test_Copy(&state, blob, sizeof(state));
+    test_PackState(want, state, port_NetGetWord(blob + sizeof(state)));
+    if (size != RESYNC_TEST_BYTES) {
+        return 0;
+    }
+    for (i = 0; i < size; i++) {
+        if (blob[i] != want[i]) {
+            return 0;
+        }
+    }
+    g_test_game = state;
+    *frame = port_NetGetWord(blob + sizeof(state));
+    return 1;
+}
+
+void port_ReplayResynced(u32 agreed_frame) {
+    g_test_resynced++;
+    g_test_resynced_agreed = agreed_frame;
+}
+
+u64 port_StateBuildSum(void) { return 0x0123456789ABCDEFULL; }
+
+s32 port_RelayIsRelayed(void) { return 0; }
 
 /* the buttons a frame's input depends on (the session's own presses:
  * none), and whether a fight of four is on (port_duo.h) */
@@ -139,6 +198,8 @@ void port_RankedHash(u32 frame, u64 hash) {
     (void)hash;
 }
 
+void port_RankedResynced(u32 agreed) { (void)agreed; }
+
 void port_WatchTick(void) {}
 
 s32 port_WatchHash(u32 frame, u64 *hash) {
@@ -154,6 +215,16 @@ s32 port_WatchEnd(u32 *frame, s32 *winner) {
 }
 
 u32 port_WatchKnown(void) { return 0; }
+
+s32 port_WatchStart(const u8 **blob, u32 *size) {
+    (void)blob;
+    (void)size;
+    return 0;
+}
+
+void port_WatchStarted(u32 frame) { (void)frame; }
+
+void port_WatchAskStart(u32 frame) { (void)frame; }
 
 u32 port_WatchQuietMs(void) { return 0; }
 
@@ -178,6 +249,66 @@ void *port_HostAllocate(u32 size) { return test_Alloc(size); }
 
 /* The last datagram sent on each of the links' sockets (TEST_SOCKET on). */
 #define TEST_SOCKET 10
+
+static void test_Queue(const u8 *bytes, u32 count);
+
+/* The guest a host's resync is sent to, here: the chunks it has had of
+ * it, assembled, and each acknowledged at once (every second one's
+ * acknowledgement lost: the next says it has that one too); and what a
+ * guest sent the host last of the chunks it has. */
+static u8 g_test_guest_blob[RESYNC_TEST_BYTES];
+static u8 g_test_guest_map[RESYNC_MAP_BYTES];
+static u32 g_test_guest_chunks;
+static u32 g_test_chunk_sends;
+static u32 g_test_chunk_frame;
+static u32 g_test_chunk_epoch;
+static u32 g_test_acks;
+static u32 g_test_ack_first;
+static u32 g_test_inputs_resync_at;
+
+static void test_Sent(s32 link, const u8 *bytes, u32 count) {
+    s32 detail;
+    u32 number;
+    s32 kind = port_NetReadHeader(bytes, (s32)count, &detail, &number);
+    u8 ack[ACK_BYTES];
+    u32 i;
+
+    if (link != 0) {
+        return;
+    }
+    if (kind == KIND_INPUT) {
+        g_test_inputs_resync_at = port_NetGetWord(bytes + INPUT_RESYNC_AT);
+    }
+    if (kind == KIND_RESYNC_ACK) {
+        g_test_acks++;
+        g_test_ack_first = number;
+    }
+    if (kind != KIND_RESYNC) {
+        return;
+    }
+    g_test_chunk_sends++;
+    g_test_chunk_frame = port_NetGetWord(bytes + RESYNC_FRAME);
+    g_test_chunk_epoch = port_NetGetWord(bytes + RESYNC_EPOCH);
+    for (i = RESYNC_DATA; i < count; i++) {
+        g_test_guest_blob[number * RESYNC_CHUNK_BYTES + i - RESYNC_DATA] =
+            bytes[i];
+    }
+    if (!port_MapHas(g_test_guest_map, number)) {
+        port_MapSet(g_test_guest_map, number);
+        g_test_guest_chunks++;
+        if (number % 2 == 1) {
+            /* (its acknowledgement lost) */
+            return;
+        }
+    }
+    port_NetHeader(ack, KIND_RESYNC_ACK, 0, 0);
+    port_NetPutWord(ack + ACK_EPOCH, port_NetGetWord(bytes + RESYNC_EPOCH));
+    for (i = 0; i < RESYNC_ACK_SPAN / BITS_PER_BYTE; i++) {
+        ack[ACK_MAP + i] = g_test_guest_map[i];
+    }
+    test_Queue(ack, sizeof(ack));
+}
+
 static u8 g_test_sent[PORT_NET_LINKS][PORT_NET_DATAGRAM_MAX];
 static u32 g_test_sent_bytes[PORT_NET_LINKS];
 
@@ -191,18 +322,41 @@ s32 port_HostUdpSend(
             g_test_sent[socket - TEST_SOCKET][i] = ((const u8 *)bytes)[i];
         }
         g_test_sent_bytes[socket - TEST_SOCKET] = count;
+        test_Sent(socket - TEST_SOCKET, (const u8 *)bytes, count);
     }
     return (s32)count;
 }
 
+/* Datagrams that come on link 0's socket, in their order. */
+#define TEST_QUEUE 64
+static u8 g_test_queue[TEST_QUEUE][PORT_NET_DATAGRAM_MAX];
+static u32 g_test_queue_bytes[TEST_QUEUE];
+static u32 g_test_queued;
+static u32 g_test_taken;
+
+static void test_Queue(const u8 *bytes, u32 count) {
+    u32 at = g_test_queued++ % TEST_QUEUE;
+
+    test_Copy(g_test_queue[at], bytes, count);
+    g_test_queue_bytes[at] = count;
+}
+
 s32 port_HostUdpReceive(
     s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms) {
-    (void)socket;
-    (void)bytes;
+    u32 at;
+    u32 i;
+
     (void)room;
-    (void)from;
     (void)wait_ms;
-    return -1;
+    for (i = 0; i < sizeof(*from); i++) {
+        ((u8 *)from)[i] = 0;
+    }
+    if (socket != TEST_SOCKET || g_test_taken == g_test_queued) {
+        return -1;
+    }
+    at = g_test_taken++ % TEST_QUEUE;
+    test_Copy(bytes, g_test_queue[at], g_test_queue_bytes[at]);
+    return (s32)g_test_queue_bytes[at];
 }
 
 static s32 test_StartsWith(const char *text, const char *start) {
@@ -215,7 +369,7 @@ static s32 test_StartsWith(const char *text, const char *start) {
 }
 
 void port_Log(const char *format, ...) {
-    if (test_StartsWith(format, "netplay: DESYNC")) {
+    if (test_StartsWith(format, "netplay: DESYNC at")) {
         g_test_desyncs++;
     }
 }
@@ -280,6 +434,9 @@ static void test_LinkTells(s32 link, s32 pad, u32 first, u32 end, u32 hashed,
     port_NetPutWord(in + INPUT_STAMP, 0);
     port_NetPutWord(in + INPUT_ECHO, 0);
     port_NetPutWord(in + INPUT_HELD, 0);
+    port_NetPutWord(in + INPUT_EPOCH, g_test_their_epoch);
+    port_NetPutWord(in + INPUT_ASK, 0);
+    port_NetPutWord(in + INPUT_RESYNC_AT, g_test_their_resync_at);
     port_NetPutWord(in + INPUT_BLOCKS, 1);
     in[at + BLOCK_PAD] = (u8)pad;
     in[at + BLOCK_PAD + 1] = 0;
@@ -566,6 +723,209 @@ static void test_GuestTold(void) {
     g_test_used = 0xFFFF;
 }
 
+/* ---- a resync (docs/NETPLAY.md, section 21) ---- */
+
+/* One turn of port_RunNetplay's loop as it is with a resync: its turn
+ * first, and no frame past the one it is at. */
+static void test_ResyncTurn(void) {
+    port_NetplayKeepLocal();
+    port_NetplaySendInputs();
+    port_NetplayReceive(0);
+    if (port_NetplayResyncTurn()) {
+        return;
+    }
+    if (g_np_is_wrong) {
+        port_NetplayRollBack();
+    }
+    port_NetplayFinalHashes();
+    if (g_np_resync_at != 0 && g_np_frame >= g_np_resync_at) {
+        return;
+    }
+    port_NetplayRunFrame();
+}
+
+static void test_LinkUp(void) {
+    g_port_net_links[0].socket = TEST_SOCKET;
+    g_port_net_links[0].has_peer = 1;
+    g_port_net_links[0].is_fixed = 0;
+    g_test_queued = g_test_taken = 0;
+    g_test_resynced = 0;
+    g_test_their_epoch = 0;
+    g_test_their_resync_at = 0;
+}
+
+/* The host: the other's hash of frame 30 is not its own, so the two have
+ * parted and the session goes on; a moment after, by itself, it says a
+ * resync RESYNC_LEAD frames on, runs to there, and sends its state there
+ * to the other in chunks until it has said it has them all (one lost
+ * acknowledgement in two, said by the next); from then the hashes before the
+ * frame, and any of the state before it, are not held to its own, and
+ * one after it is. */
+static void test_HostResyncs(void) {
+    u32 resync_at;
+    u32 i;
+
+    test_Begin();
+    test_LinkUp();
+    port_SetNetplayResyncAuto(3);
+    for (i = 0; i < RESYNC_MAP_BYTES; i++) {
+        g_test_guest_map[i] = 0;
+    }
+    g_test_guest_chunks = 0;
+    g_test_chunk_sends = 0;
+    test_LinkTells(0, 1, 0, 120, TEST_HASHED, test_TrueHash(TEST_HASHED) ^ 1,
+                   test_TheirInput, 0);
+    while (g_np_frame < TEST_RUN_TO) {
+        test_ResyncTurn();
+    }
+    CHECK(g_np_parted);
+    CHECK_EQ(g_test_desyncs, 1);
+    CHECK_EQ(g_np_ended, 0);
+    CHECK_EQ(g_np_resync_at, 0);
+    /* parted three frames: the resync said, and sent with the inputs */
+    while (g_np_resync_at == 0 && g_np_frame < 60) {
+        test_ResyncTurn();
+    }
+    resync_at = g_np_resync_at;
+    CHECK_EQ(resync_at, g_np_parted_frame + 3 + RESYNC_LEAD);
+    port_NetplaySendInputs();
+    CHECK_EQ(g_test_inputs_resync_at, resync_at);
+    /* to it, and no further until it is done */
+    while (g_np_frame < resync_at) {
+        test_ResyncTurn();
+    }
+    CHECK_EQ(g_np_frame, resync_at);
+    test_ResyncTurn();
+    CHECK_EQ(g_np_frame, resync_at);
+    CHECK_EQ(g_np_epoch, 1);
+    CHECK_EQ(g_np_resync_frame, resync_at);
+    CHECK_EQ(g_np_resync_at, 0);
+    CHECK(!g_np_parted);
+    CHECK_EQ(g_test_resynced, 1);
+    CHECK_EQ(g_test_resynced_agreed, 0);
+    CHECK_EQ(g_test_guest_chunks, 3);
+    /* (the second's acknowledgement lost, the third's says it too) */
+    CHECK_EQ(g_test_chunk_sends, 3);
+    CHECK_EQ(g_test_chunk_frame, resync_at);
+    CHECK_EQ(g_test_chunk_epoch, 1);
+    CHECK_EQ(g_np_link[0].resync_had, 3);
+    for (i = 0; i < RESYNC_TEST_BYTES; i++) {
+        CHECK_EQ(g_test_guest_blob[i], g_test_packed[i]);
+    }
+    /* on from the frame: a hash of before the resync, or of the state
+     * the other had before it, is not held to this program's */
+    while (g_np_frame < resync_at + 2 * NETPLAY_HASH_EVERY) {
+        test_ResyncTurn();
+    }
+    {
+        u32 hashed = (resync_at / NETPLAY_HASH_EVERY + 1) * NETPLAY_HASH_EVERY;
+        u64 mine =
+            g_np_hashes[(hashed / NETPLAY_HASH_EVERY) % NETPLAY_HASHES].hash;
+        u32 compared = g_np_hashes_compared;
+
+        CHECK_EQ(
+            g_np_hashes[(hashed / NETPLAY_HASH_EVERY) % NETPLAY_HASHES].frame,
+            hashed);
+        test_LinkTells(0, 1, 120, 120, hashed, mine ^ 1, test_TheirInput, 0);
+        CHECK_EQ(g_np_hashes_compared, compared);
+        test_LinkTells(0, 1, 120, 120, TEST_HASHED, 7, test_TheirInput, 0);
+        g_test_their_epoch = 1;
+        test_LinkTells(0, 1, 120, 120, TEST_HASHED, 7, test_TheirInput, 0);
+        CHECK_EQ(g_np_hashes_compared, compared);
+        test_LinkTells(0, 1, 120, 120, hashed, mine, test_TheirInput, 0);
+        CHECK_EQ(g_np_hashes_compared, compared + 1);
+        CHECK(!g_np_parted);
+        CHECK_EQ(g_test_desyncs, 1);
+    }
+    port_SetNetplayResyncAuto(RESYNC_AUTO_FRAMES);
+    g_port_net_links[0].socket = -1;
+}
+
+/* A chunk of a host's state of `state` at `frame`, resync `epoch`, as the
+ * host sends it, into the queue. */
+static void test_QueueChunk(u64 state, u32 frame, u32 epoch, u32 chunk) {
+    u8 blob[RESYNC_TEST_BYTES];
+    u8 out[PORT_NET_DATAGRAM_MAX];
+    u64 build = port_StateBuildSum();
+    u32 length = chunk == 2 ? RESYNC_TEST_BYTES - 2 * RESYNC_CHUNK_BYTES
+                            : RESYNC_CHUNK_BYTES;
+
+    test_PackState(blob, state, frame);
+    port_NetHeader(out, KIND_RESYNC, 0, chunk);
+    port_NetPutWord(out + RESYNC_EPOCH, epoch);
+    port_NetPutWord(out + RESYNC_FRAME, frame);
+    port_NetPutWord(out + RESYNC_AGREED, 0);
+    port_NetPutWord(out + RESYNC_SIZE, RESYNC_TEST_BYTES);
+    port_NetPutWord(out + RESYNC_BUILD, (u32)build);
+    port_NetPutWord(out + RESYNC_BUILD + WORD_BYTES, (u32)(build >> WORD_BITS));
+    test_Copy(out + RESYNC_DATA, blob + chunk * RESYNC_CHUNK_BYTES, length);
+    test_Queue(out, RESYNC_DATA + length);
+}
+
+/* A guest: the host says a resync at frame 40; this program runs to
+ * there and no further, the host's state comes in three chunks (one of
+ * them twice), each acknowledged, and is put in; the session goes on from
+ * the frame with the host's state and the resync's number, and a chunk
+ * of it that comes again is acknowledged again. */
+static void test_GuestResynced(void) {
+    const u64 host_state = 0x5EED5EED12345678ULL;
+    const u32 resync_at = 40;
+
+    test_Begin();
+    port_SetNetplay(1, NETPLAY_DELAY_DEFAULT);
+    test_LinkUp();
+    g_test_acks = 0;
+    g_test_their_resync_at = resync_at;
+    test_LinkTells(0, 0, 0, 120, 0, 0, test_TheirInput, 0);
+    CHECK_EQ(g_np_resync_at, resync_at);
+    while (g_np_frame < resync_at + 5 && g_test_resynced == 0) {
+        port_NetplayKeepLocal();
+        port_NetplayReceive(0);
+        if (g_np_frame == resync_at) {
+            break;
+        }
+        test_ResyncTurn();
+    }
+    CHECK_EQ(g_np_frame, resync_at);
+    test_QueueChunk(host_state, resync_at, 1, 0);
+    test_QueueChunk(host_state, resync_at, 1, 2);
+    test_QueueChunk(host_state, resync_at, 1, 2);
+    test_QueueChunk(host_state, resync_at, 1, 1);
+    test_ResyncTurn();
+    CHECK_EQ(g_test_resynced, 1);
+    CHECK_EQ(g_np_epoch, 1);
+    CHECK_EQ(g_np_frame, resync_at);
+    CHECK_EQ(g_np_resync_frame, resync_at);
+    CHECK(g_test_game == host_state);
+    CHECK(!g_np_rs.coming);
+    CHECK(g_test_acks > 0);
+    CHECK_EQ(g_test_ack_first, 3);
+    /* its acknowledgement lost, the host sends a chunk again */
+    g_test_acks = 0;
+    test_QueueChunk(host_state, resync_at, 1, 1);
+    port_NetplayReceive(0);
+    CHECK_EQ(g_test_acks, 1);
+    CHECK_EQ(g_test_resynced, 1);
+    /* ... and a host's state of another build is not put in: the session
+     * ends on the desync, as it did */
+    g_np_in_process = 1;
+    g_test_their_epoch = 1;
+    {
+        u8 out[PORT_NET_DATAGRAM_MAX];
+
+        test_QueueChunk(host_state, resync_at + 30, 2, 0);
+        test_Copy(out, g_test_queue[(g_test_queued - 1) % TEST_QUEUE],
+                  g_test_queue_bytes[(g_test_queued - 1) % TEST_QUEUE]);
+        port_NetPutWord(out + RESYNC_BUILD, 1);
+        test_Copy(
+            g_test_queue[(g_test_queued - 1) % TEST_QUEUE], out, RESYNC_DATA);
+    }
+    port_NetplayReceive(0);
+    CHECK_EQ(g_np_ended, PORT_NETPLAY_END_DESYNC);
+    g_np_in_process = 0;
+    g_port_net_links[0].socket = -1;
+}
+
 void test_Main(void) {
     /* the other's final hash in the datagram that brings the inputs it
      * was made on */
@@ -594,4 +954,8 @@ void test_Main(void) {
     /* four players, the host passing each guest's inputs on */
     test_HostOfFour();
     test_GuestTold();
+
+    /* the host resyncing a session that parted, and a guest resynced */
+    test_HostResyncs();
+    test_GuestResynced();
 }

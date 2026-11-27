@@ -370,6 +370,13 @@ void port_FeedTick(void) {
         port_RoomSend(out, FEED_BODY + SETTINGS_BYTES);
     }
     if (port_ReplayServedStart(&blob, &size, &frame, &made) &&
+        made != g_feed.made && size > START_MAX) {
+        g_feed.made = made;
+        port_Log("watch: the start of frame %u is too large for the lobby "
+                 "(%u bytes): the spectators are not given it\n",
+                 frame, size);
+    }
+    if (port_ReplayServedStart(&blob, &size, &frame, &made) &&
         made != g_feed.made && size <= START_MAX) {
         /* a fight's new start: the server's copy is replaced */
         g_feed.made = made;
@@ -459,6 +466,7 @@ static struct {
     u32 have;
     u8 map[CHUNK_MAP_BYTES];
     s32 started; /* put in: the inputs are asked for */
+    u32 after;   /* parted: a start of this frame or later is wanted */
     u16 *inputs;
     u32 from;  /* the start's frame */
     u32 known; /* every frame before it has come */
@@ -486,6 +494,7 @@ void port_WatchBegin(const PortRoomMatch *match) {
     g_watch.start_frame = NO_START;
     g_watch.have = 0;
     g_watch.started = FALSE;
+    g_watch.after = 0;
     g_watch.known = 0;
     g_watch.ended = FALSE;
     g_watch.nothing = 0;
@@ -546,6 +555,7 @@ static void port_WatchTakeChunk(const u8 *in, s32 bytes) {
     u32 i;
 
     if (g_watch.started || size == 0 || size > START_MAX ||
+        frame < g_watch.after ||
         count != (size + CHUNK_BYTES - 1) / CHUNK_BYTES || chunk >= count ||
         length != (size - chunk * CHUNK_BYTES < CHUNK_BYTES
                        ? size - chunk * CHUNK_BYTES
@@ -650,12 +660,19 @@ const u8 *port_WatchSettings(void) {
 
 s32 port_WatchStart(const u8 **blob, u32 *size) {
     if (g_watch.start_frame == NO_START ||
-        g_watch.have < g_watch.start_chunks) {
+        g_watch.have < g_watch.start_chunks ||
+        g_watch.start_frame < g_watch.after) {
         return FALSE;
     }
     *blob = g_watch.start;
     *size = g_watch.start_size;
     return TRUE;
+}
+
+void port_WatchAskStart(u32 frame) {
+    g_watch.started = FALSE;
+    g_watch.after = frame;
+    g_watch.asked_at = 0;
 }
 
 void port_WatchStarted(u32 frame) {

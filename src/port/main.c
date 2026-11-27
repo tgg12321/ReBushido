@@ -236,6 +236,13 @@ static const char g_port_usage[] =
     "  --ranked-lie   for tests: report the other player won (a dispute)\n"
     "  --net-plan-pads   for tests: in a session, the plan's pad of this\n"
     "                 program's place alone (a plan presses both)\n"
+    "  --resync-auto N   where the machines' games part online, the host\n"
+    "                 puts its state on every one by itself N frames after\n"
+    "                 (180; 0: only at a press, F5) (docs/NETPLAY.md, 21)\n"
+    "  --resync-ask-at F   for tests: this program's player asks for a\n"
+    "                 resync at its frame F, once the games have parted\n"
+    "  --net-part-at F   for tests: this program's state is made another's\n"
+    "                 at its frame F (a word of the RAM nothing reads)\n"
     "  --session-differ build|disc|mods|protocol   for tests: say another\n"
     "  --net-latency MS   for tests: every datagram waits this long first\n"
     "  --net-loss PERCENT ... and so many in a hundred are dropped\n"
@@ -934,6 +941,23 @@ s32 port_Main(s32 argc, char **argv) {
             port_RankedSetIdentity(argv[++i]);
         } else if (port_TextsEqual(word, "--net-plan-pads")) {
             port_SetNetplayOwnPadOnly(TRUE);
+        } else if (port_TextsEqual(word, "--resync-auto") ||
+                   port_TextsEqual(word, "--resync-ask-at") ||
+                   port_TextsEqual(word, "--net-part-at")) {
+            s32 count = 0;
+
+            if (!port_ParseNumber(argv[++i], &count) || count < 0) {
+                port_UsageError("--resync-auto, --resync-ask-at and "
+                                "--net-part-at take a number of frames, not ",
+                                argv[i]);
+            }
+            if (port_TextsEqual(word, "--resync-auto")) {
+                port_SetNetplayResyncAuto((u32)count);
+            } else if (port_TextsEqual(word, "--resync-ask-at")) {
+                port_SetNetplayResyncAskAt((u32)count);
+            } else {
+                port_SetNetplayPartAt((u32)count);
+            }
         } else if (port_TextsEqual(word, "--player")) {
             player = argv[++i];
         } else if (port_TextsEqual(word, "--room-password")) {
