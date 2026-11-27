@@ -692,6 +692,25 @@ the stage").
     same inputs as a player, so a fight against it replays and runs online
     as any other. A level may be learned from replays (item 23) of real
     players; a choice on the select screens and in the settings.
+    **Done on the port** ([`CPU.md`](CPU.md); [`PLAYING.md`](PLAYING.md),
+    the settings menu's CPU): a study of the original (it reads no pad,
+    but it sees the second place's frame before it is drawn, answers with
+    no delay, times its guard to the blade's frame from the motion's data
+    and reads which button began the attack and the move asked for and not
+    begun; measured, about three in ten of the attacks it meets answered
+    in under a fifth of a second), and the port's CPU, `src/port/cpu.c`:
+    Novice, Adept, Veteran, Master (`cpu` setting, `--cpu`), deciding from
+    what it saw of the opponent 6 to 9 frames back (never under 5), by a
+    pad's buttons, its memory and dice in the game's state (the level in
+    the gameplay switches: replays and sessions keep it). Measured CPU
+    against CPU, 96 fights a pair (`tools/port_cpu_bench.py`): against the
+    original 34%, 46%, 61%, 67%; each level beats the one below (CPU.md,
+    "Measuring the levels"); a fight is the same bytes on both sizes and
+    passes the rollback self-test. Left: a choice on the select screens;
+    the port's CPU in fights of four and for a takeover; walking round
+    obstacles (it walks straight and sidles when blocked); dirt, thrown
+    weapons and guns; levels learned from replays of real players; a
+    person's test of how it feels to fight.
 28. **A resync button** (the owner, 2026-11-26, instead of a desync
     report): when an online session finds the machines' hashes parted, a
     press (any player's, or offered on its own) puts the host's state on
