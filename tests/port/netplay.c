@@ -134,6 +134,12 @@ void port_ReplayResynced(u32 agreed_frame) {
     g_test_resynced_agreed = agreed_frame;
 }
 
+/* The record of fights (port_stats.h) has nothing to forget here. */
+void port_StatsResynced(u32 back, s32 loaded) {
+    (void)back;
+    (void)loaded;
+}
+
 u64 port_StateBuildSum(void) { return 0x0123456789ABCDEFULL; }
 
 s32 port_RelayIsRelayed(void) { return 0; }

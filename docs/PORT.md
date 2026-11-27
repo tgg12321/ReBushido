@@ -11400,8 +11400,14 @@ the boundary's own is a step a rollback took back, and is dropped; what
 was seen at a later boundary than this one is forgotten first, since the
 state of this boundary was put back and the steps after it, run again,
 note it again (the step before it, whose notes this boundary saw, is not
-run again). A frame run ahead notes nothing (`g_port_ahead`): its state
-is put back. A fight's end seen is the record's line, made of the game's
+run again). Whether a boundary is on the fight's screen is kept by its
+input's number, and the fight's start and end are found against the
+boundary of the input before, not the last one seen: a rollback's first
+boundary comes after a later one, and a session's rollback across a
+fight's end made its rerun boundary look like the fight's start (found
+by `port_net.py resync`: a resynced fight's host kept a fight one frame
+long, 2026-11-27). A frame run ahead notes nothing (`g_port_ahead`): its
+state is put back. A fight's end seen is the record's line, made of the game's
 state there: the mode, the stage, each side's fighter and weapon, the
 opponent's CPU (`port_CpuPlays` and the run's level, or the game's own),
 both fighters' wounds as the game counts them (`leg_wounds`,
@@ -11414,7 +11420,16 @@ before it, for the story's henchmen) to the first off it, and online the
 session's kind and the other's name (the session's lobby's, or the
 ladder's opponent). It is counted at once outside a session, and in a
 session when netplay says that no rollback can reach it
-(`port_NetplayFinalFrames`, as a replay's file waits). A fight's end at
+(`port_NetplayFinalFrames`, as a replay's file waits) and that this
+machine's game is the session's there: not parted, and a hash at or
+after it held the same on every machine (`port_NetplayAgreedFrame`,
+`port_NetplayIsParted`); or, where the session ends first, if it was
+final and not parted at its last boundary. A guest that parted may have
+ended a fight its game alone had before anyone knew: a resync (NETPLAY.md,
+section 21) puts the host's state in, and on that machine what was seen
+after the last frame all held the same is forgotten as a rollback's is,
+the screens of those boundaries with it (`port_StatsResynced`); the
+host's, whose state is the session's, keeps all of it. A fight's end at
 or before the last counted, the run's or the session's, is not counted
 again: the rollback self-test runs every frame twice. Nothing is counted
 while a replay plays (its pending start too), in training (the port's
@@ -11500,7 +11515,9 @@ record: `tmp/stats/` (the owner's).
 
 **Left**: a fight the program ends in the middle of is not counted (nor
 is a session's last fight where a player leaves before its end is
-final); a CPU's level is the run's setting as the fight ends; local
+final); a fight that ended between a guest's parting and the resync,
+in the host's game, is counted on the host and lost on that guest (the
+state put in is past its end); a CPU's level is the run's setting as the fight ends; local
 versus is the first player's record alone; a tournament's results
 (ROADMAP 31) are to be kept here.
 

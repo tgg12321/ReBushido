@@ -139,6 +139,11 @@ extern s32 port_NetplayLeftPad(void);
 extern u32 port_NetplayCpuPads(void);
 /* The pads this program's players play in the session (a bit each). */
 extern u32 port_NetplayLocalPads(void);
+/* The last frame whose hash every machine held the same (since the last
+ * resync, its own frame), and whether this program's game has parted from
+ * the session's and waits for a resync (docs/NETPLAY.md, section 21). */
+extern u32 port_NetplayAgreedFrame(void);
+extern s32 port_NetplayIsParted(void);
 extern s32 port_IsNetplayOn(void);
 /* Where the other program has gone, this one plays on alone instead of
  * ending (the window's: a player is not thrown out of the game). */

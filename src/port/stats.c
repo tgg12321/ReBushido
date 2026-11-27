@@ -35,6 +35,10 @@
 #define REPLAYS_KEPT 4
 /* a fall this soon after a killing blow is that blow's */
 #define LETHAL_WITHIN 8
+/* the boundaries whose screen is kept, by their input's number: more than
+ * a rollback goes back (netplay's 8 and its delay, the self-test's) */
+#define RING 64
+#define RING_MASK (RING - 1)
 /* the group battle's rule word (stats_store.c), after port_match.h's */
 #define RULE_GROUP 4
 #define COUNTS_MOST 255
@@ -76,6 +80,11 @@ static struct {
     s32 was_in_fight;
     u32 fight_start;
     u32 left_fight;
+    /* whether the boundary of each input's number was the fight's screen
+     * (a rollback's steps run again come after a later boundary, not the
+     * one before them) */
+    u32 ring_count[RING];
+    u8 ring_fight[RING];
     s32 has_lethal[2];
     u32 lethal_seen[2];
     PortStatsKill lethal[2];
@@ -86,6 +95,9 @@ static struct {
     /* a fight's end seen, waiting to be final */
     s32 pending;
     u32 pending_at;
+    /* ... final, and of a game every machine had the same, at the last
+     * boundary of the session */
+    s32 pending_ready;
     u32 pending_start;
     PortStatsFight fight;
     /* the last fight's end counted: a run's own, a session's */
@@ -240,6 +252,8 @@ static void port_StatsForgetNotes(void) {
 /* Everything of the fight being fought forgotten: a replay plays, or a
  * session begins or ends. */
 static void port_StatsForgetFight(void) {
+    s32 i;
+
     port_StatsForgetNotes();
     g_stats.kill_count = 0;
     g_stats.has_lethal[0] = FALSE;
@@ -250,6 +264,10 @@ static void port_StatsForgetFight(void) {
     g_stats.fight_start = 0;
     g_stats.left_fight = 0;
     g_stats.was_in_fight = FALSE;
+    g_stats.pending_ready = FALSE;
+    for (i = 0; i < RING; i++) {
+        g_stats.ring_count[i] = (u32)-1;
+    }
 }
 
 /* What was seen after the boundary `count` forgotten: a rollback put its
@@ -268,6 +286,9 @@ static void port_StatsRollBack(u32 count) {
         if (g_stats.has_lethal[i] && g_stats.lethal_seen[i] > count) {
             g_stats.has_lethal[i] = FALSE;
         }
+    }
+    if (g_stats.left_fight > count) {
+        g_stats.left_fight = 0;
     }
     if (g_stats.pending && g_stats.pending_at > count) {
         g_stats.pending = FALSE;
@@ -611,7 +632,12 @@ void port_StatsBoundary(void) {
         return;
     }
     if (netplay != g_stats.netplay) {
-        /* a session begins or ends: its numbers are its own */
+        /* a session begins or ends: its numbers are its own. A fight's end
+         * final and held the same on every machine as it ended is counted
+         * (the last fight of a session the other player left soon after) */
+        if (g_stats.pending && g_stats.pending_ready) {
+            port_StatsCountPending();
+        }
         port_StatsForgetFight();
         g_stats.netplay = netplay;
         if (netplay) {
@@ -619,6 +645,13 @@ void port_StatsBoundary(void) {
         }
     }
     port_StatsRollBack(count);
+    if (count > 0 && g_stats.ring_count[(count - 1) & RING_MASK] == count - 1) {
+        /* the boundary before this one's input, not the last one seen: a
+         * rollback's first boundary comes after a later one */
+        g_stats.was_in_fight = g_stats.ring_fight[(count - 1) & RING_MASK];
+    }
+    g_stats.ring_count[count & RING_MASK] = count;
+    g_stats.ring_fight[count & RING_MASK] = (u8)in_fight;
     if (in_fight && !g_stats.was_in_fight) {
         g_stats.fight_start = count;
     } else if (!in_fight && g_stats.was_in_fight) {
@@ -654,9 +687,50 @@ void port_StatsBoundary(void) {
     }
     g_stats.was_in_fight = in_fight;
     port_StatsForgetNotes();
-    if (g_stats.pending &&
-        (!netplay ||
-         (!g_port_rerun && port_NetplayFinalFrames() >= g_stats.pending_at))) {
+    if (g_stats.pending && !netplay) {
         port_StatsCountPending();
+    } else if (g_stats.pending) {
+        /* A session's: no rollback can reach it, and this machine's game
+         * is the session's there: not parted, and a hash at or after it
+         * held the same on every machine (a guest that parted may have
+         * ended a fight its game alone had, before anyone knew; the
+         * resync's state puts it right, port_StatsResynced). */
+        u32 frame = port_NetplayFrameNow();
+        u32 agreed = port_NetplayAgreedFrame();
+        u32 agreed_count =
+            frame - agreed <= count ? count - (frame - agreed) : 0;
+
+        g_stats.pending_ready = !g_port_rerun && !port_NetplayIsParted() &&
+                                port_NetplayFinalFrames() >= g_stats.pending_at;
+        if (g_stats.pending_ready && agreed_count >= g_stats.pending_at) {
+            port_StatsCountPending();
+        }
     }
+}
+
+/* A resync (port_stats.h): on a machine that put the host's state in,
+ * what it saw after the last frame all held the same was its own game's
+ * and not the session's: forgotten, as a rollback's are, and the screens
+ * of those boundaries with it. */
+void port_StatsResynced(u32 back, s32 loaded) {
+    u32 count = g_port_input_count;
+    u32 cut = back <= count ? count - back : 0;
+    s32 i;
+
+    if (!loaded || !port_StatsIsOn()) {
+        return;
+    }
+    port_StatsRollBack(cut);
+    for (i = 0; i < RING; i++) {
+        if (g_stats.ring_count[i] != (u32)-1 && g_stats.ring_count[i] > cut) {
+            g_stats.ring_count[i] = (u32)-1;
+        }
+    }
+    if (g_stats.fight_start > cut) {
+        /* the fight began in the frames forgotten: the host's state says
+         * whether it is on at the next boundary */
+        g_stats.fight_start = 0;
+        g_stats.was_in_fight = FALSE;
+    }
+    port_StatsForgetNotes();
 }
