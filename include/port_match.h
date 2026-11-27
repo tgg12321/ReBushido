@@ -36,7 +36,9 @@
  *
  * With ReBushido's top menu the rule is chosen on a page of its own before
  * the first select's grid (Left and Right the value, Up and Down the row,
- * Cross), the crews then picked from the grid's first place, each a
+ * Cross; versus the CPU a row of the CPU's level too, and the story and
+ * Slash a page of that row alone), the crews then picked from the grid's
+ * first place, each a
  * character the crew does not have; the stage page shows the rule and
  * leaves it. With menu = original it is chosen on the stage pages (Circle
  * turns the rule, Start its number). Both start from the window's
@@ -116,7 +118,8 @@ enum {
     PORT_MATCH_ROW_RULE = 0,
     PORT_MATCH_ROW_COUNT = 1, /* the number, or the crew's size */
     PORT_MATCH_ROW_TEAMS = 2, /* one on one or two on two (port_duo.h) */
-    PORT_MATCH_ROWS = 3
+    PORT_MATCH_ROW_CPU = 3,   /* the CPU's level (port_cpu.h) */
+    PORT_MATCH_ROWS = 4
 };
 
 typedef struct {
@@ -175,6 +178,17 @@ typedef struct {
     u8 partner_picked[2];
     PortCrewPick partner[2];
     u32 pads_held; /* the third and fourth pads', at the select screen */
+    /* The CPU's level (PORT_CPU_..., port_cpu.h), chosen on the rule page
+     * where the select screen's opponent is the CPU (versus the CPU, the
+     * story, Slash): the page has the row (cpu_row; in a mode with no
+     * rule, the page is that row alone), its choice (page_cpu), what it
+     * was last reset to, one more (default_cpu, from the window's cpu
+     * setting), and whether the page's choice holds for the fights this
+     * select screen begins (cpu_taken) instead of the setting's. */
+    u8 cpu_row;
+    u8 page_cpu;
+    u8 default_cpu;
+    u8 cpu_taken;
 } PortMatch;
 
 extern PortMatch g_port_match;
@@ -264,8 +278,13 @@ extern s32 port_MatchRulePageStep(s32 pressed, s32 *leave);
 /* The rule was chosen before this select screen's grid. */
 extern s32 port_MatchRuleFirst(void);
 /* The rule page has the row (PORT_MATCH_ROW_...) for the rule on it: the
- * number but for the single fight, the teams but for Crew. */
+ * number but for the single fight, the teams but for Crew, the CPU's level
+ * where the opponent is the CPU; in a mode with no rule, the CPU's alone. */
 extern s32 port_MatchRuleHasRow(const PortMatch *match, s32 row);
+/* The CPU's level for the CPU's fighter of place `place` (port_cpu.h's
+ * PORT_CPU_...): the rule page's choice if this select screen's fights
+ * took it, otherwise the window's cpu setting (port_GetCpuLevel). */
+extern s32 port_MatchCpuLevel(s32 place);
 /* Stage pages after the crews of a rule-first Crew match are picked:
  * Triangle back to the weapons un-takes the last place. */
 extern void port_MatchCrewStageBack(void);

@@ -81,6 +81,11 @@ static PortMatch *port_Match(void) {
             (u8)(rule == PORT_MATCH_CREW ? port_MatchCrewSize(count)
                                          : PORT_MATCH_CREW_DEFAULT);
     }
+    if (match->default_cpu != port_GetCpuLevel(1) + 1) {
+        /* the window's cpu setting (both places alike there) */
+        match->default_cpu = (u8)(port_GetCpuLevel(1) + 1);
+        match->page_cpu = (u8)port_GetCpuLevel(1);
+    }
     if (match->default_teams != teams + 1) {
         /* (kept one more than the choice, so that the first ask sets it) */
         match->default_teams = (u8)(teams + 1);
@@ -808,9 +813,22 @@ void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
     match->page_crew = (u8)port_MatchCrewSize(match->page_crew);
     match->rule_first =
         (u8)(port_MatchModeHasRules(mode) && (port_TopMenuIsOn() || room));
+    /* the CPU's level where the screen's opponent is the CPU: versus the
+     * CPU, the story and Slash with one side picking (not training's
+     * dummy, nor the practice's, which are the game's own) */
+    match->cpu_row =
+        (u8)(sides < 2 && !room && !port_TrainingIsOn() &&
+             (mode == FIGHT_MODE_VSCPU || mode == FIGHT_MODE_STORY ||
+              mode == FIGHT_MODE_CHANBARA));
+    if (!to_stages) {
+        match->cpu_taken = FALSE;
+    }
     /* a room's rule is the room's, as its host set it: no page */
-    match->rule_page = (u8)(match->rule_first && !room && !to_stages);
-    match->rule_row = PORT_MATCH_ROW_RULE;
+    match->rule_page =
+        (u8)((match->rule_first || (match->cpu_row && port_TopMenuIsOn())) &&
+             !room && !to_stages);
+    match->rule_row =
+        match->rule_first ? PORT_MATCH_ROW_RULE : PORT_MATCH_ROW_CPU;
     match->rule_sides = (u8)sides;
     if (match->rule_first && room && !to_stages) {
         port_MatchRuleTaken(match);
@@ -819,7 +837,16 @@ void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
 
 s32 port_MatchRuleFirst(void) { return g_port_match.rule_first; }
 
+/* The rows the page has (port_match.h): the CPU's where the opponent is
+ * the CPU, and in a mode with no rule that row alone. */
 s32 port_MatchRuleHasRow(const PortMatch *match, s32 row) {
+    if (row == PORT_MATCH_ROW_CPU) {
+        return match->cpu_row;
+    }
+    if (!match->rule_first) {
+        /* a mode with no rule: the CPU's row alone */
+        return FALSE;
+    }
     if (row == PORT_MATCH_ROW_COUNT) {
         return match->page_rule != PORT_MATCH_SINGLE;
     }
@@ -851,6 +878,11 @@ static void port_MatchRuleTurn(PortMatch *match, s32 step) {
     s32 most;
     s32 value;
 
+    if (match->rule_row == PORT_MATCH_ROW_CPU) {
+        match->page_cpu = (u8)((match->page_cpu + PORT_CPU_LEVELS + 1 + step) %
+                               (PORT_CPU_LEVELS + 1));
+        return;
+    }
     if (match->rule_row == PORT_MATCH_ROW_TEAMS) {
         match->page_teams =
             (u8)((match->page_teams + PORT_TEAMS_CHOICES + step) %
@@ -898,7 +930,11 @@ s32 port_MatchRulePageStep(s32 pressed, s32 *leave) {
     if (own & PAD_ANY(PADRdown)) {
         snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
         match->rule_page = FALSE;
-        port_MatchRuleTaken(match);
+        /* the CPU's level chosen holds for the screen's fights */
+        match->cpu_taken = match->cpu_row;
+        if (match->rule_first) {
+            port_MatchRuleTaken(match);
+        }
         return TRUE;
     }
     if (own & PAD_ANY(PADLup | PADLdown)) {
@@ -916,6 +952,15 @@ s32 port_MatchRulePageStep(s32 pressed, s32 *leave) {
         }
     }
     return TRUE;
+}
+
+s32 port_MatchCpuLevel(s32 place) {
+    const PortMatch *match = &g_port_match;
+
+    if (match->cpu_taken && match->page_cpu <= PORT_CPU_LEVELS) {
+        return match->page_cpu;
+    }
+    return port_GetCpuLevel(place);
 }
 
 /* ---- Crew: a different character each place, and going back ---- */

@@ -101,8 +101,8 @@ lessons still holds unless this section says otherwise.
   hit areas).
 - ROADMAP 27, the CPU's levels (2026-11-26, CPU.md): the study and the
   port's four levels are in (`cpu` setting; against the original 34%,
-  46%, 61%, 67% over 96 fights). Left: the select screens' choice (the
-  training mode's agent is on the menus), the port's CPU in two on two
+  46%, 61%, 67% over 96 fights); the select screens' choice too
+  (2026-11-27; the owner's eye on `tmp/cpu-select/`). Left: the port's CPU in two on two
   and for an online takeover (its memory is by place; the duo swaps four
   fighters through two), walking round obstacles, dirt and thrown
   weapons and guns, levels learned from real players' replays; the

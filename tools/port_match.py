@@ -32,6 +32,10 @@ checkpoints must hold the score the fights made.
 - vscpu_crew: versus the CPU with --match crew:2: the player's crew, the
   CPU's led by the game's opponent, the match lost, the game's menu, and
   its Rematch the crews' first fighters loaded again.
+- rb_vscpu_level, rb_story_level: ReBushido's top menu, the CPU's level
+  chosen before the grid (port_match.h): versus the CPU on the rule
+  page's row (Adept), held for its fight, which the port's CPU plays;
+  the story on a page of that row alone (Master).
 - group_stock, group_first_to, group_crew: group battle (the game's team
   battle) with --match stock:2, first_to:2 and crew:3: the first match
   won, the card of the scores between matches, the second match begun and
@@ -793,19 +797,74 @@ WOUND_PLANS = [
     ('rb_vs_stock_wounds', TOML_RB_VS_STOCK_WOUNDS, RB_ARGS + ['--match', 'single']),
 ]
 
+# Versus the CPU, the CPU's level chosen on the rule page (the single
+# fight's rows are the rule, the fighters and the CPU: Down twice, Right
+# twice from the setting's Original to Adept): the choice held for the
+# fight, which the port's CPU plays (its --cpu-log says so).
+RB_LEVEL_COMPARE = RB_COMPARE.replace('"port_match_to_top"]', '"port_match_to_top", "port_match_page_cpu", '
+                                      '"port_match_cpu_taken", "port_match_cpu_row"]')
+TOML_RB_VSCPU_LEVEL = 'about = "Versus the CPU, the CPU\'s level on the rule page (tools/port_match.py)"\n' + \
+    HEAD + '''input = [%(rb_opening)s,
+    %(rb_vscpu_menu)s,
+    "rule+30 DOWN", "rule+50 DOWN", "rule+70 RIGHT", "rule+90 RIGHT", "rule+130 CROSS",
+    %(first_pick_cpu)s,
+]
+''' + RB_LEVEL_COMPARE + RB_START + RB_SELECT + \
+    RB_RULE.replace('"port_match_page_rule == 0"]', '"port_match_page_rule == 0", "port_match_cpu_row == 1", '
+                    '"port_match_page_cpu == 0", "port_match_cpu_taken == 0"]').replace(
+        'GRID_EXPECT', '"port_match_page_rule == 0", "port_match_page_cpu == 2", "port_match_cpu_taken == 1"') + '''
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+at_frame = true
+within = 3000
+expect = ["mode == 1", "port_match_page_cpu == 2", "port_match_cpu_taken == 1"]
+
+[[checkpoint]]
+name = "fought"
+after = 300
+shot = false
+'''
+
+# The story: the page of the CPU's row alone, before the grid (Right four
+# times: Master), held for the screen's fights. The story's narration
+# first (the menu's page 4), which Cross ends.
+RB_STORY_MENU = '"menu+30 CROSS", "menu+150 CROSS", "narration+90 CROSS"'
+RB_NARRATION = '''
+[[checkpoint]]
+name = "narration"
+when = "menu_page == 4"
+within = 1500
+shot = false
+'''
+TOML_RB_STORY_LEVEL = 'about = "The story, the CPU\'s level on a page of its own (tools/port_match.py)"\n' + \
+    HEAD + '''input = [%(rb_opening)s,
+    %(rb_story_menu)s,
+    "rule+30 RIGHT", "rule+50 RIGHT", "rule+70 RIGHT", "rule+90 RIGHT", "rule+130 CROSS",
+]
+''' + RB_LEVEL_COMPARE + RB_START + RB_NARRATION + RB_SELECT + \
+    RB_RULE.replace('"port_match_rule_first == 1", ', '"port_match_rule_first == 0", "port_match_rule_row == 3", ')\
+    .replace('"port_match_page_rule == 0"]', '"port_match_cpu_row == 1", "port_match_page_cpu == 0"]')\
+    .replace('GRID_EXPECT', '"port_match_page_cpu == 4", "port_match_cpu_taken == 1", "port_match_rule_first == 0"')
+
 
 def rb_values():
     """The rule-first plans' values."""
     return dict(rb_opening=', '.join(RB_OPENING), rb_vs_menu=RB_VS_MENU, rb_vscpu_menu=RB_VSCPU_MENU,
                 rule_crew=rule_presses(3, 3), rule_crew3=rule_presses(3, 2), rule_stock=rule_presses(1, 1),
-                first_picks=RB_FIRST_PICKS, first_pick_cpu=RB_FIRST_PICK_CPU, place2=rb_place(2),
+                rb_story_menu=RB_STORY_MENU, first_picks=RB_FIRST_PICKS, first_pick_cpu=RB_FIRST_PICK_CPU, place2=rb_place(2),
                 place2_cpu=rb_place(2, True), place3_cpu=rb_place(3, True), wounding=wounding_presses())
 
 
+# rb_vscpu_level's log of the CPU's pads (the second run's: each size's
+# run writes it in turn)
+CPU_LOG = os.path.join(REPO, 'build', 'match', 'rb_vscpu_level-cpu.txt')
 RB_PLANS = [
     ('rb_vs_crew', TOML_RB_VS_CREW, RB_ARGS + ['--match', 'single'], wound_pokes('card_wound')),
     ('rb_vscpu_crew', TOML_RB_VSCPU_CREW, RB_ARGS + ['--unlock-all', '--match', 'single']),
     ('rb_vs_stock', TOML_RB_VS_STOCK, RB_ARGS + ['--match', 'single'], wound_pokes('card_wound')),
+    ('rb_vscpu_level', TOML_RB_VSCPU_LEVEL, RB_ARGS + ['--unlock-all', '--match', 'single', '--cpu-log', CPU_LOG]),
+    ('rb_story_level', TOML_RB_STORY_LEVEL, RB_ARGS + ['--match', 'single']),
 ] + WOUND_PLANS
 
 # versus mode's first fighters (the grid's first place and the second
@@ -838,7 +897,8 @@ def main(argv):
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'match'))
     parser.add_argument('--shots', default=None)
     parser.add_argument('--only', nargs='*', help='the plans to run (vs_stock, vs_first_to, vscpu_stock, vscpu_won, vs_crew, '
-                        'vs_crew_drawn, vscpu_crew, rb_vs_crew, rb_vscpu_crew, rb_vs_stock, group_stock, '
+                        'vs_crew_drawn, vscpu_crew, rb_vs_crew, rb_vscpu_crew, rb_vs_stock, rb_vscpu_level, '
+                        'rb_story_level, group_stock, '
                         'group_first_to, group_crew)')
     parser.add_argument('--rollback', action='store_true',
                         help="vs_stock's match through tools/port_rollback.py instead: rolled back every "
@@ -883,6 +943,12 @@ def main(argv):
         traces = run_plan(playtest, report, out, name, text % values, extra, None, pokes)
         if traces is None:
             return 1
+        if name == 'rb_vscpu_level':
+            # the second fighter is the port's CPU (port_cpu.h): kind 2
+            with open(CPU_LOG, encoding='utf-8') as f:
+                kinds = set(line.split()[3] for line in f if line.startswith('f ') and line.split()[2] == '1')
+            report.check(kinds == {'2'}, '%s: the CPU\'s fighter is played by the port\'s CPU (%s)'
+                         % (name, sorted(kinds)))
         run = os.path.join(out, name + '-out64')
         shots = [line.split()[1:] for line in traces[64].splitlines() if line.startswith('shot ')]
         if name.startswith('vs_'):

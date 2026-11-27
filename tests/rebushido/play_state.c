@@ -89,6 +89,9 @@ void test_Main(void) {
     WHERE(PortMatch, to_top);
     WHERE(PortMatch, page_teams);
     WHERE(PortMatch, teams);
+    WHERE(PortMatch, cpu_row);
+    WHERE(PortMatch, page_cpu);
+    WHERE(PortMatch, cpu_taken);
     WHERE(PortTraining, is_on);
     WHERE(PortTraining, recording);
     WHERE(PortTraining, playing);

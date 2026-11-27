@@ -721,8 +721,9 @@ the stage").
     against CPU, 96 fights a pair (`tools/port_cpu_bench.py`): against the
     original 34%, 46%, 61%, 67%; each level beats the one below (CPU.md,
     "Measuring the levels"); a fight is the same bytes on both sizes and
-    passes the rollback self-test. Left: a choice on the select screens;
-    the port's CPU in fights of four and for a takeover; walking round
+    passes the rollback self-test. The choice on the select screens
+    (2026-11-27): a CPU row on Vs. CPU's rule page, a page of it alone
+    before the story's and Slash's grid, in the game's state. Left: the port's CPU in fights of four and for a takeover; walking round
     obstacles (it walks straight and sidles when blocked); dirt, thrown
     weapons and guns; levels learned from replays of real players; a
     person's test of how it feels to fight.

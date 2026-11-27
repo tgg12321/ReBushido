@@ -188,12 +188,21 @@ one no player could make.
 `src/port/cpu.c` (header `include/port_cpu.h`), with `src/port/cpu_run.c`
 for the run's own (the seed asked for, the log). The game's CPU stays as it
 is and stays the default; the window's `cpu` setting (or `--cpu`) picks one
-of four levels instead: **Novice, Adept, Veteran, Master**.
+of four levels instead: **Novice, Adept, Veteran, Master**. With
+ReBushido's top menu the select screen asks too, where its opponent is the
+CPU: a **CPU** row on Vs. CPU's rule page, and a page of that row alone
+before the story's and Slash's grid (`src/port/match.c`, the rule page;
+`port_MatchCpuLevel`). The page starts at the setting's level and its
+choice holds for the fights that select screen begins; it is the game's
+state (`PortMatch.page_cpu`, `cpu_taken`), chosen by the pads, so a replay
+and a session (the host's pad) see the same. The original's practice
+partner that only stands there is always the game's.
 
 How it is joined to the game, under `RB_PORT`:
 
-- `cpu_Init` ends by calling `port_CpuInit`: if the run asked for a level
-  for that place (`port_GetCpuLevel`, `src/port/play_switches.c`), the
+- `cpu_Init` ends by calling `port_CpuInit`: if the select screen's page
+  or the run asked for a level for that place (`port_MatchCpuLevel`,
+  `port_GetCpuLevel`, `src/port/play_switches.c`), the
   port's CPU takes the fighter, its memory set up and its dice seeded from
   the game's `rand()` (and `--cpu-seed`). In a fight of four the game's own
   plays (not yet the port's: its memory is by place, and the duo swaps
@@ -309,8 +318,6 @@ quietly.
 
 ## 4. What is left
 
-- A choice on the select screens (the settings menu has it; the training
-  mode's work is on the menus at the time of writing).
 - The port's CPU in fights of four and for an online takeover: its memory
   is by place, and the duo swaps four fighters through the game's two.
 - Getting about: it walks straight to the distance it likes and sidles

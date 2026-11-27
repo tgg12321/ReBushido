@@ -17,6 +17,7 @@
 
 #include "menu.h"
 #include "port_match.h"
+#include "port_cpu.h"
 #include "port_duo.h"
 #include "port_weapons.h"
 
@@ -688,6 +689,21 @@ static const char * const g_match_rule_words[PORT_MATCH_RULES][2] = {
      "The winner stays, wounds and all; the loser's next comes in."},
 };
 
+/* The CPU's levels (port_cpu.h, PORT_CPU_...): their names on the page,
+ * and two lines of each. */
+static const char * const g_match_cpu_words[PORT_CPU_LEVELS + 1][3] = {
+    {"Original", "The original game's CPU, as it plays.",
+     "It sees an attack the frame it begins and knows its guard."},
+    {"Novice", "Sees what a player sees, and answers slowly.",
+     "Unsure of the distance; often guesses its guard wrong."},
+    {"Adept", "Sees what a player sees; keeps its distance better.",
+     "Learns which of its attacks land, and punishes misses."},
+    {"Veteran", "Sees what a player sees; quick, sure of its guards.",
+     "Reads how readily you strike, and comes in on the patient."},
+    {"Master", "Sees what a player sees, a quick player's reaction.",
+     "Draws a hasty opponent out and punishes every opening."},
+};
+
 /* The rule's page, in the look of the game's own pages (page_look.c;
  * docs/PORT.md, "The window's pages in the game's look"): the picture
  * darkened, the game's wide panel, the title over its rule, the rows in
@@ -698,6 +714,9 @@ static void port_MatchRulePage(const PortMatch *match) {
     PortLook look;
     char value[32];
     s32 rule = match->page_rule < PORT_MATCH_RULES ? match->page_rule : 0;
+    s32 cpu = match->page_cpu <= PORT_CPU_LEVELS ? match->page_cpu : 0;
+    /* the CPU's row's words while it has the cursor, or alone on the page */
+    s32 cpu_words = match->rule_row == PORT_MATCH_ROW_CPU || !match->rule_first;
     s32 shown_rows = 0;
     s32 row;
 
@@ -712,7 +731,7 @@ static void port_MatchRulePage(const PortMatch *match) {
     port_LookBox(&look, 0, 0, GAME_W, GAME_H, PORT_LOOK_DARKEN);
     port_LookBox(&look, 0, 0, GAME_W, GAME_H, PORT_LOOK_DARKEN);
     port_LookPanel(&look, TRUE);
-    port_LookTitle(&look, "Battle type");
+    port_LookTitle(&look, match->rule_first ? "Battle type" : "Opponent");
     for (row = 0; row < PORT_MATCH_ROWS; row++) {
         s32 y = RULE_FIRST_Y + shown_rows * RULE_ROW;
         s32 is_on = match->rule_row == row;
@@ -723,7 +742,10 @@ static void port_MatchRulePage(const PortMatch *match) {
             continue;
         }
         shown_rows++;
-        if (row == PORT_MATCH_ROW_TEAMS) {
+        if (row == PORT_MATCH_ROW_CPU) {
+            label = "CPU";
+            snprintf(value, sizeof(value), "%s", g_match_cpu_words[cpu][0]);
+        } else if (row == PORT_MATCH_ROW_TEAMS) {
             static const char * const teams[PORT_TEAMS_CHOICES] = {
                 "One on one", "Two on two, CPU partners",
                 "Two on two, four players"};
@@ -759,16 +781,28 @@ static void port_MatchRulePage(const PortMatch *match) {
         port_LookText(&look, RULE_VALUE_X, y, PORT_LOOK_SIZE_ROW,
                       PORT_FACE_TEXT, shown, PORT_LOOK_WHITE, PORT_LOOK_RIGHT);
     }
-    port_LookText(
-        &look, RULE_LABEL_X, RULE_ABOUT_Y, PORT_LOOK_SIZE_TEXT, PORT_FACE_TEXT,
-        g_match_rule_words[rule][0], PORT_LOOK_WHITE, PORT_LOOK_LEFT);
-    port_LookText(&look, RULE_LABEL_X, RULE_ABOUT_Y + 12, PORT_LOOK_SIZE_TEXT,
-                  PORT_FACE_TEXT,
-                  match->page_teams != PORT_TEAMS_ONE && rule != PORT_MATCH_CREW
-                      ? "Two on two: each side two of its fighter, all unhurt."
-                      : g_match_rule_words[rule][1],
-                  PORT_LOOK_WHITE, PORT_LOOK_LEFT);
-    if (match->page_teams != PORT_TEAMS_ONE && rule != PORT_MATCH_CREW) {
+    if (cpu_words) {
+        port_LookText(&look, RULE_LABEL_X, RULE_ABOUT_Y, PORT_LOOK_SIZE_TEXT,
+                      PORT_FACE_TEXT, g_match_cpu_words[cpu][1],
+                      PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+        port_LookText(
+            &look, RULE_LABEL_X, RULE_ABOUT_Y + 12, PORT_LOOK_SIZE_TEXT,
+            PORT_FACE_TEXT, g_match_cpu_words[cpu][2], PORT_LOOK_WHITE,
+            PORT_LOOK_LEFT);
+    } else {
+        port_LookText(&look, RULE_LABEL_X, RULE_ABOUT_Y, PORT_LOOK_SIZE_TEXT,
+                      PORT_FACE_TEXT, g_match_rule_words[rule][0],
+                      PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+        port_LookText(
+            &look, RULE_LABEL_X, RULE_ABOUT_Y + 12, PORT_LOOK_SIZE_TEXT,
+            PORT_FACE_TEXT,
+            match->page_teams != PORT_TEAMS_ONE && rule != PORT_MATCH_CREW
+                ? "Two on two: each side two of its fighter, all unhurt."
+                : g_match_rule_words[rule][1],
+            PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+    }
+    if (!cpu_words && match->page_teams != PORT_TEAMS_ONE &&
+        rule != PORT_MATCH_CREW) {
         port_LookText(
             &look, RULE_LABEL_X, RULE_ABOUT_Y + 24, PORT_LOOK_SIZE_TEXT,
             PORT_FACE_TEXT, "R2 turns to the other enemy.", PORT_LOOK_WHITE,
@@ -801,7 +835,9 @@ static s32 port_MatchKey(s32 shown, const PortMatch *match) {
     if (shown == PORT_MATCH_SHOWN_RULE) {
         return shown | match->page_rule << 3 | match->rule_row << 6 |
                match->page_count << 8 | match->page_crew << 12 |
-               port_SessionIsOn() << 16 | match->page_teams << 17;
+               port_SessionIsOn() << 16 | match->page_teams << 17 |
+               match->page_cpu << 20 | match->cpu_row << 23 |
+               match->rule_first << 24;
     }
     if (shown == PORT_MATCH_SHOWN_HUD) {
         return key;

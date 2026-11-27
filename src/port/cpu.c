@@ -340,11 +340,16 @@ static s32 port_CpuChance(PortCpuMind *mind, s32 chance, s32 out_of) {
 
 void port_CpuInit(s32 fighter_index) {
     PortCpuMind *mind = &g_port_cpu[fighter_index != 0];
-    s32 level = port_GetCpuLevel(fighter_index);
+    /* the select screen's choice, or the window's cpu setting */
+    s32 level = port_MatchCpuLevel(fighter_index);
     u32 seed;
     s32 i;
 
     if (port_DuoIsOn()) {
+        level = PORT_CPU_ORIGINAL;
+    }
+    /* the practice's partner that only stands there is the game's */
+    if (g_fight_mode == FIGHT_MODE_PRACTICE && !g_fight_practice_round) {
         level = PORT_CPU_ORIGINAL;
     }
     mind->level = level;
