@@ -2634,7 +2634,8 @@ A fight's file or a spectators' start being written is finished first
 (the compressor is one stream at a time), and the runs found for the
 fight's start are kept aside meanwhile. In a fight of two the 7.6 MB of
 the state are 0.69 MB (1.05 MB of them the disc's, in about 520 runs);
-in a fight of four, 1.09 MB.
+in a fight of four, 1.09 MB. Packing it takes the host about 0.6 s (a
+loaded machine), which the players see as part of the resync's pause.
 
 **Over the link** (`KIND_RESYNC`, `KIND_RESYNC_ACK`). The host sends it
 to each guest in chunks of 1 KB, the header's number the chunk's, each
