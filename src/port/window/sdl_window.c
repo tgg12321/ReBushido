@@ -4877,6 +4877,8 @@ static void port_ShowBlank(u32 blank) {
         port_GlWarmTargets();
         port_GlSkyWarm();
         port_GlDressingWarm();
+        /* and the stage's mesh and its dressing, once its data stands whole */
+        port_GlStagePrepare();
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
     }
     /* a film's being made by another run of this program, which this

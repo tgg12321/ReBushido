@@ -4873,6 +4873,41 @@ pages up again a frame, 2.5 ms of the processor, and put `port-bench`'s
 says so once, not at every lookup (Lost Bridge's log had 20,000 such
 lines).
 
+**`ra1-stress`'s `settled_p99`** (2026-11-26). It was 1.4 to 1.5 ms on a
+quiet machine on 2026-11-18 and 3 to 4.8 by 11-26 (the gate's 4.75 on
+main), and every case had it: the three to five busiest blanks after the
+fight's first second were all at its end, blanks 3138 to 3168 of the bench's
+fight, where the fight is won (`game: the fight is over`), each 2 to 4.5 ms
+of the window's thread, nearly all of it `card` at the frame's start
+(`port_GlBegin`). Timed call by call there, two things of the program's
+own:
+
+- **A mod's picture given to the card**: the `art` mod's first pictures of
+  the fight's end (the winner's letters, 30 by 84 to 222 by 96 texels),
+  each 2 to 3 ms in the driver, at `glTexImage2D` or at `glGenerateMipmap`
+  whichever came first, when a texture was made a level at a time and its
+  levels then made by the driver; with its storage made whole
+  (`glTexStorage2D`) and its levels made on the reading thread
+  (`port_ReplacePrepare`, gl_replace.c: each texel the mean of the four
+  under it), each now takes 30 to 90 microseconds. The levels are the
+  same box filter the driver's are at even sizes; at an odd size the last
+  row or column is counted again. No prover reads a mod's pictures.
+- **The stage's pages looked up again** where a fighter's face changes at
+  the end (11 to 17 pages, 1.5 to 3 ms of keys): a page's key is now kept
+  by two sums of all it reads (`port_TexturePageKey`, mods.c: the page's
+  words, which of its pixels are the owner's, its colour table, made in
+  four lanes that do not wait on one another, some microseconds a page),
+  so a page looked up again as it was before costs 0.2 to 0.6 ms for all
+  of them; content not seen before is keyed as ever (1.4 to 1.7 ms).
+
+On a machine loaded by other agents' work (20 to 27% of the processors
+busy, emulators beside), four runs side by side with main's program:
+`settled_p99` 4.29 and 3.37 against main's 4.06 and 3.41, within the
+noise; the fight's end's worst blank 4.69 and 3.43 against 6.50 and 5.36.
+What is left at the end: the first keys of a fighter's new faces, and a
+stage page's picture (1024 by 1024 with its levels) given to the card,
+2 to 6 ms each, which come as the stage loads.
+
 **The HD cloth and body shared out.** The places of the body posed
 for the cloth and for the cast shadows, and each place of a cloth kept
 out of the body, are each their own sum, so they were shared out among
@@ -5659,12 +5694,61 @@ the first time and 2 to 5 ms when a new size's targets are warmed, with
 the driver's cache full, and about 0.3 s once at the program's first
 load with it empty.
 
-**What is left** of the first frame (9 to 10 ms of the window's thread,
-`run_ahead` 2): the stage's mesh built from the game's memory and, on a
-dressed stage, its dressing grown on it (1 to 4 ms; only a still step
-may read the game's memory, gl_stage.h), the mesh's first draw, and the
-first of the fight's mod textures sent to the card (the HUD's, 1 to 4
-ms). **Held**: the bench's `first_blank`, the worst whole blank (the
+**The stage's mesh and its dressing, made while the game loads**
+(2026-11-26). The mesh was built at the fight's first frame, from the
+game's memory as it drew its first tile, and on a dressed stage the
+dressing grew on it there: on the cemetery (stage 31, its 32,000 tufts)
+0.8 ms of mesh and 12 ms of growing, the first blank 24.4 ms (the card's
+part of the window's thread 21.6). Now `port_GlStagePrepare` (gl_stage.h)
+builds both at a blank of the load (sdl_window.c, with the other warm-ups;
+the prover's program at every blank, gl_main.c), where the game is still:
+
+- **When the data stands whole.** The side channel knows (remaster.c,
+  `g_stage_settled`): set where the stage's cells are read or its block
+  moved (`port_RemasterStageChanged`), cleared where the stage is let go of
+  or read anew (`port_RemasterStageLeaving`, from resource.c's
+  `resource_LoadStage`, `resource_SelectStageArea` and
+  `resource_FreeStage`, and arena.c's `arena_Reset`), so nothing is built
+  of a block half read or freed. Only a version of the view not built yet
+  is built; the first frame's own path stays for whatever comes later (a
+  block moved in the fight, a stage changed with no load).
+- **The pieces** are taken down then too (`port_RemasterPreparePieces`),
+  their light matrices turned by the coprocessor as math_MulMatrix turns
+  them but without beginning the game's function (`port_RemasterMulMatrix`,
+  used at the first frame as well).
+- **The lights.** The mesh's colours are the game's lights through its
+  coprocessor, and the scene's light matrices are worked out again at every
+  frame's start (scene_Begin's light_CalcMatrix), after the load:
+  light_SetStage works the scenery's out with the angles before it sets the
+  stage's. So the build takes the light setups as the next frame will have
+  them: a copy, its three scene setups' matrices worked out from their
+  lights as light_CalcMatrix does (`port_RemasterLightMatrix`, Sony's sine
+  table read directly: `rsin_tbl`, declared in libgte.h).
+  `port_RemasterStageLights` is that copy until the first frame.
+- **The first frame looks again** (`port_RemasterNotePieces`): where the
+  light setups the mesh and the pieces used (`g_stage_pieces_lit`) are not
+  the frame's, or a piece is not as it was taken down, it takes them down
+  again under a new version of the view, and the mesh is built again where
+  it was before (gl_record.h holds the drawing beside the step for it).
+  On the bench's stages and the cemetery the lights were the frame's.
+- **The dressing kept.** A ground built again the same keeps what grew on
+  it: `port_GlDressingNoteGround` sums all it reads (each vertex's place,
+  texture point, page, bits, tile and normal, not its colour; the stage's
+  textures and colour tables in video memory where they were loaded) and
+  returns where the sum and the stage are the last's, giving the post the
+  water's plane again (`port_DressWaterPlane`; the mesh's build now notes
+  the ground after the floors, `port_GlPostFloorsBegin` having cleared it).
+
+The provers hold it to main's pictures (`port_gl_prove.py`,
+`port_fps_prove.py`, `port_stage_prove.py`, `--gpu card --against main`:
+no difference but the 66 primitives of the version's letters a worktree
+build has). The cemetery's first blank, bench `--dressed-stage 31`, on a
+loaded machine: 24.4 ms before, 7.6 to 8.6 after (the card's part 21.6 to
+5.2-5.6); the load pays the growing (12 to 16 ms) at one of its blanks.
+
+**What is left** of the first frame: the mesh's first draw, and the first
+of the fight's mod textures sent to the card (the HUD's, 1 to 4 ms).
+**Held**: the bench's `first_blank`, the worst whole blank (the
 swap included) of the fight's first four, at most `FIRST_BLANK_MS`
 (13.9 ms) with the met measures' slack, for `ra0`, `ra1` and `ra2`; on
 a loaded machine it is said and not held, one blank being one sample.
@@ -9297,7 +9381,7 @@ window's own pixels, with close-ups: the main checkout's `tmp/stages17d/`.
   it says, so a bridge over a gorge holds none: `port_DressGrowMist`) and
   a box of air from the lowest ground to `top` over the highest. At the
   picture's end, before the shafts (`port_GlDressingDrawLate`), the box's
-  first face seen gathers the mist along the line of sight in eight steps,
+  first face seen gathers the mist along the line of sight in six steps,
   each shifted by the pixel, its noise read from a tile made once at the
   start (`port_DressMakeNoise`: three octaves of a value noise that
   repeats, and another; the noise worked out in the shader was 3 ms of the
@@ -9374,6 +9458,33 @@ each. `ra1-dressed`'s first blank was over main's by more than the
 bench allows in one run of four. `ra1-rain`, which none of this draws,
 was flagged in one run (`settled_p99`) and in the next (`cpu_p95`), and
 main's own program, run beside, moved as much.
+
+**The mist at a sixteenth of the pixels** (2026-11-26). The cemetery at
+night was over `DRESS_BUDGET_MS` (its `dress` 95% 1.94 to 2.15, a median of
+1.55); timed apart (the bench's timer moved to free passes for a run) the
+solid pass, its grass, was 1.03 ms of the median and 1.33 to 1.36 of the
+95th centile, the mist 0.48 and the particles 0.03. What does not change
+the picture did not help: culling the box's faces the line of sight does
+not meet first (the near ones from outside, the far ones from within:
+`port_DressEyeIsInside`), and reading no noise where a step lies outside
+the area, under the ground or over the most the mist's top reaches, gave
+the same pixels and 0.47 ms. Its six steps through the box are now
+gathered at a quarter of the picture's pixels each way (`MIST_SHRINK`, a
+pass into a buffer of its own: its colour times how much of it is seen,
+and how far each line of sight ran), and a second pass at the picture's
+own pixels the box covers takes the four gathered about each pixel, each
+weighted as near as its line's end lies to the pixel's own (the ground's
+or a fighter's depth, so no mist is smeared over a fighter's edge or a
+gravestone's): 0.08 ms and 0.15, 0.23 in all. The pictures, from the
+fight's camera at 2,560 by 1,440 (`port_dressing.py shots --stages 31
+--times night`): the mean of a pixel's difference 1.2 to 1.4 levels of
+255, the edges clean; the mist's grain of six steps is a little softer.
+Half the pixels each way cost 0.45 (0.26 and 0.17: the gathering is held
+by its reads, not its pixels). On a loaded machine (other agents' work, 50
+to 70% of the processors busy), the cemetery's `dress` was 1.31 at the
+median and 1.65 and 1.79 at the 95th centile against main's 1.55 and 2.07
+and 2.15 run between them; under 1.5 asks the grass itself to be cheaper
+too, which the mist alone can no longer give.
 
 **What is left.** The shipped stages' lamps stand where the grass's shadows
 from them are small in the fight's pictures; a mist lies at one height

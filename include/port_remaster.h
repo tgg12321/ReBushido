@@ -659,6 +659,21 @@ extern void port_RemasterNoteFogLevel(s32 level, s32 slot);
 /* The stage's tiles, or the meshes they name, may have moved
  * (stage_ReadCells, resource_OnStageMoved). */
 extern void port_RemasterStageChanged(void);
+/* The stage's data is about to be let go of or read anew (resource_FreeStage,
+ * resource_LoadStage, resource_SelectStageArea): until the next
+ * port_RemasterStageChanged, nothing builds of it but a frame that draws
+ * it (port_RemasterPreparePieces). */
+extern void port_RemasterStageLeaving(void);
+/* While the game loads, on the thread with the card (gl_stage.h,
+ * port_GlStagePrepare): the stage's pieces taken down now for the view's
+ * version, if they have not been, so that its meshes are built before the
+ * fight's first frame. FALSE where the stage's data is not whole (between
+ * port_RemasterStageLeaving and port_RemasterStageChanged). The light
+ * setups they were taken down with are kept: the first frame that draws
+ * the stage looks again, and where its lights or its pieces are not those
+ * any more, takes them down again under a new version, so that the meshes
+ * are built again as they would have been there. */
+extern s32 port_RemasterPreparePieces(void);
 
 extern const PortStageView *port_GetRemasterStageView(void);
 
@@ -675,6 +690,11 @@ extern PortAddress port_RemasterStageTiles(s32 *count);
 extern PortAddress port_RemasterTileMesh(s32 block, s32 mesh);
 /* The light setup the tiles are lit by (a LightSetup, light.h). */
 extern const void *port_RemasterTileLights(void);
+/* The one the stage's meshes are built with: the tiles' own, or while the
+ * pieces taken down as the game loaded wait for the first frame to look
+ * again (port_RemasterPreparePieces), the tiles' as that frame will light
+ * them. */
+extern const void *port_RemasterStageLights(void);
 /* The stage's pieces as they were taken down for the view's `version`,
  * and how many (PortStagePiece). */
 extern const PortStagePiece *port_RemasterStagePieces(s32 *count);

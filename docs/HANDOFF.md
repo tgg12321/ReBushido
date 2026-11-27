@@ -122,8 +122,20 @@ lessons still holds unless this section says otherwise.
   `weapon_id` of its own is wanted (MODS.md, "What is not done yet").
 - The fight's first frame: the driver's first-use work moved into the
   load (PORT.md, "The fight's first frame"), ra2's first blank 25 to 13
-  ms, held by the bench's `first_blank`; left of it, the stage's mesh and
-  dressing built from the game's memory at the first frame (1 to 4 ms).
+  ms, held by the bench's `first_blank`; since 2026-11-26 the stage's mesh
+  and its dressing are built while the game loads too (the cemetery's
+  first blank 24 to 8 ms on a loaded machine); left: the mesh's first draw
+  and the HUD's first mod textures. Bench it on a quiet machine.
+- Stage 31 at night (PORT.md, "The dressing", "The mist at a sixteenth of
+  the pixels"): the mist 0.48 to 0.23 ms; `dress` 95% still about 1.65 to
+  1.8 on a loaded machine against the 1.5 budget, its grass alone 1.3 to
+  1.36: under budget needs the foliage cheaper (fewer vertices far off, or
+  drawn front to back by span), which changes how it looks or how often
+  it draws. The owner's eye on the mist at a sixteenth (the grain a little
+  softer): `port_dressing.py shots --stages 31 --times night`.
+- `ra1-stress`'s `settled_p99` (PORT.md, "A mod's pictures, read beside
+  the game"): its worst blanks were the fight's end's mod textures and
+  page keys, both cut; the 99th centile wants a quiet bench to say.
 
 ## Lessons of the session
 
@@ -150,7 +162,7 @@ lessons still holds unless this section says otherwise.
   primitives a stage fewer than stored baselines even on the baseline's
   own code, in agents' worktrees only (the baselines of `e7da37638` and
   `cf2896ad5` have the same counts on every stage; likely the version's
-  letters on the options page, `-dirty` or another hash's length); `ra1-stress`'s `settled_p99` is over its limit on main too.
+  letters on the options page, `-dirty` or another hash's length).
 
 - **The bench copies the disc-made mods** into `build/bench/mods/`
   instead of linking them (`ca10d3d4f`): on 2026-11-25 `tmp/mods/art`

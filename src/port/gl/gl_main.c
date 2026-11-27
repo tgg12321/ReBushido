@@ -1005,6 +1005,10 @@ static void port_GlBlank(u32 blank) {
     started = port_Microseconds();
     port_RemasterShow();
     port_GlFinishFrame();
+    /* the stage's mesh and its dressing built while the game loads, as the
+     * window builds them (gl_stage.h): here at any blank, a stage's data
+     * changing only as it loads */
+    port_GlStagePrepare();
     g_run.hardware_time += port_Microseconds() - started;
     {
         /* which path the stage's ground takes (gl_stage.h) */

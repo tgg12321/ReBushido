@@ -46,6 +46,10 @@ typedef int GLsizei;
     GL(void, glTexImage2D,                                                     \
        (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,         \
         const void *))                                                         \
+    GL(void, glTexStorage2D, (GLenum, GLsizei, GLenum, GLsizei, GLsizei))      \
+    GL(void, glTexSubImage2D,                                                  \
+       (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,         \
+        const void *))                                                         \
     GL(void, glGenerateMipmap, (GLenum))                                       \
     GL(void, glPixelStorei, (GLenum, GLint))
 
@@ -314,11 +318,97 @@ static void port_ReplaceDump(
 static ReplaceSlot *port_ReplaceSlotOf(u64 key);
 static void port_ReplaceKeptLoaded(u64 key, u32 texture);
 
+/* A level's size, as the card has it: halved, never under one. */
+static s32 port_ReplaceLevelSize(s32 size, s32 level) {
+    size >>= level;
+    return size > 0 ? size : 1;
+}
+
+/* How many levels a picture of `w` by `h` has, down to one texel. */
+static s32 port_ReplaceLevelsOf(s32 w, s32 h) {
+    s32 levels = 1;
+
+    while (w > 1 || h > 1) {
+        w >>= 1;
+        h >>= 1;
+        levels++;
+    }
+    return levels;
+}
+
+/* On the reading thread (gl_load.h, `prepare`): the picture's smaller
+ * levels made after it, each texel the mean of the four under it (the
+ * last row or column of an odd size counted again), all of them in one
+ * block in place of the picture, their count in `levels`. They were made
+ * by the driver as each picture came (glGenerateMipmap): 2 to 3 ms of the
+ * window's thread for each small picture of an odd size on an RTX 3090,
+ * in the fight's frames where its first mod pictures arrive (the art mod's
+ * at a fight's end). */
+static s32 port_ReplacePrepare(PortGlLoad *load) {
+    size_t bytes = 0;
+    s32 levels = 0;
+    s32 level;
+    u8 *block;
+    u8 *at;
+
+    do {
+        bytes += (size_t)port_ReplaceLevelSize(load->w, levels) *
+                 (size_t)port_ReplaceLevelSize(load->h, levels) * RGBA;
+        levels++;
+    } while (port_ReplaceLevelSize(load->w, levels - 1) > 1 ||
+             port_ReplaceLevelSize(load->h, levels - 1) > 1);
+    block = malloc(bytes);
+    if (block == NULL) {
+        load->levels = 0;
+        return TRUE;
+    }
+    memcpy(block, load->pixels, (size_t)load->w * (size_t)load->h * RGBA);
+    at = block;
+    for (level = 1; level < levels; level++) {
+        s32 from_w = port_ReplaceLevelSize(load->w, level - 1);
+        s32 from_h = port_ReplaceLevelSize(load->h, level - 1);
+        s32 w = port_ReplaceLevelSize(load->w, level);
+        s32 h = port_ReplaceLevelSize(load->h, level);
+        u8 *to = at + (size_t)from_w * (size_t)from_h * RGBA;
+        s32 x;
+        s32 y;
+        s32 k;
+
+        for (y = 0; y < h; y++) {
+            s32 y0 = 2 * y < from_h ? 2 * y : from_h - 1;
+            s32 y1 = 2 * y + 1 < from_h ? 2 * y + 1 : from_h - 1;
+
+            for (x = 0; x < w; x++) {
+                s32 x0 = 2 * x < from_w ? 2 * x : from_w - 1;
+                s32 x1 = 2 * x + 1 < from_w ? 2 * x + 1 : from_w - 1;
+
+                for (k = 0; k < RGBA; k++) {
+                    u32 sum = (u32)at[((size_t)y0 * from_w + x0) * RGBA + k] +
+                              at[((size_t)y0 * from_w + x1) * RGBA + k] +
+                              at[((size_t)y1 * from_w + x0) * RGBA + k] +
+                              at[((size_t)y1 * from_w + x1) * RGBA + k];
+
+                    to[((size_t)y * w + x) * RGBA + k] = (u8)((sum + 2) / 4);
+                }
+            }
+        }
+        at = to;
+    }
+    free(load->pixels);
+    load->pixels = block;
+    load->levels = levels;
+    return TRUE;
+}
+
 /* A mod's picture read (gl_load.h) given to the card: the texture of the
  * slot of its key, where the slot is still waiting for it (a new context
  * forgets every key). Its colours are kept multiplied by its alpha, so
  * that smoothing a clear texel into the next does not darken it; the
- * shader divides them out again. */
+ * shader divides them out again. Its smaller levels come made
+ * (port_ReplacePrepare), and its storage is made whole at once
+ * (glTexStorage2D): given a level at a time and its levels made by the
+ * driver, a new texture held the window's thread for 2 to 3 ms (RTX 3090),
+ * where the driver's work came due; now some tens of microseconds. */
 static void port_ReplaceLoaded(PortGlLoad *load) {
     ReplaceSlot *slot =
         g_replace.slots != NULL ? port_ReplaceSlotOf(load->key) : NULL;
@@ -327,14 +417,31 @@ static void port_ReplaceLoaded(PortGlLoad *load) {
 
     if (slot != NULL && slot->state == SLOT_LOADING && slot->key == load->key) {
         if (load->is_loaded) {
+            const u8 *at = load->pixels;
+            s32 levels = load->levels > 0
+                             ? load->levels
+                             : port_ReplaceLevelsOf(load->w, load->h);
+            s32 level;
+
             glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
             glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_2D, texture);
+            glTexStorage2D(GL_TEXTURE_2D, levels, GL_RGBA8, load->w, load->h);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, load->w, load->h, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, load->pixels);
+            for (level = 0; level < (load->levels > 0 ? levels : 1); level++) {
+                s32 w = port_ReplaceLevelSize(load->w, level);
+                s32 h = port_ReplaceLevelSize(load->h, level);
+
+                glTexSubImage2D(GL_TEXTURE_2D, level, 0, 0, w, h, GL_RGBA,
+                                GL_UNSIGNED_BYTE, at);
+                at += (size_t)w * (size_t)h * RGBA;
+            }
             glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
-            glGenerateMipmap(GL_TEXTURE_2D);
+            if (load->levels <= 0) {
+                /* no room for the levels on the reading thread: only the
+                 * picture was sent, and the driver makes the rest */
+                glGenerateMipmap(GL_TEXTURE_2D);
+            }
             glTexParameteri(
                 GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -368,6 +475,7 @@ static void port_ReplaceLoad(
 
     memset(&load, 0, sizeof(load));
     load.path = path;
+    load.prepare = port_ReplacePrepare;
     load.done = port_ReplaceLoaded;
     load.key = slot->key;
     load.at_once = at_once;

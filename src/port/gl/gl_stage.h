@@ -68,6 +68,16 @@ extern s32 port_GlStageIsOn(void);
  * sdl_window.c). */
 extern const char *port_GlStageNews(void);
 
+/* While the game loads (sdl_window.c, with port_GlFighterPreload; the
+ * prover's every blank, gl_main.c): the mesh built now of a stage whose
+ * data stands whole and that it has not been built of, with the dressing
+ * grown on it, and not in the fight's first frame. The game is still at a
+ * blank, so its memory and coprocessor may be read; its lights may still
+ * change before that frame, which then has the mesh built again
+ * (port_RemasterPreparePieces), the dressing kept where the ground is
+ * the same (gl_dressing.h). */
+extern void port_GlStagePrepare(void);
+
 /* A frame's primitives are about to come (gl_draw.c, the backend's
  * `begin`). */
 extern void port_GlStageNewFrame(void);

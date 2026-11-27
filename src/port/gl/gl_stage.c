@@ -1499,7 +1499,7 @@ static void port_GlStageLightBy(
  * time of day: the shader takes the time's over them (u_time_floor), so
  * a time chosen after the mesh was built still reaches it. */
 static void port_GlStageLight(const s16 *normal, u8 *rgb) {
-    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    const LightSetup *lights = (const LightSetup *)port_RemasterStageLights();
 
     port_GlStageLightBy(lights, &lights->lmat, normal, rgb);
 }
@@ -2538,9 +2538,6 @@ static void port_GlStageBuild(const PortStageView *view) {
     /* for tools/port_lights.py, with --dump-textures alone */
     port_GlLightListDumpMesh(g_stage.building, (s32)sizeof(StageVertex),
                              g_stage.built, g_stage.piece_first);
-    /* ... and for the dressing, which grows on it (gl_dressing.h) */
-    port_GlDressingNoteGround(g_stage.building, (s32)sizeof(StageVertex),
-                              g_stage.built, g_stage.piece_first);
     if (g_stage.piece_count > 0) {
         /* what the mesh made of the pieces, for the run's log */
         snprintf(g_stage.news, sizeof(g_stage.news),
@@ -2578,6 +2575,11 @@ static void port_GlStageBuild(const PortStageView *view) {
         }
     }
     port_GlPostFloorsEnd();
+    /* ... and for the dressing, which grows on it (gl_dressing.h): after the
+     * floors, which a ground noted again as it was gives its water's plane
+     * again */
+    port_GlDressingNoteGround(g_stage.building, (s32)sizeof(StageVertex),
+                              g_stage.built, g_stage.piece_first);
     for (i = 0; i < g_stage.built; i++) {
         const GLfloat *at = &g_stage.building[i].x;
         s32 k;
@@ -3161,6 +3163,22 @@ static s32 port_GlStageIsTile(const PortRemasterPrim *prim, s32 may_build) {
     }
     return (view->pieces[piece >> 5] & g_stage.piece_in[piece >> 5] &
             (1U << (piece & 31))) != 0;
+}
+
+void port_GlStagePrepare(void) {
+    const PortStageView *view;
+
+    if (!g_stage.is_started || !port_GlStageIsOn()) {
+        return;
+    }
+    view = port_GetRemasterStageView();
+    if (g_stage.version == view->version || !port_RemasterPreparePieces()) {
+        return;
+    }
+    port_GlStageBuild(view);
+    /* and what grows on it */
+    port_GlDressingPrepare();
+    port_GlForgetState();
 }
 
 s32 port_GlStageWouldTake(const PortRemasterPrim *prim) {
