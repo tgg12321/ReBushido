@@ -137,6 +137,8 @@ extern s32 port_NetplayLeftPad(void);
 /* The pads whose players have left a session of four and whose fighters
  * the CPU plays (a bit each; docs/NETPLAY.md, section 19). */
 extern u32 port_NetplayCpuPads(void);
+/* The pads this program's players play in the session (a bit each). */
+extern u32 port_NetplayLocalPads(void);
 extern s32 port_IsNetplayOn(void);
 /* Where the other program has gone, this one plays on alone instead of
  * ending (the window's: a player is not thrown out of the game). */

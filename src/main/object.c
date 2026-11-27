@@ -979,6 +979,10 @@ void object_HitFighters(void) {
         obj->pos.z -= obj->vel.z / 2;
         result = fighter_TakeHit(1, target, j, facing_away, core_hit,
                                  &g_object_kinds[obj->kind], 0, &clashed);
+#if RB_PORT
+        /* a killing throw, for the player's record (port_stats.h) */
+        port_StatsHit(target, j, facing_away, 1, 0, 0, result);
+#endif
         if (result == 2) { /* the vanisher, gone */
             continue;
         }

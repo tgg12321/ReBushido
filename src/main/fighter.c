@@ -2838,6 +2838,10 @@ void fighter_Update(s32 fighter_index, PadState *pad) {
 #endif
         }
         fighter->is_defeated = 1;
+#if RB_PORT
+        /* the fall, for the player's record (port_stats.h) */
+        port_StatsFell(fighter);
+#endif
         if (g_fight_winner == FIGHT_NOBODY) {
             g_fight_winner = fighter_index == 0;
         }

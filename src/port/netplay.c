@@ -382,6 +382,8 @@ s32 port_NetplayLeftPad(void) {
 
 u32 port_NetplayCpuPads(void) { return g_np_cpu_mask; }
 
+u32 port_NetplayLocalPads(void) { return g_np_local_mask; }
+
 static void port_NetplayClearLink(PortNetplayLink *link) {
     u32 i;
 

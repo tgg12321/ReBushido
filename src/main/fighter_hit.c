@@ -2326,10 +2326,15 @@ static void fight_TestBladesOnBodies(s32 paired) {
             /* a place for that word, which nothing reads here: it was
              * written at address 0 */
             s32 clashed;
-
-            fighter_TakeHit(
+            s32 result = fighter_TakeHit(
                 0, fighter, index, facing, kills,
                 (LooseObjectKind *)ADDR(blade), by_sidearm, &clashed);
+
+#if RB_PORT
+            /* a killing blow, for the player's record (port_stats.h) */
+            port_StatsHit(fighter, index, facing, 0, blade, by_sidearm, result);
+#endif
+            (void)result;
         } else
 #endif
         {

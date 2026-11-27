@@ -145,6 +145,8 @@ static const char g_port_usage[] =
     "  --replays FOLDER   keep every fight as a replay in FOLDER\n"
     "                 (docs/PORT.md, \"Replays\")\n"
     "  --replays-keep N   ... and at most the N newest (100; 0: all)\n"
+    "  --stats FILE   keep the record of the fights finished in FILE (the\n"
+    "                 settings menu's Stats; docs/PORT.md, \"Stats\")\n"
     "  --replay FILE  play a replay from the first frame, then end\n"
     "  --replay-check FILE   play it as fast as it runs, nothing drawn or\n"
     "                 heard, from the start again at its middle and on\n"
@@ -620,6 +622,8 @@ s32 port_Main(s32 argc, char **argv) {
             plan = argv[++i];
         } else if (port_TextsEqual(word, "--replays")) {
             port_SetReplayFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--stats")) {
+            port_SetStatsFile(argv[++i]);
         } else if (port_TextsEqual(word, "--replays-keep")) {
             s32 keep;
 
