@@ -1043,12 +1043,16 @@ static void port_StateLoadPieces(const void *buf, s32 is_ahead) {
     port_StateNextEpoch();
 }
 
+/* How many loads there have been (port_state.h). */
+u32 g_port_state_loads;
+
 /* The state put back (port_state.h), with nothing left to paint first,
  * and the GPU's settings given to the painter, which keeps its own
  * outside the state (port_paint.h). */
 void port_StateLoad(const void *buf) {
     PortStateSlot *slot = port_StateFindSlot(buf, 0);
 
+    g_port_state_loads++;
     if (slot != NULL && slot->is_vram_left) {
         /* Saved for the frames ahead (port_StateSaveAhead): video memory
          * is put back by what they wrote over, and the painters go on

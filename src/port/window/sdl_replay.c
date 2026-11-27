@@ -53,6 +53,8 @@ static void port_ReplayWait(void) {
     u32 now = SDL_GetTicks();
 
     port_PollWindow();
+    /* the theatre's camera, words and look again (sdl_theatre.c) */
+    port_TheatrePausedTick();
     port_ShowStill();
     if (now - g_replay.waited_at < BLANK_MS) {
         SDL_Delay(BLANK_MS - (now - g_replay.waited_at));
@@ -77,6 +79,7 @@ void port_StartReplayWindow(const char *beside, s32 is_test) {
     }
     port_ApplyReplaySettings();
     port_SetReplaySlice(SLICE_MICROSECONDS);
+    port_StartTheatre();
     g_port_replay_wait_hook = port_ReplayWait;
     g_port_replay_end_hook = port_ReplayEnded;
 }
@@ -211,6 +214,7 @@ static s32 port_FilmWords(char *out, u32 room, u32 *color) {
 u32 port_ReplayWords(char *out, u32 room) {
     PortReplayStatus status;
     char speed[32];
+    char theatre[PORT_REPLAY_WHY_BYTES];
     u32 color;
 
     out[0] = 0;
@@ -219,6 +223,12 @@ u32 port_ReplayWords(char *out, u32 room) {
         (g_port_window_options.is_hidden || port_ExportIsOn())) {
         /* a window never shown has no line over its picture: no one reads
          * it, and a film and a test take the picture alone */
+        return COLOR_TEXT;
+    }
+    if (!status.is_playing && port_TheatreWords(theatre, sizeof(theatre)) &&
+        theatre[0] != 0) {
+        /* photo mode in a fight (sdl_theatre.c) */
+        snprintf(out, room, "%s", theatre);
         return COLOR_TEXT;
     }
     if (!status.is_playing && port_FilmWords(out, room, &color)) {
@@ -245,13 +255,18 @@ u32 port_ReplayWords(char *out, u32 room) {
     } else {
         snprintf(speed, sizeof(speed), "x1/%d", SPEED_ONE / status.speed);
     }
+    if (!port_TheatreWords(theatre, sizeof(theatre))) {
+        /* the theatre's line hidden (Tab): the picture alone */
+        return COLOR_TEXT;
+    }
     snprintf(out, room,
-             "Replay   %u:%02u / %u:%02u   %s%s   |   Space pause   Right a "
-             "frame   Up/Down speed   R start   K the kill   Esc back",
+             "Replay   %u:%02u / %u:%02u  frame %u   %s%s   |   Space pause   "
+             ". a frame   Up/Down speed   R start   K the kill   Esc back   "
+             "|   %s",
              status.frame / FRAMES_PER_SECOND / 60,
              status.frame / FRAMES_PER_SECOND % 60,
              status.frames / FRAMES_PER_SECOND / 60,
-             status.frames / FRAMES_PER_SECOND % 60, speed,
-             status.is_paused ? "   paused" : "");
+             status.frames / FRAMES_PER_SECOND % 60, status.frame, speed,
+             status.is_paused ? "   paused" : "", theatre);
     return COLOR_TEXT;
 }

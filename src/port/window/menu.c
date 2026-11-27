@@ -243,13 +243,14 @@ static void port_MenuBuild(s32 page, s32 cursor) {
         if (g_menu.film_shown) {
             port_MenuAddRow(ROW_FILM, 0);
         }
-        for (i = 0; i < count && i < ROWS_MAX - 4; i++) {
+        for (i = 0; i < count && i < ROWS_MAX - 2 - PORT_REPLAYS_FILM_SETTINGS;
+             i++) {
             port_MenuAddRow(ROW_REPLAY, i);
         }
         if (count == 0) {
             port_MenuAddRow(ROW_REPLAY, -1);
         }
-        for (setting = 0; setting < 2; setting++) {
+        for (setting = 0; setting < PORT_REPLAYS_FILM_SETTINGS; setting++) {
             for (i = 0; i < port_CountChoices(); i++) {
                 if (strcmp(port_FindChoice(i)->name,
                            g_port_replays_film_settings[setting]) == 0) {

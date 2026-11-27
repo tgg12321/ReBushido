@@ -195,10 +195,18 @@ enum {
     PORT_REPLAY_FASTER,  /* twice as fast, up to eight times */
     PORT_REPLAY_RESTART, /* from its first frame */
     PORT_REPLAY_KILL,    /* to a moment before the first cut */
-    PORT_REPLAY_STOP     /* back to the game */
+    PORT_REPLAY_STOP,    /* back to the game */
+    PORT_REPLAY_HOLD     /* paused, whether it was or not */
 };
 
 extern void port_ReplayControl(s32 what);
+/* To the fight's frame `frame` (the theatre's seek, port_theatre.h), from
+ * the nearest keyframe not past it, or the start, or on from where it is:
+ * the frames between run unseen, every hash held. Paused or not as it
+ * was. */
+extern void port_ReplaySeekTo(u32 frame);
+/* The file of the replay being played, or NULL. */
+extern const char *port_ReplayPlayingPath(void);
 
 typedef struct {
     s32 is_playing;

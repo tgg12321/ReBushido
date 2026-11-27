@@ -35,7 +35,12 @@ enum {
     PORT_FILM_NONE = -1,
     PORT_FILM_MP4 = 0,
     PORT_FILM_AVI = 1,
+    /* the theatre's clip as a GIF (film_gif.c): the fight's own frames,
+     * no sound, at most PORT_GIF_WIDTH across */
+    PORT_FILM_GIF = 2,
 };
+
+#define PORT_GIF_WIDTH 640
 
 typedef struct PortFilm PortFilm;
 
@@ -73,6 +78,14 @@ extern s32 port_FilmRead(
  * `out`: its bytes, or 0 where `room` is too small. */
 extern u32 port_JpegEncode(
     const u32 *pixels, s32 width, s32 height, s32 quality, u8 *out, u32 room);
+
+/* film_gif.c: the GIF. A picture of the film's size each blank; the
+ * second blank of each frame of the fight is left out. */
+typedef struct PortGif PortGif;
+extern PortGif *port_GifOpen(
+    const char *path, s32 w, s32 h, char *why, u32 room);
+extern s32 port_GifPicture(PortGif *gif, const u32 *pixels, u32 index);
+extern s32 port_GifClose(PortGif *gif, s32 keep);
 
 /* film_mf.c: the MP4 by Media Foundation, on Windows; elsewhere none. */
 typedef struct PortMf PortMf;

@@ -87,11 +87,18 @@ s32 port_StageIsDressed(void) {
            choice->fight_kind == PORT_STAGE_REMASTERED;
 }
 
+/* The time the picture lights the stage at (port_stage_choice.h): the
+ * fight's, or photo mode's while it turns one. */
 s32 port_StageTime(void) {
     const PortStageChoice *choice = &g_port_stage_choice;
     s32 time =
         choice->is_started ? choice->fight_time : port_GetStageTimeDefault();
 
+    /* photo mode's time, for the picture alone (port_theatre.h): only the
+     * picture asks this */
+    if (port_TheatreTime() >= 0) {
+        time = port_TheatreTime();
+    }
     if (!port_StageIsDressed() || time >= PORT_TIME_COUNT) {
         return PORT_TIME_OWN;
     }

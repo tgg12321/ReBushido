@@ -759,6 +759,30 @@ the stage").
     video (MP4) or GIF. Also a photo mode in a fight (paused, a free
     camera, the time of day changed), to show the stages' skies and
     dressing (items 17, 20).
+    **Done on the port** ([`PORT.md`](PORT.md), "The replay theatre and
+    photo mode"; [`PLAYING.md`](PLAYING.md), "The replay theatre" and
+    "Photo mode"): every picture of a replay in the window is a "look",
+    the frame drawn again from the states of the two boundaries before it
+    (kept in a ring, `src/port/theatre.c`) as frames run ahead are drawn,
+    with the game's camera replaced in the look alone (C, W A S D Q E,
+    the arrows or the mouse, Z X), the 2D layer cut (H) and the time of
+    day turned (T), the step itself unseen: nothing of it reaches the
+    game's state. A frame back, five seconds either way, a tenth of the
+    way, any frame (`port_ReplaySeekTo`: keyframes every five seconds as
+    the playback passes, eight at most, then on unseen, every hash held);
+    a still at the window's full size (V, a PNG in `screenshots/`); a
+    clip of the frames marked ([ ] G) made by another run as a film is,
+    in the theatre's view: a GIF of the port's own (`film_gif.c`, 640
+    across, the fight's 30 frames a second) or the Replays page's film
+    (Windows' own MP4, or the port's AVI; no ffmpeg). Photo mode: F4 in a
+    fight offline, the game waiting at a boundary while the camera, the
+    HUD and the time change, then going on from the very same state.
+    Proved by `tools/port_theatre.py` (a look's picture the playback's
+    own, a seek's hashes the played-through ones, step and back, stills,
+    both clips decoded, photo mode's fight the same hash for hash as one
+    without it). Left: a seek bar for the mouse; a camera that moves
+    through a clip (a clip's is where it was as G was pressed); the
+    field of view; the owner's eye on `tmp/theatre/`.
 30. **Stats** (the owner, 2026-11-26; no achievements): a player's record
     kept by the program: fights and matches won and lost, by fighter,
     weapon, stage, mode and opponent (CPU levels, online names); kills

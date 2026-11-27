@@ -83,6 +83,12 @@
 #define BLANKS_A_FRAME 2
 /* skip to the kill: this many frames before it (three seconds) */
 #define KILL_LEAD 90
+/* The playback's keyframes, for a seek back (the theatre's, port_replay.h):
+ * the state every so many frames as the playback passes them, so many at
+ * most; when they are all used every other one is let go and the rest are
+ * twice as far apart. */
+#define KEYFRAMES 8
+#define KEYFRAME_EVERY 150
 /* an input's fields that changed (INPT) */
 #define CHANGED_FIRST 1
 #define CHANGED_SECOND 2
@@ -499,6 +505,11 @@ static struct {
     u32 resync_size[RESYNCS_MAX];
     u8 *resync_raw;
     u8 *resync_state;
+    /* the keyframes: the fight's frame each is of, sorted, and its state */
+    s32 keyframe_count;
+    u32 keyframe_every;
+    u32 keyframe_at[KEYFRAMES];
+    u8 *keyframe_state[KEYFRAMES];
 } g_play;
 
 /* --replay-from-boot and --replay-differ (port_replay.h) */
@@ -3783,6 +3794,8 @@ s32 port_PlayReplay(
     g_play.seek_to = NONE;
     g_play.speed = SPEED_ONE;
     g_play.frame = 0;
+    g_play.keyframe_count = 0;
+    g_play.keyframe_every = KEYFRAME_EVERY;
     g_play.desync = FALSE;
     g_play.hashes_matched = 0;
     g_play.state = PLAY_PENDING;
@@ -4115,6 +4128,47 @@ static s32 port_ReplayUnheld(u32 index) {
     return FALSE;
 }
 
+/* The state of the fight's frame `index` kept as a keyframe where it is
+ * one's (port_ReplaySeek goes back to the nearest). */
+static void port_ReplayKeyframe(u32 index) {
+    s32 count = g_play.keyframe_count;
+    s32 i;
+
+    if (index == 0 || index % g_play.keyframe_every != 0 ||
+        (count > 0 && g_play.keyframe_at[count - 1] >= index)) {
+        return;
+    }
+    if (count == KEYFRAMES) {
+        /* every other one let go: the rest twice as far apart */
+        s32 kept = 0;
+
+        g_play.keyframe_every *= 2;
+        for (i = 0; i < count; i++) {
+            if (g_play.keyframe_at[i] % g_play.keyframe_every == 0) {
+                u8 *state = g_play.keyframe_state[kept];
+
+                g_play.keyframe_state[kept] = g_play.keyframe_state[i];
+                g_play.keyframe_state[i] = state;
+                g_play.keyframe_at[kept] = g_play.keyframe_at[i];
+                kept++;
+            }
+        }
+        g_play.keyframe_count = count = kept;
+        if (index % g_play.keyframe_every != 0) {
+            return;
+        }
+    }
+    if (g_play.keyframe_state[count] == NULL) {
+        g_play.keyframe_state[count] = port_HostAllocate(port_StateSize());
+        if (g_play.keyframe_state[count] == NULL) {
+            return;
+        }
+    }
+    port_StateSave(g_play.keyframe_state[count]);
+    g_play.keyframe_at[count] = index;
+    g_play.keyframe_count = count + 1;
+}
+
 /* A boundary of the playback: the frame's view held and its hash held to
  * the one recorded; FALSE where the playback ended here. */
 static s32 port_ReplayPlayFrame(void) {
@@ -4173,6 +4227,7 @@ static s32 port_ReplayPlayFrame(void) {
         port_ReplayEnd(NULL);
         return FALSE;
     }
+    port_ReplayKeyframe(index);
     port_RemasterHoldGameView(&g_play.views[g_play.list[index].view]);
     return TRUE;
 }
@@ -4190,13 +4245,35 @@ static s32 port_ReplayQuietStep(void) {
 /* To frame `to`, from the start again where it is not ahead, the frames
  * between run unseen: FALSE where the playback ended on the way. */
 static s32 port_ReplaySeek(u32 to) {
-    if (to <= g_play.frame) {
+    s32 nearest = -1;
+    s32 i;
+
+    /* the latest keyframe not past it, where it is nearer than now */
+    for (i = 0; i < g_play.keyframe_count; i++) {
+        if (g_play.keyframe_at[i] <= to) {
+            nearest = i;
+        }
+    }
+    if (nearest >= 0 &&
+        (to < g_play.frame || g_play.keyframe_at[nearest] > g_play.frame)) {
+        port_ReplayKeep(TRUE);
+        port_StateLoad(g_play.keyframe_state[nearest]);
+        port_ReplayKeep(FALSE);
+        port_CardsForReplay();
+        if (!port_ReplayPlayFrame()) {
+            return FALSE;
+        }
+    } else if (to <= g_play.frame) {
         port_ReplayLoadStart();
         if (!port_ReplayPlayFrame()) {
             return FALSE;
         }
     }
     while (g_play.frame < to) {
+        if (g_play.frame + PORT_THEATRE_LOOK_STEPS >= to) {
+            /* the theatre's look at `to` runs from the boundary before */
+            port_TheatreKeep();
+        }
         if (!port_ReplayQuietStep()) {
             return FALSE;
         }
@@ -4284,6 +4361,10 @@ static void port_ReplayPlayBoundary(void) {
     }
     g_play.step_once = FALSE;
     for (i = SPEED_ONE; i < g_play.speed; i += SPEED_ONE) {
+        if (i + PORT_THEATRE_LOOK_STEPS * SPEED_ONE >= g_play.speed) {
+            /* the theatre's look runs from the boundary before the step */
+            port_TheatreKeep();
+        }
         if (!port_ReplayQuietStep()) {
             return;
         }
@@ -4315,7 +4396,22 @@ void port_ReplayControl(s32 what) {
         g_play.seek_to = g_play.kill > KILL_LEAD ? g_play.kill - KILL_LEAD : 0;
     } else if (what == PORT_REPLAY_STOP) {
         g_play.stop_asked = TRUE;
+    } else if (what == PORT_REPLAY_HOLD) {
+        g_play.paused = TRUE;
     }
+}
+
+const char *port_ReplayPlayingPath(void) {
+    return g_play.state != PLAY_OFF ? g_play.path : NULL;
+}
+
+void port_ReplaySeekTo(u32 frame) {
+    if (g_play.state != PLAY_ON || g_play.in_lead) {
+        return;
+    }
+    g_play.seek_to = frame < g_play.frames ? frame
+                     : g_play.frames > 0   ? g_play.frames - 1
+                                           : 0;
 }
 
 /* Where the playback is (port_replay.h). */
