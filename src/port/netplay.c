@@ -804,6 +804,12 @@ static u32 port_NetplayAgreed(void) {
     return agreed == (u32)-1 ? g_np_resync_frame : agreed;
 }
 
+/* The last frame all held the same, and whether this program has
+ * parted (port_net.h). */
+u32 port_NetplayAgreedFrame(void) { return port_NetplayAgreed(); }
+
+s32 port_NetplayIsParted(void) { return g_np_parted; }
+
 static void port_NetplayCompareAll(u32 frame) {
     s32 link;
 
@@ -1991,6 +1997,7 @@ static void port_NetplayResyncSend(void) {
     }
     port_NetplayResynced(g_np_rs.epoch, frame, g_np_rs.agreed);
     port_ReplayResynced(g_np_rs.agreed);
+    port_StatsResynced(frame - g_np_rs.agreed, FALSE);
     for (;;) {
         u32 now = port_NetClock();
         s32 done = TRUE;
@@ -2114,6 +2121,7 @@ static void port_NetplayResyncReceive(void) {
     }
     port_NetplayResynced(g_np_rs.epoch, frame, g_np_rs.agreed);
     port_ReplayResynced(g_np_rs.agreed);
+    port_StatsResynced(frame - g_np_rs.agreed, TRUE);
     port_Log("netplay: resync %u's state had in %u ms and put in\n",
              g_np_rs.epoch, port_NetClock() - g_np_rs.began_at);
 }

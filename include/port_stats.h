@@ -269,5 +269,9 @@ extern void port_StatsBoundary(void);
 /* A replay's file was written (replay.c): its name, and the input's
  * number at the fight's first boundary out of it, given to its fight. */
 extern void port_StatsReplayWritten(const char *path, u32 end_count);
+/* A resync (netplay.c; docs/NETPLAY.md, section 21): `back` inputs
+ * before now the last frame every machine held the same; `loaded` where
+ * this machine put the host's state in. */
+extern void port_StatsResynced(u32 back, s32 loaded);
 
 #endif /* PORT_STATS_H */
