@@ -645,6 +645,151 @@ its sound to a file with no window; the buffers above are before the
 voices' and the main volume); and that the emulator is the console.
 `--spu FILE` writes the port's sound memory and registers at a run's
 end.
+
+### The sound remastered
+
+`sound = remastered` (the window's setting, its default; `--sound
+remastered` in either program, whose own default is `original`) and
+`headphones = on` (`--headphones on`): ROADMAP 32, `src/port/remix.c`,
+`include/port_remix.h`. What a player hears of it:
+[`PLAYING.md`](PLAYING.md), "The sound: Original and Remastered".
+
+**Beside the chip, not in it.** The chip runs as it always has, and with
+`original` nothing else runs: `port_RunSpu` is `port_RunSpuRemastered`
+with no buffer for the remastered samples, and a run's WAV is byte for
+byte main's (below). With `remastered` the chip, as it goes, hands the
+mix what it has worked out: each sample a voice takes from its waveform,
+under its envelope (`port_RemixPush`, from `port_AdvanceSpuVoice`); each
+voice's place between two samples, its step, its volumes (`port_RemixVoice`);
+the disc's sound at its volume, the chip's own reverb, the main volume
+(`port_RemixFrame`). The mix keeps its own copies and writes nothing of
+the chip's: the chip's samples, sound memory and registers are the same
+with it as without, which `tests/port/remix.c` checks on 24 voices, the
+disc and a reverb mode. Its variables are outside the game's state
+(`config/port_state.txt`), so a load never puts them back, and nothing of
+the game reads them. A frame run ahead is not mixed (`sound.c`); a step
+netplay runs again is, from where the mix is, and the window takes those
+samples as it takes the chip's.
+
+**The resampler.** The chip plays a waveform at its pitch through its
+table of four weights, which is a gentle low pass: a tone at a quarter
+of the waveform's rate comes out 3 dB down and at four tenths 7 to 9 dB,
+and its images above get through 20 to 35 dB under the tone (more where
+the game plays a sound at half its rate or less, which is most of them:
+steps of 0x0659, 0x0720 and 0x0800). The mix keeps each voice's last 64
+samples and makes each output sample from 32 of them (a voice at its
+recorded rate or slower) under a sinc windowed by Kaiser's window (beta
+8), 256 places between two samples with a line between the two nearest.
+A voice played faster than recorded would fold its top back down; there
+the sinc is narrowed to the rate it is played at and widened to 40, 48
+or 64 taps (seven bands, up to the chip's fastest step of 0x4000). The
+kernels, 96,632 numbers, are made once by series (a sine, an
+exponential and the Bessel function, in 64-bit whole numbers: the
+program has no C library and the 32-bit one no division of 64 bits), in
+35 to 60 ms. Measured (`tests/port/remix.py`), at every step from 0x0659
+to 0x4000: flat within 0.002 dB to 0.35 of the output's rate, all else
+heard of a tone (images, fold, the kernel's error) 75 dB under it at
+worst, and a tone 1.6 times above what the output holds 71 dB down; the
+chip, on the same tones, loses up to 8 dB and lets fold through at -1 to
+-11 dB. A voice is 32 of its samples behind the chip, 0.7 ms at its
+recorded rate.
+
+**The reverb**: eight delay lines of 1,009 to 2,357 samples (no two with
+a common factor) times the room's size, fed back through Householder's
+matrix `I - J/4`, which loses nothing and is exact in whole numbers;
+each line's gain the room's decay for its length (`10^(-3 L / (44100
+T))`), its top damped a little each trip round by a one-pole low pass;
+before them a high pass at 20 Hz, a pre-delay and four all-pass filters
+that thicken the first echoes; out of them two sides, each half the
+lines less the other half in two patterns that share nothing. The
+numbers are whole, at 256ths of a sample, and every product is rounded
+towards zero, so the tail dies to nothing and never sits on a last step:
+no denormal, no NaN, nothing to grow. Every voice is heard in the room;
+the disc's music is not (it was mixed in its own room). In a fight the
+room is the stage's; out of one the room is none, its tail dies away,
+and the chip's own reverb is heard as the game sets it.
+
+| Room | Decay (s) | Reverb against the direct sound | Stages |
+|---|---|---|---|
+| open | 0.45 | -21 dB | Railway, Shainto Cemetery, stage 37 |
+| field | 0.55 | -20 dB | Bus Stop, Orange Tree Fields, Terraced Fields |
+| coast | 0.50 | -21 dB | Kimigaura Coast, Lighthouse, Ferry Dock |
+| rooftop | 0.55 | -19 dB | Castle Rooftop, Building Rooftop |
+| forest | 0.75 | -17 dB | Tatara Shrine Path |
+| bamboo | 0.60 | -16 dB | Bamboo Thicket |
+| valley | 1.70 | -15 dB | Lost Bridge, Snake Cliff |
+| courtyard | 0.95 | -14 dB | Tatara Shrine, Outside the Meikyokan, Shainto Gate |
+| yard | 0.95 | -14 dB | Future Dump Site, Lumberyard, Abandoned Shipyard |
+| dojo | 0.85 | -13 dB | Meikyokan Dojo, practice 1 and 2 |
+| underpass | 1.30 | -12 dB | Under Lost Bridge, Under Railway |
+| ship | 1.10 | -11 dB | Abandoned Ship |
+| theatre | 1.40 | -11 dB | Kabuki Stage |
+| hall | 1.60 | -10 dB | Main Tatara Shrine, Shainto HQ, team battles 1 and 2, chanbara's hall |
+| dam | 2.60 | -10 dB | Water Tower Dam |
+| garage | 1.80 | -9 dB | Building Parking Lot |
+| station | 2.00 | -9 dB | Abandoned Station |
+| tunnel | 2.30 | -8 dB | Abandoned Tunnel |
+| cave | 3.20 | -7 dB | Purple Cavern |
+
+The decay is the room's at low frequencies (measured from a click by
+Schroeder's backward integral below 200 Hz: within 4% of the table's in
+every room); the whole sound falls 15 to 25% faster for the damping. The
+stages are put in rooms by what they are: the original gave a reverb to
+the halls and rooms (the dojo, Shainto's, the team battles', the practice
+stages', the parking lot) and the cavern, and none outside. The levels
+and the table are a first choice, for the owner's ears to settle
+(`g_port_remix_rooms`, `g_port_remix_stage_rooms`).
+
+**The head** (`headphones`). A voice's left and right volumes say where
+it is, from all the way left to all the way right as -90 to 90 degrees
+(65 places), and its level is the root of their squares' mean, so a
+voice keeps the original's energy wherever it is. The ear away from it
+hears it later by Woodworth's formula for a head 8.75 cm across (`(a/c)
+(angle + sin angle)`: 28.9 samples, 0.66 ms, at the side), by a delay
+that slides to a new place rather than jumps, 3 dB softer at the side;
+each ear's highs are shaded as Brown and Duda's spherical head shades
+them (one pole at `2c/a` and a zero that moves with the angle,
+`1.05 + 0.95 cos(1.2 angle)`), over their value straight ahead so that a
+sound in the middle is exactly what it was, and the near ear's lift held
+to 6 dB. A click from the side, measured: the far ear 29 samples later,
+15 dB down in all, 16 dB at 8 kHz and 3.5 dB at 200 Hz. The disc's music
+is two speakers 30 degrees either side, at a level that keeps music in
+the middle as loud at each ear. No measured head is used, so there is
+no data of anyone else's in the program to license.
+
+**The limiter.** The chip's sum is cut at 16 bits, and the game's music
+alone is hot enough that a fight cuts 1,300 to 4,400 of its samples
+(Sound, "What is not the console's"). The mix instead looks 64 samples
+(1.5 ms) ahead: each sample says how far down the level must be for it,
+the level falls an eighth of the way a sample to the least of those
+waiting and rises again over about 50 ms. No sample is cut.
+
+**What a run sounds like**, by `--wav` and `tools/port_wav.py`, a fight
+of 2,400 blanks on six stages (dojo, bamboo, cavern, coast, tunnel, dam)
+and `port_sound`'s plan through the menus, the movie and a fight:
+
+- `original`: every WAV is the same as main's, byte for byte, and the
+  32-bit program's the same as the 64-bit one's;
+- `remastered`: the 32-bit and 64-bit programs' the same, byte for byte;
+  none of a run's sums cut (the chip cut 1,333 to 4,376 in each), the
+  samples at full scale 35 and 27 where the original has 779 and 832
+  (the dojo), and no run of three; the mean of each run within 5 of the
+  original's (both are the music's own, -19 to +5 of 32,768); the RMS
+  0.05 to 0.5 dB under the original's, where the limiter turns the
+  loudest moments down that the chip cut. With headphones the RMS is
+  another 0.4 dB under it, the far ears' share.
+
+**What it costs**: on a whole fight (the cavern, 2,400 blanks, the least
+of five runs each), the program without a window takes 0.07 ms more a
+blank with `remastered` and 0.09 ms with headphones, against a blank of
+16.7 ms. At the worst, all 24 voices sounding at once (`tests/port/remix
+bench`, the same `-O1`): 0.68 ms more a blank (64-bit; 0.81 ms 32-bit),
+1.0 ms with headphones; the chip alone is 0.34 ms.
+
+**Not done**: the mix's state is not saved with the game's, so a step
+netplay runs again leaves its tail in the reverb once more (a short
+doubling at a rollback, in what the window had queued and not played);
+the tuning by ear.
 ### The picture
 
 The port has the PlayStation's GPU in C (`src/port/raster.c`,

@@ -22,6 +22,7 @@ enum {
     SYS_LSEEK = 8,
     SYS_MMAP = 9,
     SYS_EXIT = 60,
+    SYS_CLOCK_GETTIME = 228,
 };
 
 /* Memory below 2 GB: the game keeps addresses in 32-bit numbers. */
@@ -59,6 +60,7 @@ enum {
     SYS_CLOSE = 6,
     SYS_LSEEK = 19,
     SYS_MMAP = 90, /* the old one, which takes its six arguments in memory */
+    SYS_CLOCK_GETTIME = 265,
 };
 
 static TestWord test_Syscall(
@@ -78,6 +80,7 @@ static TestWord test_Syscall(
 #define SEEK_SET 0
 #define SEEK_END 2
 #define PROT_READ_WRITE 3
+#define CLOCK_MONOTONIC 1
 #define MAP_PRIVATE 0x02
 #define MAP_FIXED 0x10
 #define MAP_ANONYMOUS 0x20
@@ -195,6 +198,15 @@ static void test_PrintArgs(const char *format, __builtin_va_list args) {
             break;
         }
     }
+}
+
+/* The monotonic clock, in microseconds (runtime.h). */
+unsigned test_Microseconds(void) {
+    /* a timespec: seconds and nanoseconds, each a word of the program's */
+    TestWord now[2] = {0, 0};
+
+    test_Syscall(SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, (TestWord)now, 0);
+    return (unsigned)now[0] * 1000000U + (unsigned)now[1] / 1000U;
 }
 
 void test_Print(const char *format, ...) {

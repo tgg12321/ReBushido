@@ -58,6 +58,7 @@
 #include "port_weapons.h"
 #include "port_profile.h"
 #include "port_remaster.h"
+#include "port_remix.h"
 #include "port_spu.h"
 #include "port_play.h"
 #include "port_training.h"
@@ -3219,6 +3220,10 @@ void port_WindowApplyChoice(s32 choice) {
         port_GlSetOptions(&options);
     } else if (strcmp(name, "music_mods") == 0) {
         port_MusicSetOn(g_port_settings.music_mods);
+    } else if (strcmp(name, "sound") == 0) {
+        port_SetSoundRemastered(g_port_settings.sound == PORT_SOUND_REMASTERED);
+    } else if (strcmp(name, "headphones") == 0) {
+        port_SetSoundHeadphones(g_port_settings.headphones);
     } else if (strcmp(name, "run_ahead") == 0) {
         port_SetRunAhead(g_port_settings.run_ahead);
     } else if (strcmp(name, "stage_kind") == 0) {

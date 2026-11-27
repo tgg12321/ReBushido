@@ -43,6 +43,11 @@ extern void *test_ReadFile(const char *path, unsigned *size_out);
  * calls for a structure that is copied or cleared. They are not declared
  * here: Sony's libc.h declares them its own way. */
 
+/* The system's monotonic clock in microseconds, which wraps: for a test
+ * that measures how long something takes, and prints it only when asked
+ * (the times are not the same twice). */
+extern unsigned test_Microseconds(void);
+
 /* Copies and compares for a test's own use. */
 extern void test_Copy(void *dest, const void *src, unsigned count);
 extern int test_BytesEqual(const void *a, const void *b, unsigned count);

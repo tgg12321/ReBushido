@@ -8,6 +8,8 @@
  * settings of Sony's own modes (libspu's table, which is numbers). */
 #include "common.h"
 #include "src/port/spu.c"
+/* what the chip hands the remastered mix, which it calls */
+#include "src/port/remix.c"
 #include "src/main/psxsdk/libspu/s_rmp.c"
 #include "runtime/runtime.h"
 

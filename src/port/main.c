@@ -33,6 +33,7 @@
 #include "port_net.h"
 #include "port_online.h"
 #include "port_ranked.h"
+#include "port_remix.h"
 #include "port_replay.h"
 #include "port_room.h"
 #include "port_spu.h"
@@ -70,6 +71,7 @@ static const char g_port_usage[] =
     "            [--dump NAME=ADDRESS:BYTES] [--out FOLDER]\n"
     "            [--shots FOLDER] [--every N] [--vram FILE]\n"
     "            [--wav FILE] [--spu FILE]\n"
+    "            [--sound original|remastered] [--headphones on|off]\n"
     "            [--card1 FILE] [--card2 FILE] [--no-cards]\n"
     "            [--fight STAGE FIGHTER FIGHTER] [--fight-2p]\n"
     "            [--rollback-test N] [--rollback-every M] "
@@ -256,6 +258,12 @@ static const char g_port_usage[] =
     "  --dump-movie FOLDER   each frame of the movie as it is first shown,\n"
     "                 movie-NNNN.png by its number in the stream: what\n"
     "                 tools/port_movies.py makes larger\n"
+    "  --sound original|remastered   the chip's own sound (built in), or\n"
+    "                 the sound remastered: a finer resampling, a reverb\n"
+    "                 of the stage's own (docs/PORT.md, \"The sound\n"
+    "                 remastered\"); what --wav keeps and a card plays\n"
+    "  --headphones on|off   the remastered sound placed for headphones\n"
+    "                 (off)\n"
     "  --music-mods on|off   off plays the game's own music where a mod\n"
     "                 has some (on)\n"
     "  --dump-music FOLDER   write each piece of music the game plays\n"
@@ -768,6 +776,23 @@ s32 port_Main(s32 argc, char **argv) {
             if (!port_WeaponsChoose(argv[++i])) {
                 port_UsageError(
                     "--weapon takes 1=NAME or 2=NAME, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--sound") && has_value) {
+            i++;
+            if (port_TextsEqual(argv[i], "original") ||
+                port_TextsEqual(argv[i], "remastered")) {
+                port_SetSoundRemastered(port_TextsEqual(argv[i], "remastered"));
+            } else {
+                port_UsageError(
+                    "--sound is original or remastered, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--headphones") && has_value) {
+            i++;
+            if (port_TextsEqual(argv[i], "on") ||
+                port_TextsEqual(argv[i], "off")) {
+                port_SetSoundHeadphones(port_TextsEqual(argv[i], "on"));
+            } else {
+                port_UsageError("--headphones is on or off, not ", argv[i]);
             }
         } else if (port_TextsEqual(word, "--music-mods")) {
             i++;
