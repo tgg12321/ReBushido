@@ -74,8 +74,11 @@ typedef struct {
 
 static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
     {0},
-    /* novice: slow, unsure of the distance, guesses its guards */
-    {.reaction = 9,
+    /* novice: slow, unsure of the distance, guesses its guards. A
+     * beginner's reaction to an attack he must first make out: 11 to 14
+     * frames, 0.37 to 0.47 s (at 9 the adept beat it 53% of 96 fights;
+     * at 11, 67% of 192: docs/CPU.md, "Measuring the levels") */
+    {.reaction = 11,
      .jitter = 3,
      .read = 96,
      .read_gain = 8,
