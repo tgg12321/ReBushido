@@ -460,6 +460,12 @@ void resource_LoadStage(s32 stage, s32 staging_addr) {
         }
     }
 
+#if RB_REMASTER_VIEW
+    /* the remastered renderer's side channel: the stage's block is read
+     * anew, and nothing is built of it until its cells are read
+     * (port_remaster.h) */
+    port_RemasterStageLeaving();
+#endif
     g_resource_stage = stage;
     work = ARENA_STAGE;
     header = arena_OpenBlock(ARENA_STAGE);
@@ -622,6 +628,9 @@ void resource_SelectStageArea(s32 area) {
     record++;
     obstacles = (s32)header + *record;
     cells = (s32 *)((u8 *)header + record[1]);
+#if RB_REMASTER_VIEW
+    port_RemasterStageLeaving();
+#endif
     reloc_UnrelocateBlock(RELOC_STAGE);
     reloc_RelocateBlock(meshes, RELOC_STAGE);
     collision_SetGrid(collision_grid);
@@ -631,6 +640,9 @@ void resource_SelectStageArea(s32 area) {
 }
 
 static void resource_FreeStage(void) {
+#if RB_REMASTER_VIEW
+    port_RemasterStageLeaving();
+#endif
     arena_Free(ARENA_STAGE);
     g_resource_stage = -1;
     g_resource_stage_has_areas = 0;

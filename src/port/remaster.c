@@ -1284,6 +1284,16 @@ static s32 g_stage_piece_count;
  * have been at all */
 static s32 g_stage_pieces_version;
 static s32 g_stage_pieces_taken;
+/* Whether the stage's data stands whole: from its cells read (or its block
+ * moved) until it is let go of or read anew (port_RemasterStageLeaving). */
+static s32 g_stage_settled;
+/* The pieces were taken down while the game loaded (port_RemasterPrepare-
+ * Pieces), with these light setups, the ones of `g_stage_pieces_lit` (a bit
+ * each, the tiles' and the pieces'): the first frame that draws the stage
+ * looks again. */
+static s32 g_stage_pieces_early;
+static LightSetup g_stage_pieces_lights[LIGHT_SETUP_COUNT];
+static u32 g_stage_pieces_lit;
 
 /* what of each piece the renderer draws it by, as it was taken down: a
  * piece that is no longer so has been changed by the game (a prop cut
@@ -1329,12 +1339,116 @@ static s32 port_RemasterPieceIsAsWas(
     return TRUE;
 }
 
+/* `first` times `second` into `out` on the coprocessor, as math_MulMatrix
+ * works it out (its C, math_asm.c), without beginning one of the game's
+ * functions: this runs beside the game's own work, and while it loads. */
+static void port_RemasterMulMatrix(
+    const MATRIX *first, const MATRIX *second, MATRIX *out) {
+    s32 columns[PORT_GTE_MATRIX_ELEMENTS];
+
+    port_GteLoadControl(PORT_GTE_ROTATION, first, PORT_GTE_MATRIX_WORDS);
+    port_GteWriteControl(PORT_GTE_TRX, 0);
+    port_GteWriteControl(PORT_GTE_TRY, 0);
+    port_GteWriteControl(PORT_GTE_TRZ, 0);
+    port_GteRotateColumns(second->m, PORT_GTE_CMD_RTV0TR, columns);
+    port_GteStoreColumns(out->m, columns, FALSE);
+}
+
+/* Sony's rsin and rcos (libgte's GEO_00 and GEO_01), read from their table
+ * of the first quarter turn (libgte.h) so that none of the library's
+ * functions is begun. */
+#define TURN_QUARTER (ANGLE_TURN / 4)
+#define TURN_HALF (ANGLE_TURN / 2)
+#define TURN_THREE (ANGLE_TURN - TURN_QUARTER)
+
+static s32 port_RemasterSinOfTurn(s32 angle) {
+    if (angle <= TURN_HALF) {
+        return angle <= TURN_QUARTER ? rsin_tbl[angle]
+                                     : rsin_tbl[TURN_HALF - angle];
+    }
+    return angle <= TURN_THREE ? -rsin_tbl[angle - TURN_HALF]
+                               : -rsin_tbl[ANGLE_TURN - angle];
+}
+
+static s32 port_RemasterSin(s32 angle) {
+    return angle < 0 ? -port_RemasterSinOfTurn((-angle) & ANGLE_MASK)
+                     : port_RemasterSinOfTurn(angle & ANGLE_MASK);
+}
+
+static s32 port_RemasterCos(s32 angle) {
+    angle = (angle < 0 ? -angle : angle) & ANGLE_MASK;
+    if (angle <= TURN_HALF) {
+        return angle <= TURN_QUARTER ? rsin_tbl[TURN_QUARTER - angle]
+                                     : -rsin_tbl[angle - TURN_QUARTER];
+    }
+    return angle <= TURN_THREE ? -rsin_tbl[TURN_THREE - angle]
+                               : rsin_tbl[angle - TURN_THREE];
+}
+
+/* A setup's light matrix worked out from its lights, as light_CalcMatrix
+ * works it out (scene.c), into the setup given. */
+static void port_RemasterLightMatrix(LightSetup *setup) {
+    s32 i;
+
+    for (i = 0; i < LIGHT_SETUP_LIGHTS; i++) {
+        const LightDir *light = &setup->light[i];
+
+        if (light->on) {
+            s16 cos_pitch = (s16)port_RemasterCos(light->pitch);
+            s32 scaled = ((port_RemasterSin(light->yaw) * cos_pitch) >> 12) *
+                         setup->light_dir_scale;
+
+            setup->lmat.m[i][0] = (s16)(-scaled >> 12);
+            scaled = port_RemasterSin(light->pitch) * setup->light_dir_scale;
+            setup->lmat.m[i][1] = (s16)(scaled >> 12);
+            scaled = ((port_RemasterCos(light->yaw) * cos_pitch) >> 12) *
+                     setup->light_dir_scale;
+            setup->lmat.m[i][2] = (s16)(-scaled >> 12);
+        } else {
+            setup->lmat.m[i][0] = 0;
+            setup->lmat.m[i][1] = 0;
+            setup->lmat.m[i][2] = 0;
+        }
+    }
+}
+
+/* Whether the light setups the pieces were taken down with, and the tiles'
+ * (g_stage_pieces_lit), light as they do now: their light and colour
+ * matrices and their ambient colours. */
+static s32 port_RemasterLightsAsWere(void) {
+    s32 i;
+
+    for (i = 0; i < LIGHT_SETUP_COUNT; i++) {
+        const LightSetup *was = &g_stage_pieces_lights[i];
+        const LightSetup *now = &g_light_setups[i];
+        s32 j;
+
+        if ((g_stage_pieces_lit & (1U << i)) == 0) {
+            continue;
+        }
+        for (j = 0; j < PORT_GTE_MATRIX_ELEMENTS_PORT; j++) {
+            if (was->lmat.m[j / 3][j % 3] != now->lmat.m[j / 3][j % 3] ||
+                was->cmat.m[j / 3][j % 3] != now->cmat.m[j / 3][j % 3]) {
+                return FALSE;
+            }
+        }
+        for (j = 0; j < 3; j++) {
+            if (was->back[j] != now->back[j]) {
+                return FALSE;
+            }
+        }
+    }
+    return TRUE;
+}
+
 /* Every piece of the stage, as the renderer would set it up
  * (render_SetupNode): its mesh, its matrix and the light matrix it is lit
  * through. The turning of the lights is the game's own arithmetic
- * (math_MulMatrix, on the coprocessor), and the whole of the coprocessor
- * is put back afterwards: this runs while the game's frame is drawn. */
-static void port_RemasterTakeDownPieces(void) {
+ * (math_MulMatrix's, on the coprocessor), and the whole of the coprocessor
+ * is put back afterwards: this runs while the game's frame is drawn, or
+ * while it loads. Lit by setups: the game's own, or what the next frame's
+ * will be (port_RemasterPreparePieces). */
+static void port_RemasterTakeDownPieces(LightSetup *setups) {
     PortGte saved = g_port_gte;
     s32 count = 0;
     StageNode *pieces = stage_GetPieces(&count);
@@ -1347,10 +1461,11 @@ static void port_RemasterTakeDownPieces(void) {
     if (pieces == NULL || count < 0) {
         count = 0;
     }
+    g_stage_pieces_lit = 1U << LIGHT_SCENERY;
     for (i = 0; i < count; i++) {
         SceneNode *node = &pieces[i].node;
         PortStagePiece *one = &g_stage_pieces[i];
-        LightSetup *lights = &g_light_setups[node->light_setup_index];
+        LightSetup *lights = &setups[node->light_setup_index];
         MATRIX turned;
 
         one->node = (PortAddress)node;
@@ -1368,8 +1483,12 @@ static void port_RemasterTakeDownPieces(void) {
         for (j = 0; j < 3; j++) {
             one->place[j] = node->world.t[j];
         }
+        if (node->light_setup_index >= 0 &&
+            node->light_setup_index < LIGHT_SETUP_COUNT) {
+            g_stage_pieces_lit |= 1U << node->light_setup_index;
+        }
         if (node->kind == NODE_KIND_ROTATED) {
-            math_MulMatrix(&lights->lmat, &node->world, &turned);
+            port_RemasterMulMatrix(&lights->lmat, &node->world, &turned);
         } else {
             turned = lights->lmat;
         }
@@ -1384,6 +1503,60 @@ static void port_RemasterTakeDownPieces(void) {
     g_port_gte = saved;
 }
 
+/* Whether every piece taken down while the game loaded stands as it was
+ * taken down. */
+static s32 port_RemasterPiecesAsWere(void) {
+    s32 count = 0;
+    StageNode *pieces = stage_GetPieces(&count);
+    s32 i;
+
+    if (count > PORT_STAGE_PIECES_MAX) {
+        count = PORT_STAGE_PIECES_MAX;
+    }
+    if (pieces == NULL || count < 0) {
+        count = 0;
+    }
+    if (count != g_stage_piece_count) {
+        return FALSE;
+    }
+    for (i = 0; i < count; i++) {
+        if (!port_RemasterPieceIsAsWas(
+                &g_stage_piece_was[i], &pieces[i].node)) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+void port_RemasterStageLeaving(void) { g_stage_settled = FALSE; }
+
+/* While the game loads (port_remaster.h): the pieces taken down with the
+ * light setups as the next frame will light them, kept to be looked at again
+ * in that frame (port_RemasterNotePieces). */
+s32 port_RemasterPreparePieces(void) {
+    s32 i;
+
+    if (g_backend == NULL || !g_stage_settled) {
+        return FALSE;
+    }
+    if (!g_stage_pieces_taken ||
+        g_stage_pieces_version != g_stage_view.version) {
+        /* the light setups as the next frame lights the stage with them:
+         * its scene's light matrices worked out again (scene_Begin) */
+        for (i = 0; i < LIGHT_SETUP_COUNT; i++) {
+            g_stage_pieces_lights[i] = g_light_setups[i];
+        }
+        port_RemasterLightMatrix(&g_stage_pieces_lights[LIGHT_FIGHTER_1]);
+        port_RemasterLightMatrix(&g_stage_pieces_lights[LIGHT_FIGHTER_2]);
+        port_RemasterLightMatrix(&g_stage_pieces_lights[LIGHT_SCENERY]);
+        port_RemasterTakeDownPieces(g_stage_pieces_lights);
+        g_stage_pieces_version = g_stage_view.version;
+        g_stage_pieces_taken = TRUE;
+        g_stage_pieces_early = TRUE;
+    }
+    return TRUE;
+}
+
 /* Which of the stage's pieces this frame queued and stand as they were
  * taken down (PortStageView.pieces): the renderer's queue is whole by the
  * time it draws the tiles, the pieces being queued with them
@@ -1395,9 +1568,21 @@ static void port_RemasterNotePieces(void) {
 
     if (!g_stage_pieces_taken ||
         g_stage_pieces_version != g_stage_view.version) {
-        port_RemasterTakeDownPieces();
+        port_RemasterTakeDownPieces(g_light_setups);
         g_stage_pieces_version = g_stage_view.version;
         g_stage_pieces_taken = TRUE;
+        g_stage_pieces_early = FALSE;
+    } else if (g_stage_pieces_early) {
+        /* taken down while the game loaded: what the first frame would
+         * have taken down, or taken down again under a new version, the
+         * stage's meshes then built again (port_RemasterPreparePieces) */
+        g_stage_pieces_early = FALSE;
+        if (!port_RemasterLightsAsWere() || !port_RemasterPiecesAsWere()) {
+            g_stage_view.version++;
+            g_side_version++;
+            port_RemasterTakeDownPieces(g_light_setups);
+            g_stage_pieces_version = g_stage_view.version;
+        }
     }
     for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
         g_stage_view.pieces[i] = 0;
@@ -1485,6 +1670,7 @@ void port_RemasterNoteFogLevel(s32 level, s32 slot) {
 void port_RemasterStageChanged(void) {
     g_stage_view.version++;
     g_side_version++;
+    g_stage_settled = TRUE;
 }
 
 const PortStageView *port_GetRemasterStageView(void) {
@@ -1646,6 +1832,11 @@ const PortStageTexture *port_RemasterFighterTextures(s32 slot, s32 *count) {
     }
     *count = g_fighter_texture_counts[slot];
     return g_fighter_textures[slot];
+}
+
+const void *port_RemasterStageLights(void) {
+    return g_stage_pieces_early ? &g_stage_pieces_lights[LIGHT_SCENERY]
+                                : &g_light_setups[LIGHT_SCENERY];
 }
 
 const void *port_RemasterTileLights(void) {

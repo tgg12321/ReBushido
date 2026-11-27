@@ -70,9 +70,15 @@ extern s32 port_GlDressingWantsFighters(void);
 /* The ground's mesh has been built (gl_stage.c, before its vertices go to
  * the card): its vertices, gl_stage.c's StageVertex of `stride` bytes,
  * `count` of them, those from `pieces_from` the pieces'. What grows where is
- * worked out from them when the stage's dressing is first asked for. */
+ * worked out from them when the stage's dressing is first asked for. A
+ * ground the same as the last noted in all that is read of it (the mesh
+ * built again for the game's lights, gl_stage.h, port_GlStagePrepare)
+ * keeps what grew on it. */
 extern void port_GlDressingNoteGround(
     const void *vertices, s32 stride, s32 count, s32 pieces_from);
+/* The dressing grown now on the ground last noted, if it has not been
+ * (gl_stage.c, port_GlStagePrepare: while the game loads). */
+extern void port_GlDressingPrepare(void);
 
 /* Once a game frame (gl_draw.c, where the frame begins): the fighters'
  * steps and slashes, the dust they kick up and the ripples they make. */

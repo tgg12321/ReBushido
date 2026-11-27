@@ -29,6 +29,11 @@ void arena_Reset(void) {
     g_arena_block_count = 0;
     g_arena_peak = 0;
     resource_ForgetWeapons();
+#if RB_REMASTER_VIEW
+    /* the remastered renderer's side channel: the stage's block is gone
+     * with the rest (port_remaster.h) */
+    port_RemasterStageLeaving();
+#endif
 }
 
 /* Notes that the arena is in use as far as `end_addr` (0: as far as the end

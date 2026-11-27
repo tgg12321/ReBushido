@@ -104,6 +104,8 @@ extern s32 SquareRoot12(s32 a);
 
 extern s32 rcos(s32 a);
 extern s32 rsin(s32 a);
+/* their table of the first quarter turn (SINCOS) */
+extern s16 rsin_tbl[];
 
 extern s32 ratan2(s32 y, s32 x);
 

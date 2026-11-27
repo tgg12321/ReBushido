@@ -65,6 +65,8 @@ typedef ptrdiff_t GLintptr;
 #define GL_DEPTH_TEST 0x0B71
 #define GL_BLEND 0x0BE2
 #define GL_CULL_FACE 0x0B44
+#define GL_FRONT 0x0404
+#define GL_BACK 0x0405
 #define GL_LESS 0x0201
 #define GL_SRC_ALPHA 0x0302
 #define GL_ONE_MINUS_SRC_ALPHA 0x0303
@@ -76,6 +78,11 @@ typedef ptrdiff_t GLintptr;
 #define GL_RGBA8 0x8058
 #define GL_RED 0x1903
 #define GL_R32F 0x822E
+#define GL_RGBA16F 0x881A
+#define GL_NEAREST 0x2600
+#define GL_COLOR 0x1800
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_COLOR_ATTACHMENT1 0x8CE1
 #define GL_TEXTURE_MIN_FILTER 0x2801
 #define GL_TEXTURE_MAG_FILTER 0x2800
 #define GL_LINEAR 0x2601
@@ -91,6 +98,7 @@ typedef ptrdiff_t GLintptr;
 #define PORT_GL_DRESSING_FUNCTIONS                                             \
     GL(void, glEnable, (GLenum))                                               \
     GL(void, glDisable, (GLenum))                                              \
+    GL(void, glCullFace, (GLenum))                                             \
     GL(void, glDepthFunc, (GLenum))                                            \
     GL(void, glDepthMask, (GLboolean))                                         \
     GL(void, glBlendFuncSeparate, (GLenum, GLenum, GLenum, GLenum))            \
@@ -142,6 +150,10 @@ typedef ptrdiff_t GLintptr;
        (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,         \
         const void *))                                                         \
     GL(void, glBindFramebuffer, (GLenum, GLuint))                              \
+    GL(void, glGenFramebuffers, (GLsizei, GLuint *))                           \
+    GL(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))  \
+    GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
+    GL(void, glClearBufferfv, (GLenum, GLint, const GLfloat *))                \
     GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
     GL(void, glScissor, (GLint, GLint, GLsizei, GLsizei))                      \
     GL(void, glGetIntegerv, (GLenum, GLint *))                                 \
@@ -165,6 +177,10 @@ PORT_GL_DRESSING_FUNCTIONS
 #define VRAM_W 1024
 #define VRAM_H 512
 #define TEXTURES_MOST 128
+/* The sum of what is read of the ground (port_DressGroundSum): FNV-1a's 64
+ * bits, its offset basis and prime. */
+#define SUM_START 0xCBF29CE484222325ULL
+#define SUM_PRIME 0x100000001B3ULL
 /* The most things of every block of a stage together, and of the meshes'
  * vertices. */
 #define THINGS_MOST 100000
@@ -276,6 +292,12 @@ PORT_GL_DRESSING_FUNCTIONS
 #define MIST_SCENE_UNIT 10
 /* ... and its tile of noise */
 #define MIST_NOISE_UNIT 5
+/* ... and its first pass's buffers, at MIST_SHRINK times fewer pixels each
+ * way than the picture's (port_DressDrawMist) */
+#define MIST_LOW_UNIT 6
+#define MIST_END_UNIT 7
+#define MIST_SHRINK 4
+#define MIST_SHRINK_TEXT "4"
 #define NOISE_SIDE 256
 #define SHAFT_MOTE_GAIN 2.0f
 /* the particles' program's own kinds, past PORT_PARTICLES_...: the rain's
@@ -463,6 +485,8 @@ typedef struct {
     GLint slab;
     GLint scene;
     GLint noise;
+    GLint low;
+    GLint low_end;
     /* the meshes' see-through */
     GLint see_count;
     GLint see_axis;
@@ -484,6 +508,14 @@ static struct {
     GLuint shaft;
     GLuint mist;
     DressAt mist_at;
+    /* its second pass (MIST_PASS 2), and the first's buffers and their size */
+    GLuint mist_up;
+    DressAt mist_up_at;
+    GLuint mist_framebuffer;
+    GLuint mist_low;
+    GLuint mist_end;
+    s32 mist_w;
+    s32 mist_h;
     GLuint noise; /* the mist's tile of noise (port_DressMakeNoise) */
     GLint caster_at_sun;
     /* the foliage as the sun sees it */
@@ -518,6 +550,15 @@ static struct {
     DressTri *tris;
     s32 tri_count;
     s32 ground_serial;
+    /* a sum of all of the ground's that is read here, and its stage's
+     * number (port_DressGroundSum): a ground built again the same is not
+     * noted again, and what grew on it stays */
+    u64 ground_sum;
+    s32 ground_stage;
+    /* the planes the water gave the post as it grew (port_GlPostWaterPlane),
+     * given again where the ground is built again the same */
+    float water_planes[PORT_DRESSING_MOST][2];
+    s32 water_plane_count;
     u16 *vram;
     PortStageTexture textures[TEXTURES_MOST];
     s32 texture_count;
@@ -1767,128 +1808,179 @@ static const char g_dress_mist_vertex[] =
 
     "}\n";
 
-static const char g_dress_mist_fragment[] =
-    "#version 430 core\n" DRESS_FRAGMENT_COMMON "uniform float u_clock;\n"
-    "uniform vec4 u_wind;\n"
-    "uniform vec4 u_area;\n"
-    "uniform vec2 u_slab;\n"
-    "uniform float u_top;\n"  /* how high it lies over the ground */
-    "uniform float u_size;\n" /* a bank's size */
-    "uniform float u_glow;\n" /* how thick */
-    "uniform vec3 u_tint;\n"
-    "uniform vec3 u_sky_low;\n" /* the time's horizon, 0 to 1 */
-    /* the heights of the ground under the area (r, world y), x0 z0 and one
-     * over the width and depth it covers */
-    "uniform sampler2D u_map;\n"
-    "uniform vec4 u_map_box;\n"
-    /* the ground's depth a pixel, the world's units along the view
-     * (gl.h, PortGlPicture's ground_depth) */
-    "uniform sampler2D u_scene;\n"
-    "uniform sampler2D u_noise;\n"
-    "uniform int u_fighter_on;\n"
-    "uniform sampler2D u_fighter;\n"
-    "uniform mat4 u_fighter_matrix;\n"
-    "uniform vec2 u_fighter_a_b;\n"
-    "in vec3 v_place;\n"
-    "in float v_depth;\n"
-    "layout(location = 0) out vec4 o_color;\n"
-    /* how thick the mist is at a point: banks of a noise drifting with the
-     * wind, a slower one under them, thinning upwards from the ground under
-     * the point, their tops ragged; and less towards the area's edges */
-    "float m_thick(vec3 p) {\n"
-    "    vec2 drift = u_wind.xy * u_clock * (40.0 + 160.0 * u_wind.z);\n"
-    "    vec2 q = (p.xz - drift) / u_size;\n"
-    /* the noise's three octaves, and a slower one, from the tile made once
-     * (port_DressMakeNoise): eight of its cells across */
-    "    float n = texture(u_noise, q / 8.0).r;\n"
-    "    float slow = texture(u_noise, (p.xz + drift * 0.4) / (u_size * 3.1)\n"
-    "                                  / 8.0 + 0.37).g;\n"
-    "    float banks = smoothstep(0.34, 0.70, n * 0.7 + slow * 0.45);\n"
-    "    float ground = texture(u_map, (p.xz - u_map_box.xy) * u_map_box.zw).r;\n"
-    "    float h = ground - p.y;\n" /* how high over the ground; y runs down */
-    "    if (h < -40.0) { return 0.0; }\n"
-    "    float top = u_top * (0.45 + 0.85 * n);\n"
-    "    float rise = exp(-max(h, 0.0) / max(top * 0.45, 1.0))\n"
-    "               * (1.0 - smoothstep(top * 0.6, top * 1.25, h));\n"
-    "    vec2 edge = min(p.xz - u_area.xy, u_area.zw - p.xz);\n"
-    "    float inside = smoothstep(0.0, u_size * 0.8, min(edge.x, edge.y));\n"
-    "    return (0.12 + 0.88 * banks) * rise * inside;\n"
+/* The mist's fragment, both of its passes (port_DressDrawMist): MIST_PASS 1
+ * gathers the mist along the line of sight at a pixel of a buffer of
+ * MIST_SHRINK times fewer pixels each way, its colour times how much of it is
+ * seen and how far the line ran (where it met the ground or a fighter);
+ * MIST_PASS 2, at each of the picture's own pixels the box covers, takes it
+ * from the four of that buffer about it, each as near as its line's end lies
+ * to the pixel's own (so the mist of the ground behind a fighter is not
+ * smeared over his edge), and mixes it over the picture.
+ *
+ * u_top is how high it lies over the ground, u_size a bank's size, u_glow
+ * how thick, u_sky_low the time's horizon (0 to 1); u_map the heights of the
+ * ground under the area (r, world y; the world's y runs down) over u_map_box
+ * (x0 z0 and one over the width and depth it covers); u_scene the ground's
+ * depth a pixel, the world's units along the view (gl.h, PortGlPicture's
+ * ground_depth). m_thick is how thick the mist is at a point: banks of a
+ * noise drifting with the wind (the tile made once, port_DressMakeNoise,
+ * eight of its cells across), a slower one under them, thinning upwards
+ * from the ground under the point, their tops ragged, and less towards the
+ * area's edges; none outside the area, under the ground or over the highest
+ * its top reaches (u_top times 1.3, where it falls to nought by 1.25 of
+ * that), where the noise is not read. In main: the face is the first of the
+ * box the line of sight meets (where it enters, or leaves with the eye
+ * inside); the line ends at the ground or a fighter (the view's depth runs
+ * along it: v_depth at this face, t of 1), and not right at the eye; six
+ * steps along it, the first shifted by the pixel so that the steps' bands
+ * become a fine grain; its light the stage's from above, the sun's through
+ * it brighter looking towards the sun (not the lamps': a quarter of a
+ * millisecond for the cemetery's two candles), far off the colour of the
+ * time's horizon. */
+#define MIST_FRAGMENT_BODY                                                              \
+    "uniform float u_clock;\n"                                                          \
+    "uniform vec4 u_wind;\n"                                                            \
+    "uniform vec4 u_area;\n"                                                            \
+    "uniform vec2 u_slab;\n"                                                            \
+    "uniform float u_top;\n"                                                            \
+    "uniform float u_size;\n"                                                           \
+    "uniform float u_glow;\n"                                                           \
+    "uniform vec3 u_tint;\n"                                                            \
+    "uniform vec3 u_sky_low;\n"                                                         \
+    "uniform sampler2D u_map;\n"                                                        \
+    "uniform vec4 u_map_box;\n"                                                         \
+    "uniform sampler2D u_scene;\n"                                                      \
+    "uniform sampler2D u_noise;\n"                                                      \
+    "uniform int u_fighter_on;\n"                                                       \
+    "uniform sampler2D u_fighter;\n"                                                    \
+    "uniform mat4 u_fighter_matrix;\n"                                                  \
+    "uniform vec2 u_fighter_a_b;\n"                                                     \
+    "uniform sampler2D u_low;\n"                                                        \
+    "uniform sampler2D u_low_end;\n"                                                    \
+    "in vec3 v_place;\n"                                                                \
+    "in float v_depth;\n"                                                               \
+    "layout(location = 0) out vec4 o_color;\n"                                          \
+    "#if MIST_PASS == 1\n"                                                              \
+    "layout(location = 1) out float o_end;\n"                                           \
+    "#endif\n"                                                                          \
+    "float m_thick(vec3 p) {\n"                                                         \
+    "    vec2 edge = min(p.xz - u_area.xy, u_area.zw - p.xz);\n"                        \
+    "    if (min(edge.x, edge.y) <= 0.0) { return 0.0; }\n"                             \
+    "    float ground = textureLod(u_map, (p.xz - u_map_box.xy) * u_map_box.zw,\n"      \
+    "                              0.0).r;\n"                                           \
+    "    float h = ground - p.y;\n"                                                     \
+    "    if (h < -40.0 || h > u_top * 1.7) { return 0.0; }\n"                           \
+    "    vec2 drift = u_wind.xy * u_clock * (40.0 + 160.0 * u_wind.z);\n"               \
+    "    vec2 q = (p.xz - drift) / u_size;\n"                                           \
+    "    float n = textureLod(u_noise, q / 8.0, 0.0).r;\n"                              \
+    "    float slow = textureLod(u_noise, (p.xz + drift * 0.4) / (u_size * 3.1)\n"      \
+    "                                     / 8.0 + 0.37, 0.0).g;\n"                      \
+    "    float banks = smoothstep(0.34, 0.70, n * 0.7 + slow * 0.45);\n"                \
+    "    float top = u_top * (0.45 + 0.85 * n);\n"                                      \
+    "    float rise = exp(-max(h, 0.0) / max(top * 0.45, 1.0))\n"                       \
+    "               * (1.0 - smoothstep(top * 0.6, top * 1.25, h));\n"                  \
+    "    float inside = smoothstep(0.0, u_size * 0.8, min(edge.x, edge.y));\n"          \
+    "    return (0.12 + 0.88 * banks) * rise * inside;\n"                               \
+    "}\n"                                                                               \
+    "void main() {\n"                                                                   \
+    "    vec3 ray = v_place - u_eye;\n"                                                 \
+    "    vec3 lo = vec3(u_area.x, u_slab.x, u_area.y);\n"                               \
+    "    vec3 hi = vec3(u_area.z, u_slab.y, u_area.w);\n"                               \
+    "    vec3 inv = 1.0 / (ray + vec3(1e-7));\n"                                        \
+    "    vec3 t1 = (lo - u_eye) * inv;\n"                                               \
+    "    vec3 t2 = (hi - u_eye) * inv;\n"                                               \
+    "    vec3 tn = min(t1, t2);\n"                                                      \
+    "    vec3 tf = max(t1, t2);\n"                                                      \
+    "    float t0 = max(max(tn.x, tn.y), tn.z);\n"                                      \
+    "    float te = min(min(tf.x, tf.y), tf.z);\n"                                      \
+    "    if (t0 < 0.0) {\n"                                                             \
+    "        if (abs(te - 1.0) > 0.02) { discard; }\n"                                  \
+    "        t0 = 0.0;\n"                                                               \
+    "        te = 1.0;\n"                                                               \
+    "    } else if (abs(t0 - 1.0) > 0.02) {\n"                                          \
+    "        discard;\n"                                                                \
+    "    }\n"                                                                           \
+    "    ivec2 own = ivec2(gl_FragCoord.xy * float(MIST_SHRINK_HERE));\n"               \
+    "    float z = texelFetch(u_scene, own, 0).r;\n"                                    \
+    "    if (z > 0.0) { te = min(te, z * u_depth / 262144.0 / max(v_depth, 1e-3)); }\n" \
+    "    if (u_fighter_on != 0) {\n"                                                    \
+    "        vec4 c = u_fighter_matrix * vec4(v_place, 1.0);\n"                         \
+    "        vec2 uv = c.xy / max(c.w, 1e-3) * 0.5 + 0.5;\n"                            \
+    "        if (c.w > 0.0 && uv == clamp(uv, 0.0, 1.0)) {\n"                           \
+    "            float d = texture(u_fighter, uv).r;\n"                                 \
+    "            if (d < 1.0) {\n"                                                      \
+    "                float fz = u_fighter_a_b.y / (2.0 * d - 1.0 - u_fighter_a_b.x);\n" \
+    "                te = min(te, fz * u_depth / 262144.0 / max(v_depth, 1e-3));\n"     \
+    "            }\n"                                                                   \
+    "        }\n"                                                                       \
+    "    }\n"                                                                           \
+    "    float len = length(ray);\n"                                                    \
+    "    t0 = max(t0, 250.0 / max(len, 1e-3));\n"                                       \
+    "#if MIST_PASS == 2\n"                                                              \
+    "    if (te <= t0) { discard; }\n"                                                  \
+    "    float end = te * len;\n"                                                       \
+    "    vec2 at = gl_FragCoord.xy / float(MIST_SHRINK) - 0.5;\n"                       \
+    "    ivec2 base = ivec2(floor(at));\n"                                              \
+    "    vec2 f = at - vec2(base);\n"                                                   \
+    "    ivec2 most = textureSize(u_low, 0) - 1;\n"                                     \
+    "    vec4 sum = vec4(0.0);\n"                                                       \
+    "    float weights = 0.0;\n"                                                        \
+    "    for (int k = 0; k < 4; k++) {\n"                                               \
+    "        ivec2 o = ivec2(k & 1, k >> 1);\n"                                         \
+    "        ivec2 q = clamp(base + o, ivec2(0), most);\n"                              \
+    "        float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);\n"  \
+    "        float e = texelFetch(u_low_end, q, 0).r;\n"                                \
+    "        w *= 1.0 / (1.0 + abs(e - end) / (end * 0.02 + 20.0));\n"                  \
+    "        w = max(w, 1e-6);\n"                                                       \
+    "        sum += texelFetch(u_low, q, 0) * w;\n"                                     \
+    "        weights += w;\n"                                                           \
+    "    }\n"                                                                           \
+    "    o_color = sum / weights;\n"                                                    \
+    "    if (o_color.a < 0.003 * 0.92) { discard; }\n"                                  \
+    "#else\n"                                                                           \
+    "    o_end = te * len;\n"                                                           \
+    "    o_color = vec4(0.0);\n"                                                        \
+    "    if (te <= t0) { return; }\n"                                                   \
+    "    float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy,\n"                \
+    "                                              vec2(0.06711056, 0.00583715))));\n"  \
+    "    float dt = (te - t0) / 6.0;\n"                                                 \
+    "    float optical = 0.0;\n"                                                        \
+    "    float weighted = 0.0;\n"                                                       \
+    "    for (int i = 0; i < 6; i++) {\n"                                               \
+    "        float t = t0 + (float(i) + jitter) * dt;\n"                                \
+    "        float k = m_thick(u_eye + ray * t);\n"                                     \
+    "        optical += k;\n"                                                           \
+    "        weighted += k * t;\n"                                                      \
+    "    }\n"                                                                           \
+    "    float seen = 1.0 - exp(-optical * dt * len * u_glow / 600.0);\n"               \
+    "    if (seen < 0.003) { return; }\n"                                               \
+    "    vec3 dir = ray / len;\n"                                                       \
+    "    float t_mid = optical > 0.0 ? weighted / optical : 0.5 * (t0 + te);\n"         \
+    "    vec3 up = vec3(0.0, -1.0, 0.0);\n"                                             \
+    "    vec3 ir = max(u_light * up, vec3(0.0)) * 4096.0;\n"                            \
+    "    vec3 base = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"              \
+    "    vec3 to_sun = vec3(u_light[0][0], u_light[1][0], u_light[2][0]);\n"            \
+    "    float toward = max(dot(dir, normalize(to_sun + vec3(1e-5))), 0.0);\n"          \
+    "    vec3 sun = u_color[0] * 256.0 * (0.35 * pow(toward, 6.0) + 0.12);\n"           \
+    "    vec3 color = u_tint * (base * 1.45 + u_sky_low * 255.0 * 0.6\n"                \
+    "                           + max(sun, vec3(0.0)));\n"                              \
+    "    float far_off = smoothstep(4000.0, 30000.0, t_mid * len);\n"                   \
+    "    color = mix(color, u_sky_low * 255.0 * 0.85, far_off * 0.55);\n"               \
+    "    color = tone_map(color, color);\n"                                             \
+    "    color = mix(color, u_fog_color.rgb * 255.0, dress_fog(t_mid * v_depth));\n"    \
+    "    float a = seen * 0.92;\n"                                                      \
+    "    o_color = vec4(clamp(color, 0.0, 255.0) / 255.0 * a, a);\n"                    \
+    "#endif\n"                                                                          \
     "}\n"
-    "void main() {\n"
-    "    vec3 ray = v_place - u_eye;\n"
-    "    vec3 lo = vec3(u_area.x, u_slab.x, u_area.y);\n"
-    "    vec3 hi = vec3(u_area.z, u_slab.y, u_area.w);\n"
-    "    vec3 inv = 1.0 / (ray + vec3(1e-7));\n"
-    "    vec3 t1 = (lo - u_eye) * inv;\n"
-    "    vec3 t2 = (hi - u_eye) * inv;\n"
-    "    vec3 tn = min(t1, t2);\n"
-    "    vec3 tf = max(t1, t2);\n"
-    "    float t0 = max(max(tn.x, tn.y), tn.z);\n"
-    "    float te = min(min(tf.x, tf.y), tf.z);\n"
-    /* this face is the first of the box seen: where the line of sight
-     * enters it, or where it leaves it with the eye inside */
-    "    if (t0 < 0.0) {\n"
-    "        if (abs(te - 1.0) > 0.02) { discard; }\n"
-    "        t0 = 0.0;\n"
-    "        te = 1.0;\n"
-    "    } else if (abs(t0 - 1.0) > 0.02) {\n"
-    "        discard;\n"
-    "    }\n"
-    /* not past the ground, nor a fighter (the view's depth runs along the
-     * line of sight: v_depth at this face, t of 1) */
-    "    float z = texelFetch(u_scene, ivec2(gl_FragCoord.xy), 0).r;\n"
-    "    if (z > 0.0) { te = min(te, z * u_depth / 262144.0 / max(v_depth, 1e-3)); }\n"
-    "    if (u_fighter_on != 0) {\n"
-    "        vec4 c = u_fighter_matrix * vec4(v_place, 1.0);\n"
-    "        vec2 uv = c.xy / max(c.w, 1e-3) * 0.5 + 0.5;\n"
-    "        if (c.w > 0.0 && uv == clamp(uv, 0.0, 1.0)) {\n"
-    "            float d = texture(u_fighter, uv).r;\n"
-    "            if (d < 1.0) {\n"
-    "                float fz = u_fighter_a_b.y / (2.0 * d - 1.0 - u_fighter_a_b.x);\n"
-    "                te = min(te, fz * u_depth / 262144.0 / max(v_depth, 1e-3));\n"
-    "            }\n"
-    "        }\n"
-    "    }\n"
-    /* not right at the eye: the camera is not wrapped in it */
-    "    float len = length(ray);\n"
-    "    t0 = max(t0, 250.0 / max(len, 1e-3));\n"
-    "    if (te <= t0) { discard; }\n"
-    /* six steps, the first shifted by the pixel so that the steps' bands
-     * become a fine grain */
-    "    float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy,\n"
-    "                                              vec2(0.06711056, 0.00583715))));\n"
-    "    float dt = (te - t0) / 6.0;\n"
-    "    float optical = 0.0;\n"
-    "    float weighted = 0.0;\n"
-    "    for (int i = 0; i < 6; i++) {\n"
-    "        float t = t0 + (float(i) + jitter) * dt;\n"
-    "        float k = m_thick(u_eye + ray * t);\n"
-    "        optical += k;\n"
-    "        weighted += k * t;\n"
-    "    }\n"
-    "    float seen = 1.0 - exp(-optical * dt * len * u_glow / 600.0);\n"
-    "    if (seen < 0.003) { discard; }\n"
-    /* its light: the stage's from above, the sun's through it brighter
-     * looking towards the sun (not the lamps': a quarter of a millisecond of
-     * the card's frame for the cemetery's two candles); far off, the colour
-     * of the time's horizon */
-    "    vec3 dir = ray / len;\n"
-    "    float t_mid = optical > 0.0 ? weighted / optical : 0.5 * (t0 + te);\n"
-    "    vec3 up = vec3(0.0, -1.0, 0.0);\n"
-    "    vec3 ir = max(u_light * up, vec3(0.0)) * 4096.0;\n"
-    "    vec3 base = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
-    "    vec3 to_sun = vec3(u_light[0][0], u_light[1][0], u_light[2][0]);\n"
-    "    float toward = max(dot(dir, normalize(to_sun + vec3(1e-5))), 0.0);\n"
-    "    vec3 sun = u_color[0] * 256.0 * (0.35 * pow(toward, 6.0) + 0.12);\n"
-    "    vec3 color = u_tint * (base * 1.45 + u_sky_low * 255.0 * 0.6\n"
-    "                           + max(sun, vec3(0.0)));\n"
-    "    float far_off = smoothstep(4000.0, 30000.0, t_mid * len);\n"
-    "    color = mix(color, u_sky_low * 255.0 * 0.85, far_off * 0.55);\n"
-    "    color = tone_map(color, color);\n"
-    "    color = mix(color, u_fog_color.rgb * 255.0, dress_fog(t_mid * v_depth));\n"
-    "    o_color = vec4(clamp(color, 0.0, 255.0) / 255.0, seen * 0.92);\n"
-    "}\n";
 
+static const char g_dress_mist_fragment[] =
+    "#version 430 core\n#define MIST_PASS 1\n#define MIST_SHRINK_HERE " MIST_SHRINK_TEXT
+    "\n#define MIST_SHRINK " MIST_SHRINK_TEXT
+    "\n" DRESS_FRAGMENT_COMMON MIST_FRAGMENT_BODY;
+static const char g_dress_mist_up_fragment[] =
+    "#version 430 core\n#define MIST_PASS 2\n#define MIST_SHRINK_HERE 1\n"
+    "#define MIST_SHRINK " MIST_SHRINK_TEXT
+    "\n" DRESS_FRAGMENT_COMMON MIST_FRAGMENT_BODY;
 /* The foliage as the sun sees it: its depth alone, a leaf and a bloom cut
  * to their shapes as they are drawn. */
 static const char g_dress_foliage_caster_fragment[] =
@@ -2036,6 +2128,8 @@ static void port_DressLocate(GLuint program, DressAt *at) {
     at->slab = glGetUniformLocation(program, "u_slab");
     at->scene = glGetUniformLocation(program, "u_scene");
     at->noise = glGetUniformLocation(program, "u_noise");
+    at->low = glGetUniformLocation(program, "u_low");
+    at->low_end = glGetUniformLocation(program, "u_low_end");
     at->see_count = glGetUniformLocation(program, "u_see_count");
     at->see_axis = glGetUniformLocation(program, "u_see_axis");
     at->see_radius = glGetUniformLocation(program, "u_see_radius");
@@ -2151,9 +2245,12 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         g_dress_foliage_vertex, g_dress_foliage_caster_fragment);
     g_dress.mist =
         port_DressProgram(g_dress_mist_vertex, g_dress_mist_fragment);
+    g_dress.mist_up =
+        port_DressProgram(g_dress_mist_vertex, g_dress_mist_up_fragment);
     if (g_dress.foliage == 0 || g_dress.mesh == 0 || g_dress.water == 0 ||
         g_dress.particles == 0 || g_dress.caster == 0 || g_dress.shaft == 0 ||
-        g_dress.foliage_caster == 0 || g_dress.mist == 0) {
+        g_dress.foliage_caster == 0 || g_dress.mist == 0 ||
+        g_dress.mist_up == 0) {
         return g_dress.problem;
     }
     port_DressLocate(g_dress.foliage_caster, &g_dress.foliage_caster_at);
@@ -2163,6 +2260,7 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         glGetUniformLocation(g_dress.foliage_caster, "u_sun");
     port_DressLocate(g_dress.shaft, &g_dress.shaft_at);
     port_DressLocate(g_dress.mist, &g_dress.mist_at);
+    port_DressLocate(g_dress.mist_up, &g_dress.mist_up_at);
     glGenTextures(MAPS_MOST, g_dress.maps);
     g_dress.caster_at_sun = glGetUniformLocation(g_dress.caster, "u_sun");
     port_DressLocate(g_dress.foliage, &g_dress.foliage_at);
@@ -2376,6 +2474,100 @@ static void port_DressFindCulms(const DressPieceFace *faces, s32 count) {
     }
 }
 
+/* One word into a sum (FNV-1a's step, a word at a time). */
+static u64 port_DressSumWord(u64 sum, u32 word) {
+    return (sum ^ word) * SUM_PRIME;
+}
+
+/* A sum of all that port_GlDressingNoteGround reads: each vertex's place,
+ * texture point, page, texel bits, tile and normal (not its colour, which
+ * the game's lights give it), how many there are and where the pieces'
+ * begin, and of video memory the stage's textures and colour tables where
+ * they were loaded (the rows the fog writes over while a frame is drawn are
+ * the faces' own, and not read here). */
+static u64 port_DressGroundSum(
+    const u8 *bytes, s32 stride, s32 count, s32 pieces_from, const u16 *vram) {
+    u64 sum = SUM_START;
+    u32 version = 0;
+    s32 textures = 0;
+    const PortStageTexture *texture =
+        port_RemasterStageTextures(&textures, &version);
+    s32 i;
+
+    sum = port_DressSumWord(sum, (u32)count);
+    sum = port_DressSumWord(sum, (u32)pieces_from);
+    for (i = 0; i < count; i++) {
+        const DressStageVertex *v =
+            (const DressStageVertex *)(bytes + (size_t)i * stride);
+        u32 words[5];
+        s32 k;
+
+        memcpy(words, &v->x, sizeof(words));
+        for (k = 0; k < 5; k++) {
+            sum = port_DressSumWord(sum, words[k]);
+        }
+        sum = port_DressSumWord(
+            sum, (u32)(u16)v->page[0] | (u32)(u16)v->page[1] << 16);
+        sum = port_DressSumWord(
+            sum, (u32)(u16)v->page[2] | (u32)(u16)v->page[3] << 16);
+        sum = port_DressSumWord(
+            sum, (u32)v->info[0] | (u32)v->info[1] << 8 | (u32)v->tile << 16);
+        sum = port_DressSumWord(
+            sum, (u32)(u16)v->normal[0] | (u32)(u16)v->normal[1] << 16);
+        sum = port_DressSumWord(sum, (u32)(u16)v->normal[2]);
+    }
+    if (textures > TEXTURES_MOST) {
+        textures = TEXTURES_MOST;
+    }
+    sum = port_DressSumWord(sum, (u32)textures);
+    for (i = 0; i < textures; i++) {
+        const PortStageTexture *t = &texture[i];
+        s32 rect[2][4];
+        s32 r;
+
+        rect[0][0] = t->x;
+        rect[0][1] = t->y;
+        rect[0][2] = t->w;
+        rect[0][3] = t->h;
+        rect[1][0] = t->clut_x;
+        rect[1][1] = t->clut_y;
+        rect[1][2] = t->clut_w;
+        rect[1][3] = t->clut_h;
+        sum = port_DressSumWord(sum, (u32)(u16)t->bits);
+        for (r = 0; r < 2; r++) {
+            s32 x;
+            s32 y;
+
+            for (y = rect[r][1]; y < rect[r][1] + rect[r][3]; y++) {
+                const u16 *row;
+
+                if (y < 0 || y >= VRAM_H) {
+                    continue;
+                }
+                row = vram + (size_t)y * VRAM_W;
+                sum = port_DressSumWord(sum, (u32)y);
+                for (x = rect[r][0]; x < rect[r][0] + rect[r][2]; x++) {
+                    if (x >= 0 && x < VRAM_W) {
+                        sum = port_DressSumWord(sum, row[x]);
+                    }
+                }
+            }
+        }
+    }
+    return sum;
+}
+
+/* The water's plane given to the post (port_GlPostWaterPlane), and kept to
+ * be given again. */
+static void port_DressWaterPlane(float height, float size) {
+    if (g_dress.water_plane_count < PORT_DRESSING_MOST) {
+        g_dress.water_planes[g_dress.water_plane_count][0] = height;
+        g_dress.water_planes[g_dress.water_plane_count][1] = size;
+        g_dress.water_plane_count++;
+    }
+    port_GlPostWaterPlane(height, size);
+}
+
 void port_GlDressingNoteGround(
     const void *vertices, s32 stride, s32 count, s32 pieces_from) {
     const u8 *bytes = (const u8 *)vertices;
@@ -2386,8 +2578,37 @@ void port_GlDressingNoteGround(
     s32 i;
     s32 b;
     float hi[2];
+    u64 sum = 0;
+    s32 stage = port_RemasterStageNumber();
+    /* Kept only for a stage that will be dressed: a stage with nothing to
+     * grow pays nothing where the ground is built. Turned on later, the
+     * dressing grows with the next stage loaded. */
+    const PortDressSet *set =
+        g_dress.is_on && vertices != NULL && count >= 3 &&
+                stride >= (s32)sizeof(DressStageVertex)
+            ? port_DressingOfStage(stage)
+            : NULL;
 
+    if (set != NULL && set->count > 0) {
+        /* the ground built again as it was (the stage's mesh, built while
+         * the game loaded, built again in the fight's first frame for its
+         * lights, gl_stage.h): what grew on it stays, and the water gives
+         * the post its plane again, the mesh's having begun the floors
+         * anew */
+        sum = port_DressGroundSum(bytes, stride, count, pieces_from, vram);
+        if (g_dress.tris != NULL && g_dress.tri_count > 0 &&
+            g_dress.ground_stage == stage && g_dress.ground_sum == sum) {
+            for (i = 0; i < g_dress.water_plane_count; i++) {
+                port_GlPostWaterPlane(
+                    g_dress.water_planes[i][0], g_dress.water_planes[i][1]);
+            }
+            return;
+        }
+    }
     g_dress.ground_serial++;
+    g_dress.water_plane_count = 0;
+    g_dress.ground_sum = sum;
+    g_dress.ground_stage = stage;
     g_dress.tri_count = 0;
     free(g_dress.tris);
     free(g_dress.bin_first);
@@ -2395,22 +2616,8 @@ void port_GlDressingNoteGround(
     g_dress.tris = NULL;
     g_dress.bin_first = NULL;
     g_dress.bin_list = NULL;
-    if (vertices == NULL || count < 3 ||
-        stride < (s32)sizeof(DressStageVertex)) {
+    if (set == NULL || set->count == 0) {
         return;
-    }
-    /* Kept only for a stage that will be dressed: the ground is built in
-     * the fight's first frames, and a stage with nothing to grow pays
-     * nothing there. Turned on later, the dressing grows with the next
-     * stage loaded. */
-    {
-        const PortDressSet *set =
-            g_dress.is_on ? port_DressingOfStage(port_RemasterStageNumber())
-                          : NULL;
-
-        if (set == NULL || set->count == 0) {
-            return;
-        }
     }
     g_dress.tris = (DressTri *)malloc((size_t)(count / 3) * sizeof(DressTri));
     if (g_dress.vram == NULL) {
@@ -3297,7 +3504,7 @@ static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
                     best = i;
                 }
             }
-            port_GlPostWaterPlane(heights.height[best], heights.area[best]);
+            port_DressWaterPlane(heights.height[best], heights.area[best]);
         }
         return;
     }
@@ -3331,7 +3538,7 @@ static void port_DressGrowWater(const PortDressDef *def, DressRun *run) {
             size += 2.0f * (float)(def->area[i][2] - def->area[i][0]) *
                     (float)(def->area[i][3] - def->area[i][1]);
         }
-        port_GlPostWaterPlane(run->ground_y, size);
+        port_DressWaterPlane(run->ground_y, size);
     }
 }
 
@@ -4067,6 +4274,7 @@ static void port_DressGrow(const PortDressSet *set, s32 stage) {
     g_dress.grown_serial = g_dress.ground_serial;
     g_dress.grown_stage = stage;
     g_dress.grown_set = set;
+    g_dress.water_plane_count = 0;
     g_dress.run_count = 0;
     g_dress.thing_count = 0;
     g_dress.span_count = 0;
@@ -4182,6 +4390,8 @@ static const PortDressSet *port_DressNow(void) {
 }
 
 s32 port_GlDressingIsShown(void) { return port_DressNow() != NULL; }
+
+void port_GlDressingPrepare(void) { (void)port_DressNow(); }
 
 s32 port_GlDressingWeather(float *wind, s32 *is_raining) {
     const PortDressSet *set;
@@ -4899,6 +5109,8 @@ void port_GlDressingWarmCasters(void) {
     glBindVertexArray(0);
 }
 
+static s32 port_DressMistBuffers(s32 w, s32 h);
+
 void port_GlDressingWarm(void) {
     static const float nought[3 * sizeof(DressVertex) / sizeof(float)];
     static s32 is_warm;
@@ -4968,12 +5180,23 @@ void port_GlDressingWarm(void) {
     port_GlSunBind(&g_dress.shaft_at.sun);
     port_GlLightsBind(&g_dress.shaft_at.lights);
     glDrawArrays(GL_TRIANGLES, 0, 36);
-    /* the mist, mixed over with no depth test */
+    /* the mist: gathered into its own buffers, nothing mixed, then mixed
+     * over the picture with no depth test (port_DressDrawMist) */
     glDisable(GL_DEPTH_TEST);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
-    glUseProgram(g_dress.mist);
-    port_GlSunBind(&g_dress.mist_at.sun);
-    port_GlLightsBind(&g_dress.mist_at.lights);
+    if (port_DressMistBuffers(picture.target_w, picture.target_h)) {
+        glBindFramebuffer(GL_FRAMEBUFFER, g_dress.mist_framebuffer);
+        glDisable(GL_BLEND);
+        glUseProgram(g_dress.mist);
+        port_GlSunBind(&g_dress.mist_at.sun);
+        port_GlLightsBind(&g_dress.mist_at.lights);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
+        glEnable(GL_BLEND);
+    }
+    glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+    glUseProgram(g_dress.mist_up);
+    port_GlSunBind(&g_dress.mist_up_at.sun);
+    port_GlLightsBind(&g_dress.mist_up_at.lights);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     /* the foliage as the sun and the lights see it: its depth alone */
     glDisable(GL_BLEND);
@@ -5183,25 +5406,68 @@ static s32 port_DressHasMist(const PortDressSet *set) {
     return FALSE;
 }
 
-/* The mist: each block's box of air, the mist gathered through it mixed
- * over the picture, its alpha left as it was (gl_post.h). Over everything
- * the game painted, held by the ground's depth and the fighters' read in
- * the fragment, as the depth test cannot: the eye may be inside the box,
- * and the face it sees is then the box's far one. */
-static void port_DressDrawMist(
-    const PortDressSet *set, const PortGlDressingView *view) {
-    const DressAt *at = &g_dress.mist_at;
-    const PortGlTime *look = port_GlTime();
-    PortGlPicture picture;
-    s32 i;
+/* Whether the eye is inside a mist's box of air (the mist's vertex shader's
+ * corners: its area across, its slab up). */
+static s32 port_DressEyeIsInside(
+    const float *eye, const PortDressDef *def, const DressRun *run) {
+    float y_lo = run->slab[0] < run->slab[1] ? run->slab[0] : run->slab[1];
+    float y_hi = run->slab[0] < run->slab[1] ? run->slab[1] : run->slab[0];
 
-    if (!port_DressHasMist(set) || !port_GlGroundDepthIsWritten()) {
-        return;
+    return eye[0] > (float)def->area[0][0] && eye[0] < (float)def->area[0][2] &&
+           eye[2] > (float)def->area[0][1] && eye[2] < (float)def->area[0][3] &&
+           eye[1] > y_lo && eye[1] < y_hi;
+}
+
+/* The mist's first pass's buffers, for a picture `w` by `h`: made, or made
+ * again at another size. FALSE where they cannot be. */
+static s32 port_DressMistBuffers(s32 w, s32 h) {
+    static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    s32 low_w = (w + MIST_SHRINK - 1) / MIST_SHRINK;
+    s32 low_h = (h + MIST_SHRINK - 1) / MIST_SHRINK;
+
+    if (g_dress.mist_framebuffer == 0) {
+        glGenFramebuffers(1, &g_dress.mist_framebuffer);
+        glGenTextures(1, &g_dress.mist_low);
+        glGenTextures(1, &g_dress.mist_end);
     }
-    port_GlGetPicture(&picture);
-    glDisable(GL_DEPTH_TEST);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
-    glUseProgram(g_dress.mist);
+    if (g_dress.mist_framebuffer == 0) {
+        return FALSE;
+    }
+    if (low_w == g_dress.mist_w && low_h == g_dress.mist_h) {
+        return TRUE;
+    }
+    g_dress.mist_w = low_w;
+    g_dress.mist_h = low_h;
+    glBindTexture(GL_TEXTURE_2D, g_dress.mist_low);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGBA16F, low_w, low_h, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, g_dress.mist_end);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_R32F, low_w, low_h, 0, GL_RED, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_dress.mist_framebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           g_dress.mist_low, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
+                           g_dress.mist_end, 0);
+    glDrawBuffers(2, both);
+    return TRUE;
+}
+
+/* What both of the mist's passes are given (MIST_FRAGMENT_BODY): the view,
+ * the time's horizon, the fighters' depth, the ground's, the noise. */
+static void port_DressMistUniforms(
+    const DressAt *at, const PortGlDressingView *view, u32 ground_depth) {
+    const PortGlTime *look = port_GlTime();
+    u32 texture = 0;
+    float matrix[16];
+    float a_b[2];
+    s32 on = port_GlPostFighterDepthNow(&texture, matrix, a_b);
+
     port_DressUniforms(at, view);
     if (look->on) {
         glUniform3f(
@@ -5210,57 +5476,122 @@ static void port_DressDrawMist(
         glUniform3f(
             at->sky_low, NIGHT_HORIZON_R, NIGHT_HORIZON_G, NIGHT_HORIZON_B);
     }
-    {
-        u32 texture = 0;
-        float matrix[16];
-        float a_b[2];
-        s32 on = port_GlPostFighterDepthNow(&texture, matrix, a_b);
-
-        glUniform1i(at->fighter_on, on);
-        if (on) {
-            glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
-            glBindTexture(GL_TEXTURE_2D, texture);
-            glUniform1i(at->fighter, SHAFT_FIGHTER_UNIT);
-            glUniformMatrix4fv(at->fighter_matrix, 1, GL_FALSE, matrix);
-            glUniform2f(at->fighter_a_b, a_b[0], a_b[1]);
-        }
+    glUniform1i(at->fighter_on, on);
+    if (on) {
+        glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glUniform1i(at->fighter, SHAFT_FIGHTER_UNIT);
+        glUniformMatrix4fv(at->fighter_matrix, 1, GL_FALSE, matrix);
+        glUniform2f(at->fighter_a_b, a_b[0], a_b[1]);
     }
     glActiveTexture(GL_TEXTURE0 + MIST_SCENE_UNIT);
-    glBindTexture(GL_TEXTURE_2D, picture.ground_depth);
+    glBindTexture(GL_TEXTURE_2D, ground_depth);
     glUniform1i(at->scene, MIST_SCENE_UNIT);
     glActiveTexture(GL_TEXTURE0 + MIST_NOISE_UNIT);
     glBindTexture(GL_TEXTURE_2D, g_dress.noise);
     glUniform1i(at->noise, MIST_NOISE_UNIT);
     glUniform1i(at->map, MAP_UNIT);
+    glUniform1i(at->low, MIST_LOW_UNIT);
+    glUniform1i(at->low_end, MIST_END_UNIT);
+}
+
+/* One block's box of air, its own uniforms given: of its faces only the
+ * first the line of sight meets has its mist gathered, the near ones from
+ * outside, the far ones from within, the others culled and not shaded only
+ * to be thrown away. */
+static void port_DressMistBox(const DressAt *at, const PortGlDressingView *view,
+                              const PortDressDef *def, const DressRun *run) {
+    float rgb[3];
+
+    port_DressColorOf(def, 0.86f, 0.89f, 0.94f, rgb);
+    glUniform3f(at->tint, rgb[0], rgb[1], rgb[2]);
+    glUniform4f(at->area, (float)def->area[0][0], (float)def->area[0][1],
+                (float)def->area[0][2], (float)def->area[0][3]);
+    glUniform2f(at->slab, run->slab[0], run->slab[1]);
+    glUniform1f(at->top, (float)def->top);
+    glUniform1f(at->size, (float)def->height[0]);
+    /* how thick: its `glow` */
+    glUniform1f(at->glow, (float)def->glow / PORT_DRESSING_ONE);
+    glUniform4f(at->map_box, run->map_box[0], run->map_box[1], run->map_box[2],
+                run->map_box[3]);
     glActiveTexture(GL_TEXTURE0 + MAP_UNIT);
+    glBindTexture(GL_TEXTURE_2D, g_dress.maps[run->map]);
+    glEnable(GL_CULL_FACE);
+    glCullFace(
+        port_DressEyeIsInside(view->camera, def, run) ? GL_BACK : GL_FRONT);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glCullFace(GL_BACK);
+    glDisable(GL_CULL_FACE);
+    g_dress.triangles += 12;
+    g_dress.draws++;
+}
+
+/* The mist: each block's box of air, the mist gathered through it mixed
+ * over the picture, its alpha left as it was (gl_post.h). Over everything
+ * the game painted, held by the ground's depth and the fighters' read in
+ * the fragment, as the depth test cannot: the eye may be inside the box,
+ * and the face it sees is then the box's far one. Gathered at a quarter of
+ * the picture's pixels (MIST_SHRINK each way: its six steps through the
+ * box were half a millisecond of the card's frame over the cemetery at
+ * 2,560 by 1,440), then laid over the picture's own pixels, each taking the
+ * gathered pixels about it whose lines of sight ended as far as its own
+ * (MIST_FRAGMENT_BODY). Into `framebuffer`, `w` by `h`, the late pass's
+ * scissor given again for the second pass. */
+static void port_DressDrawMist(
+    const PortDressSet *set, const PortGlDressingView *view, u32 framebuffer,
+    s32 w, s32 h) {
+    static const GLfloat nought[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    PortGlPicture picture;
+    s32 i;
+
+    if (!port_DressHasMist(set) || !port_GlGroundDepthIsWritten() ||
+        !port_DressMistBuffers(w, h)) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    glDisable(GL_DEPTH_TEST);
     glBindVertexArray(g_dress.empty_array);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
         const PortDressDef *def = &set->block[run->block];
-        float rgb[3];
 
         if (run->kind != PORT_DRESS_PARTICLES ||
             def->subkind != PORT_PARTICLES_MIST || run->map < 0 ||
             !port_DressShownNow(def)) {
             continue;
         }
-        port_DressColorOf(def, 0.86f, 0.89f, 0.94f, rgb);
-        glUniform3f(at->tint, rgb[0], rgb[1], rgb[2]);
-        glUniform4f(at->area, (float)def->area[0][0], (float)def->area[0][1],
-                    (float)def->area[0][2], (float)def->area[0][3]);
-        glUniform2f(at->slab, run->slab[0], run->slab[1]);
-        glUniform1f(at->top, (float)def->top);
-        glUniform1f(at->size, (float)def->height[0]);
-        /* how thick: its `glow` */
-        glUniform1f(at->glow, (float)def->glow / PORT_DRESSING_ONE);
-
-        glUniform4f(at->map_box, run->map_box[0], run->map_box[1],
-                    run->map_box[2], run->map_box[3]);
-        glBindTexture(GL_TEXTURE_2D, g_dress.maps[run->map]);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        g_dress.triangles += 12;
-        g_dress.draws++;
+        /* the first pass: into its buffers, nothing mixed */
+        glBindFramebuffer(GL_FRAMEBUFFER, g_dress.mist_framebuffer);
+        glViewport(0, 0, g_dress.mist_w, g_dress.mist_h);
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_BLEND);
+        glClearBufferfv(GL_COLOR, 0, nought);
+        glClearBufferfv(GL_COLOR, 1, nought);
+        glUseProgram(g_dress.mist);
+        port_DressMistUniforms(&g_dress.mist_at, view, picture.ground_depth);
+        port_DressMistBox(&g_dress.mist_at, view, def, run);
+        /* the second: over the picture, its colour already times its
+         * alpha */
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glViewport(0, 0, w, h);
+        if (g_dress.late_scissor_on) {
+            glEnable(GL_SCISSOR_TEST);
+        }
+        glEnable(GL_BLEND);
+        glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+        glUseProgram(g_dress.mist_up);
+        port_DressMistUniforms(&g_dress.mist_up_at, view, picture.ground_depth);
+        glActiveTexture(GL_TEXTURE0 + MIST_LOW_UNIT);
+        glBindTexture(GL_TEXTURE_2D, g_dress.mist_low);
+        glActiveTexture(GL_TEXTURE0 + MIST_END_UNIT);
+        glBindTexture(GL_TEXTURE_2D, g_dress.mist_end);
+        port_DressMistBox(&g_dress.mist_up_at, view, def, run);
     }
+    glActiveTexture(GL_TEXTURE0 + MAP_UNIT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0 + MIST_LOW_UNIT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0 + MIST_END_UNIT);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0 + MIST_SCENE_UNIT);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -5269,6 +5600,7 @@ static void port_DressDrawMist(
     glActiveTexture(GL_TEXTURE0 + SHAFT_FIGHTER_UNIT);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
 }
 
 void port_GlDressingDrawMixed(const PortGlDressingView *view) {
@@ -5452,7 +5784,7 @@ s32 port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h) {
     glEnable(GL_BLEND);
     glBlendEquation(GL_FUNC_ADD);
     glDisable(GL_CULL_FACE);
-    port_DressDrawMist(set, &g_dress.late_view);
+    port_DressDrawMist(set, &g_dress.late_view, framebuffer, w, h);
     glEnable(GL_DEPTH_TEST);
     port_DressDrawShafts(set, &g_dress.late_view);
     glBindVertexArray(0);
