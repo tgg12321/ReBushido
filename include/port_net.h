@@ -526,6 +526,11 @@ extern const char *port_GetRelayCode(void);
  * (port_SessionFail). `again`: the host lets the guest it had go and
  * waits for another in the same room. */
 extern s32 port_RelayMeet(s32 role, s32 again);
+/* The host, its way to a guest found, while it waits for that guest's
+ * first hello (session.c): the lobby told that the seat is still the
+ * host's (a hello as the meeting's), so that it does not close the room
+ * as a meeting done while the host waits. */
+extern void port_RelayStillHere(void);
 
 /* A room of the lobby's list. */
 typedef struct {
