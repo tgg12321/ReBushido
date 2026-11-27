@@ -157,10 +157,16 @@ lessons still holds unless this section says otherwise.
 - Stage 31 at night (PORT.md, "The dressing", "The mist at a sixteenth of
   the pixels"): the mist 0.48 to 0.23 ms; `dress` 95% still about 1.65 to
   1.8 on a loaded machine against the 1.5 budget, its grass alone 1.3 to
-  1.36: under budget needs the foliage cheaper (fewer vertices far off, or
-  drawn front to back by span), which changes how it looks or how often
-  it draws. The owner's eye on the mist at a sixteenth (the grain a little
-  softer): `port_dressing.py shots --stages 31 --times night`.
+  1.36. Since 2026-11-27 the grass is drawn cheaper with its look kept
+  (PORT.md, "The grass cheaper, its look kept": the squares in the
+  picture alone, nearest first, depth tested before the light, each
+  corner once): `dress` median 1.31 to 1.19, 95% 1.78-2.03 to 1.67-1.70
+  in an A/B on a loaded machine; still over 1.5 there. What is left would
+  change the look (the measured costs are in PORT.md): fewer blades or
+  bends in the middle distance, or the slots' targets written less. A
+  quiet bench is to say where it stands; before and after in
+  `tmp/grass/`. The owner's eye on the mist at a sixteenth (the grain a
+  little softer): `port_dressing.py shots --stages 31 --times night`.
 - `ra1-stress`'s `settled_p99` (PORT.md, "A mod's pictures, read beside
   the game"): its worst blanks were the fight's end's mod textures and
   page keys, both cut; the 99th centile wants a quiet bench to say.
@@ -193,7 +199,8 @@ lessons still holds unless this section says otherwise.
   `now - heard_at > 10 s` already held, and unless the server answered
   that first hello within one 5 ms poll the guest gave up, 30 ms after
   saying "Reaching" (its hello reached the server just as it left, so
-  the host of four waited for it forever). A player on a busy PC would
+  the host of four waited for it forever; since 2026-11-27 the host lets
+  such a seat go after 45 s, below). A player on a busy PC would
   hit it too. Now the first hello goes at once, the give-up also needs
   forty hellos unanswered (a pass held up sends none), and a pass held
   up over a second is logged (`relay: the program was held up N ms`).
@@ -205,6 +212,17 @@ lessons still holds unless this section says otherwise.
   100 blanks apart they were over the 3 s that make two Escapes a leave
   (`NETPLAY_LEAVE_MS`) where a loaded machine showed 25 blanks a second.
   They are at 2,700 and 2,730 now, in the fight.
+- **A host waited for ever for a guest who gave up in the meeting**
+  (fixed 2026-11-27; `port_net_lobby.py` `four-gives-up`, failing on
+  main, passing now): the lobby had let the guest into a seat and found
+  the way, he went before his first hello reached the host, and the host
+  waited on, the lobby telling newcomers the room was full and then
+  closing it 30 s on as a meeting done. The host now keeps the seat at
+  the lobby (its hello every second) and lets it go after 45 s, waiting
+  for another as after a leave in the meeting (NETPLAY.md, section 18,
+  *A guest who gives up in the meeting*). No protocol change. Not tried:
+  a room of several's match whose guest gives up so (its seat waits for
+  another, and only he holds the match's ticket).
 - **Open, no cause yet**: a gate's
   `port_net four` once found a port of 127.0.0.1 taken by another run
   ("no socket at"), passing again alone; the provers' stage counts are 66
