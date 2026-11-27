@@ -88,6 +88,12 @@ extern void port_RestorePlaySwitches(void);
  * and the game's options (port_GetGameOptions) from
  * PORT_PLAY_OPTION_SHIFT up. */
 extern u32 port_PlaySwitchBits(void);
+/* The CPU that plays a CPU's fighter in each place, the first fighter's
+ * and the second's (port_cpu.h): PORT_CPU_ORIGINAL, the game's own, or one
+ * of the port's levels. The window's cpu setting gives both the same;
+ * --cpu each its own. Taken in as each CPU is set up (cpu_Init). */
+extern void port_SetCpuLevels(s32 first, s32 second);
+extern s32 port_GetCpuLevel(s32 place);
 
 #define PORT_PLAY_BIT_UNLOCK_ALL 1
 #define PORT_PLAY_BIT_STAGE_PAGES 2
@@ -95,5 +101,9 @@ extern u32 port_PlaySwitchBits(void);
 #define PORT_PLAY_BIT_BUGFIXES 8
 #define PORT_PLAY_OPTION_SHIFT 4
 #define PORT_PLAY_OPTION_MASK 7
+/* the port's CPU of each place (port_SetCpuLevels), three bits each */
+#define PORT_PLAY_CPU_SHIFT 8
+#define PORT_PLAY_CPU_BITS 3
+#define PORT_PLAY_CPU_MASK 7
 
 #endif /* PORT_PLAY_H */

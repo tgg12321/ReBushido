@@ -91,6 +91,7 @@
 #include "port_match.h"
 #include "port_duo.h"
 #include "port_training.h"
+#include "port_cpu.h"
 #endif
 
 #endif /* BB2_H */

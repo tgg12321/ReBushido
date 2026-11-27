@@ -36,6 +36,7 @@ state    src/port/mdec.c        the movie's decoder
 state    src/port/match.c       the match rule the stage pages hold, and the match's score
 state    src/port/weapon_pick.c  the mods' weapons picked on the weapon select (port_weapons.h)
 state    src/port/duo.c         two on two: the four fighters, the copies of the models, the pairs' globals
+state    src/port/cpu.c         the port's CPU: each place's level, dice, what it saw and what it learned
 state    src/port/memory.c     the console's memory, mapped
 state    src/port/movie.c       where the game runs the movie's player
 state    src/port/pad.c         the pads' driver and the one input point
@@ -73,7 +74,8 @@ outside  src/port/weapons.c     the mods' weapons, read once as the program star
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/paint.c       the software GPU's painter: its settings, its ring and its thread
 outside  src/port/training_kept.c  training's switches the run asked for, the dummy's recorded slots, the moment kept
-outside  src/port/play_switches.c  the gameplay switches the run asked for (unlock_all, stage_select_everywhere, menu, bugfixes, the game's options)
+outside  src/port/play_switches.c  the gameplay switches the run asked for (unlock_all, stage_select_everywhere, menu, bugfixes, the game's options, the CPU's levels)
+outside  src/port/cpu_run.c     the port's CPU's seed asked for (--cpu-seed) and its log (--cpu-log)
 outside  src/port/picture.c     the pictures a run writes
 outside  src/port/profile.c    where a blank's time goes, for --profile
 outside  src/port/relay.c       the lobby's client: the room, its key, the ways tried

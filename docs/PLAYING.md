@@ -240,6 +240,24 @@ instead. **Difficulty** (Hard, which the game starts with, or Easy),
 own options, taken at the next frame of the main menu and written into
 the game's save as its options page did.
 
+**CPU**, in *The game*, picks who plays the CPU's fighters: **Original**
+(the game's own CPU, as it is, and what the program starts with), or one
+of ReBushido's four levels, **Novice**, **Adept**, **Veteran** and
+**Master**. The four play as a person would: they see the fight only
+after it is drawn, answer it a fifth to a third of a second later (the
+master quickest, never quicker than a sixth), read your attacks from
+your fighter's motion rather than from your buttons, and press a pad's
+buttons. What makes a higher level harder is its choices: where it
+stands, when and with what it strikes, which guard it picks, and, from
+the veteran up, what it learns of your habits during the match (strike
+too readily at the edge of its reach and the master will draw you out).
+The game's own Difficulty does not change them. It takes effect from the
+next fight; `cpu = master` in `rebushido.cfg`, or `--cpu master` on the
+command line (`--cpu novice,master` gives the two places their own).
+Online the host's holds, and a replay keeps it. In a fight of two on two
+the game's own CPU plays the partners still. How they were made and
+measured: [CPU.md](CPU.md).
+
 **The menu writes `rebushido.cfg`** as it closes, if anything was
 changed: the file beside the program, or the one `--config` named, made
 if it is not there. Only the lines of what was changed are touched -- a

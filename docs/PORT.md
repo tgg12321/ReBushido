@@ -7242,6 +7242,22 @@ once under `RB_PORT` where a fight was asked for, and `main` starts it
 after choosing the movie's screen (`rb_PortQuickFight`), so `main`'s own
 shape is the original's.
 
+### The CPU's levels
+
+The port has a CPU of its own beside the game's (ROADMAP 27;
+[`CPU.md`](CPU.md), the study of the original's and the port's levels):
+`src/port/cpu.c`, four levels (`cpu = novice|adept|veteran|master` in the
+window, `--cpu A[,B]` on the command line), which see the opponent only a
+reaction time after his frame was drawn and play through a pad's buttons.
+With `cpu = original`, as built in, nothing changes: `cpu_Init` and
+`fighter_ReadPad` ask `port_CpuPlays`, which is FALSE, and the game's own
+CPU plays. Its memory and dice are in the game's state; the level rides
+in the gameplay switches, so replays and sessions keep it.
+`tools/port_cpu_bench.py` plays the levels against each other and against
+the original, and holds a fight to the same bytes on both sizes
+(`--check`); `tools/port_cpu_react.py` measures from `--cpu-log` how
+quickly a CPU answers an attack.
+
 ### The fighters' own models
 
 The owner: the fighters may be **replaced whole, as long as the hitboxes

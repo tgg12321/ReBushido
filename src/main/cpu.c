@@ -13,6 +13,16 @@ static s32 cpu_AttackReach(struct Fighter *fighter);
 static u8 g_cpu_mirror_walks[4];
 static u8 g_cpu_mirror_steps[4];
 
+#if RB_PORT
+/* For the port's CPU (port_cpu.h): what this file feels of the ground and
+ * knows of an attack's reach, lent. */
+void cpu_PortProbeGround(struct Fighter *fighter) { cpu_ProbeGround(fighter); }
+
+s32 cpu_PortAttackReach(struct Fighter *fighter) {
+    return cpu_AttackReach(fighter);
+}
+#endif
+
 /* ---- the scene (node.h) ---- */
 
 /* Where the camera is. */
@@ -331,6 +341,10 @@ void cpu_Init(s32 fighter_index, u16 *scripts, u16 *other_scripts) {
     fighter->stance_class = 0;
     fighter->cpu_flags = 0;
     fighter->cpu_pad.unheld = -1;
+#if RB_PORT
+    /* the port's CPU, if this place asked for one of its levels */
+    port_CpuInit(fighter_index);
+#endif
 }
 
 /* A frame of the pad script the CPU is playing: returns the buttons it

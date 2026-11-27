@@ -16,6 +16,9 @@ typedef struct {
     s32 top_menu;
     s32 bugfixes;
     u32 game_options; /* the save's SAVE_FLAG_... bits */
+    /* the port's CPU for each place (port_cpu.h): PORT_CPU_ORIGINAL or a
+     * level */
+    s32 cpu[2];
     s32 held;
 } PortPlaySwitches;
 
@@ -102,15 +105,34 @@ s32 port_GetBugfixesSwitch(void) { return g_port_play_switches.bugfixes; }
 
 u32 port_GetGameOptions(void) { return g_port_play_switches.game_options; }
 
+void port_SetCpuLevels(s32 first, s32 second) {
+    if (!g_port_play_switches.held) {
+        g_port_play_switches.cpu[0] =
+            first > PORT_CPU_ORIGINAL && first <= PORT_CPU_LEVELS ? first : 0;
+        g_port_play_switches.cpu[1] =
+            second > PORT_CPU_ORIGINAL && second <= PORT_CPU_LEVELS
+                ? second
+                : 0;
+    }
+}
+
+s32 port_GetCpuLevel(s32 place) { return g_port_play_switches.cpu[place != 0]; }
+
 u32 port_PlaySwitchBits(void) {
     return (g_port_play_switches.unlock_all ? PORT_PLAY_BIT_UNLOCK_ALL : 0) |
            (g_port_play_switches.stage_pages ? PORT_PLAY_BIT_STAGE_PAGES : 0) |
            (g_port_play_switches.top_menu ? PORT_PLAY_BIT_TOP_MENU : 0) |
            (g_port_play_switches.bugfixes ? PORT_PLAY_BIT_BUGFIXES : 0) |
            ((g_port_play_switches.game_options & PORT_PLAY_OPTION_MASK)
-            << PORT_PLAY_OPTION_SHIFT);
+            << PORT_PLAY_OPTION_SHIFT) |
+           ((u32)g_port_play_switches.cpu[0] << PORT_PLAY_CPU_SHIFT) |
+           ((u32)g_port_play_switches.cpu[1]
+            << (PORT_PLAY_CPU_SHIFT + PORT_PLAY_CPU_BITS));
 }
 
+/* The switches of `bits` (port_PlaySwitchBits'), set and then held: the
+ * setters change nothing more until the run is let go of (a session's
+ * host's, a replay's setup). */
 void port_HoldPlaySwitches(u32 bits) {
     g_port_play_switches.held = FALSE;
     port_SetUnlockAll((bits & PORT_PLAY_BIT_UNLOCK_ALL) != 0);
@@ -119,6 +141,10 @@ void port_HoldPlaySwitches(u32 bits) {
     port_SetBugfixesSwitch((bits & PORT_PLAY_BIT_BUGFIXES) != 0);
     port_SetGameOptions(
         (bits >> PORT_PLAY_OPTION_SHIFT) & PORT_PLAY_OPTION_MASK);
+    port_SetCpuLevels(
+        (s32)((bits >> PORT_PLAY_CPU_SHIFT) & PORT_PLAY_CPU_MASK),
+        (s32)((bits >> (PORT_PLAY_CPU_SHIFT + PORT_PLAY_CPU_BITS)) &
+              PORT_PLAY_CPU_MASK));
     g_port_play_switches.held = TRUE;
 }
 
