@@ -382,9 +382,9 @@ void port_StatsPageDetail(s32 item, char *out, u32 room) {
         snprintf(how, sizeof(how), "by a kill");
     }
     snprintf(
-        out, room, "%04u-%02u-%02u %02u:%02u   %s%s %s   %s   %s   %s and %s",
+        out, room, "%04u-%02u-%02u %02u:%02u   %s %s%s   %s   %s   %s and %s",
         f->year, f->month, f->day, f->hour, f->minute,
-        port_StatsModeWord(port_StatsModeOf(f)), match, opponent, how,
+        port_StatsModeWord(port_StatsModeOf(f)), opponent, match, how,
         port_NameStage(f->stage), port_NameWeapon(f->weapon[0]),
         port_NameWeapon(f->weapon[1]));
 }

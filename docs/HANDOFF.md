@@ -95,6 +95,12 @@ lessons still holds unless this section says otherwise.
 
 ## Next, what needs no owner
 
+- ROADMAP 30, stats (2026-11-27, PORT.md and PLAYING.md, "Stats"): the
+  record (`rebushido-stats.txt`) and the settings menu's Stats page are
+  in, held by `tests/port/stats.c`, `tools/port_stats.py` and
+  `tools/port_net.py session` (both machines' records). Left: local
+  versus kept for the second player too, a tournament's results (ROADMAP
+  31); the owner's eye on the page (`tmp/stats/`, a made-up record).
 - ROADMAP 26, training (2026-11-26, PORT.md and PLAYING.md, "Training"):
   done but for a guard that weighs the distance, and the blade's sweep among the hit areas;
   the owner's eye on `tmp/training/` (the pages, the input display, the

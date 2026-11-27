@@ -11356,6 +11356,154 @@ lag of 0 and alike 0.9997. Linux: `python3 tools/port_film.py`, offscreen
 on llvmpipe, an .avi; Windows: `python tools/port_film.py`, on the card,
 an .mp4 and an .avi.
 
+## Stats
+
+ROADMAP 30; the owner, 2026-11-26: "a player's record kept by the
+program", no achievements. How a player uses it: [`PLAYING.md`](PLAYING.md),
+"Stats". The code: `include/port_stats.h`; `src/port/stats.c`, which
+watches the game, and `src/port/stats_store.c`, the file and the
+counting, both outside the state (`config/port_state.txt`); the settings
+menu's page, `src/port/window/menu_stats.c`.
+
+**Where the game decides.** Five hooks under `RB_PORT`, each of which
+only notes, with the input's number it was run at
+(`g_port_input_count`), and changes nothing of the game:
+
+- `port_StatsHit` after `fighter_TakeHit` (the blade's test,
+  `fight_TestBladesOnBodies`, and the thrown thing's, `object.c`): a
+  result of 1 on a fighter not already dead is a killing blow; what
+  struck is read from the blow (a thrown thing, a sidearm's bullet or a
+  gun) or the striker's move (an attack from a run, the leaping attack's
+  three moves, an attack from a climb, a paired move) or its blade (the
+  off hand's), where from the body's point (head, chest, hips, either arm,
+  the legs), from behind as the game's own fall has it (`facing` a
+  quarter turn or less: `MOVE_EVENT_KILLED_FROM_BEHIND`), and whether the
+  fighter lay on the ground;
+- `port_StatsFell` where `fighter_Update` sets `is_defeated` (the move of
+  death begins, or a paired move's blow lands): the fall is the kill, the
+  blow noted in the last eight boundaries its cause, a paired move's or
+  "other" where there is none;
+- `port_StatsFightDecided` at the head of `fight_AfterDefeat` (two seconds
+  after a fall the mode decides what follows: the replay, the story's next
+  henchman, chanbara's next opponent) with who fell, and after a
+  kaishaku's scene (`fight_after.c`, where the match rules count it): a
+  surrender, the winner `g_fight_winner`;
+- `port_StatsTeamMatch` at the head of `fight_RecordTeamMatch`: a group
+  battle's match on points, or on the clock where neither side had its
+  points.
+
+**Counted once, and only the real end.** Each boundary
+(`port_StatsBoundary`, the first thing of `port_ReplayBoundary`, so
+netplay's frames, reruns included, come through it as the main loop's
+do) takes in what the step before it noted. A note of a later input than
+the boundary's own is a step a rollback took back, and is dropped; what
+was seen at a later boundary than this one is forgotten first, since the
+state of this boundary was put back and the steps after it, run again,
+note it again (the step before it, whose notes this boundary saw, is not
+run again). A frame run ahead notes nothing (`g_port_ahead`): its state
+is put back. A fight's end seen is the record's line, made of the game's
+state there: the mode, the stage, each side's fighter and weapon, the
+opponent's CPU (`port_CpuPlays` and the run's level, or the game's own),
+both fighters' wounds as the game counts them (`leg_wounds`,
+`arm_wounds`, `body_wounds`, the off arm lost), the kills seen since the
+last end (their count each way, the first each way in full), the match
+in play (`g_port_match`: its rule, the fight's number in it, and where
+it is over, its winner; a group battle's own, `g_team_results`), the
+fight's frames from its first boundary on the fight's screen (or the end
+before it, for the story's henchmen) to the first off it, and online the
+session's kind and the other's name (the session's lobby's, or the
+ladder's opponent). It is counted at once outside a session, and in a
+session when netplay says that no rollback can reach it
+(`port_NetplayFinalFrames`, as a replay's file waits). A fight's end at
+or before the last counted, the run's or the session's, is not counted
+again: the rollback self-test runs every frame twice. Nothing is counted
+while a replay plays (its pending start too), in training (the port's
+and the game's own practice), by a room's spectator, or of a fight no
+person plays (both fighters the CPU's). A run of Slash is one fight,
+decided where the fight's screen ends (lost where the player fell), with
+every opponent cut down a kill of it. The player's side: online the
+lowest of the program's own pads (`port_NetplayLocalPads`; in two on two
+a team is a slot), otherwise the first fighter unless the CPU plays him.
+
+**The replay's file.** A fight's replay is written after its end, a
+slice at each boundary (or, for a kaishaku, before the fight is decided):
+`port_ReplayWrite` gives its name and its end's input number
+(`port_StatsReplayWritten`), and it goes to the fight counted whose first
+boundary and end hold it, or waits for that fight to be counted.
+
+**The file**, `rebushido-stats.txt` beside the settings (as the ranked
+identity is; `--stats FILE` in any run, the window's in a player's run
+only): text, the first line `rebushido-stats 1`, then a line a fight,
+oldest first, of words `key=value`:
+
+    fight date=2026-11-27T08:07:01 mode=vs online=local teams=1 cpu=person side=0 rule=stock count=2 match=1
+      match_fight=1 match_result=going stage=29 me=3:0 them=18:0 result=won how=kill kills=1:0
+      given=strike:head:0:0 taken=none:none:0:0 wounds_given=0:3:0:0 wounds_taken=0:0:0:0 frames=1016
+      opponent= replay=2026-11-27_080657_vs.rbr
+
+(one line in the file). A key this version does not know is passed
+over and one a line lacks is its value built in, so a later version may
+add keys under the same number; a name has its spaces, `%`, `=` and
+anything not plain ASCII as `%XX`. It is read whole at the start and
+written whole after each fight counted (or a replay's name given), into
+`PATH.part` and renamed over `PATH` (`MoveFileEx` with
+`MOVEFILE_REPLACE_EXISTING` on Windows, `rename` elsewhere). A file whose
+first line is not this format's, of a later version, or with a line that
+is not a fight is renamed `PATH.broken-YYYYMMDD-HHMMSS` and kept, and the
+fights read from it begin the new one; one that cannot be renamed is
+not written over, and no record is kept that run (the log says which).
+At about 330 bytes a fight, a thousand fights are a third of a
+megabyte, written in a millisecond or two at the boundary after a fight.
+
+**The page.** The settings menu's first page has **Stats** under
+Replays (not the top menu: its five rows are the game's own page's
+places, each with the game's picture and caption, and all five are
+taken; the replays it opens are the settings menu's too). Its first view
+is the totals (`port_StatsTally`: fights and matches won, lost and drawn,
+the longest run of fights won and the one going, kills and wounds given
+and taken, the time fought, the ladder's rating where `port_RankedGet`
+has the player rated), then a row for each list: by fighter (as and
+against), by weapon, by stage, by mode, by opponent (a CPU's level, a
+person beside the player, an online name), the kills by blow and place,
+and the history, the newest 255 first in the Replays page's two lines a row,
+whose Enter plays the fight's replay through `port_PlayReplay`. It is
+drawn as every page of the settings menu is (`page_look.c`), the same
+over both pictures; it is built again where a fight is counted while it
+is up (`port_StatsGeneration`).
+
+**Proved** by `tests/port/stats.c` (`python3 tests/run.py --rebushido
+port/stats`, both sizes: a line written and read back with every field,
+names that need `%XX`, a later version's key passed over, lines that are
+not fights; the file written through its `.part`, read again the same, a
+refused write and a refused rename leaving the file as it was; a later
+version's file, one that is not a record and one with a torn line kept
+aside, the good fights kept; an empty file and one of CR LF read; the
+counting of seven fights and two more) and `tools/port_stats.py` (WSL,
+the disc; both sizes, each its own record, the two the same but the
+dates): `kill`, tools/port_match.py's vs_stock, two fights won by kills
+in one Stock match of two (the blow and its place, the match won by the
+second, each fight's replay named and there); `surrender`, a versus
+fight whose second fighter kneels (Select) and is struck, the kaishaku
+played: one fight won by a surrender; `rollback`, the same plan with
+`--rollback-test 8 --rollback-every 24 --run-ahead 2`: the same record,
+nothing counted twice (it found the rule above: a fall run again after a
+rollback lost its blow, until a boundary's own notes were kept); and
+`replay`, each of kill's replays played back by `--replay-check` with
+its record: every hash the same, the record unchanged. And
+`tools/port_net.py session`: both machines keep a record (`--stats`),
+through 5% of datagrams lost and 100 ms each way (60 rollbacks a
+machine): every fight in both, once, online, the host the first side and
+the guest the second, one's win the other's loss, the fighters, kills,
+wounds and frames the other way round (versus, the sample arena, two on
+two, both sizes). The page's pictures, both pictures, of a made-up
+record: `tmp/stats/` (the owner's).
+
+**Left**: a fight the program ends in the middle of is not counted (nor
+is a session's last fight where a player leaves before its end is
+final); a CPU's level is the run's setting as the fight ends; local
+versus is the first player's record alone; a tournament's results
+(ROADMAP 31) are to be kept here.
+
 ## Rooms of several
 
 ROADMAP 22; how they work on the network, NETPLAY.md, section 16; how a

@@ -188,7 +188,8 @@ darkened under the menu's panel, as under a game's own pause page.
 
 Its first page is a row for each group of settings -- **The game**,
 **Display**, **The remastered picture**, **Controls** and **Mods** --
-then **Play online**, **Back to the game** and **Quit ReBushido**. A
+then **Replays**, **Stats** (your record, "Stats" below), **Play
+online**, **Updates**, **Back to the game** and **Quit ReBushido**. A
 group's row opens its page: its settings, each with its value, a line
 under them about the one the cursor is on, and beside the cursor's value
 the one built in (`default`, or `default: Hard`); a value that is not
@@ -1487,6 +1488,48 @@ From the command line: `rebushido --replay FILE --export OUT.mp4` (or
 `.avi`), with `--window 1280x720` for another size and `--graphics
 original` for the console's picture.
 
+## Stats
+
+**Your record**: every fight and every match you finish is kept by the
+program, and the settings menu's **Stats** (F1, or Options on the main
+menu; the row under Replays) counts it up. Training is not counted, nor
+a replay you watch, nor a match you only watch as a spectator, nor a
+fight the CPU plays on both sides.
+
+Its first page has the totals: fights and matches won, lost and drawn,
+the longest run of fights won (and the run you are on), kills given and
+taken, wounds given and taken (legs, sword arm, body, the off arm lost),
+the time fought, and, once the ladder has rated you, your ladder rating
+as Ranked shows it (the ladder keeps its own ratings; this only shows
+yours). Under them a row opens each list:
+
+| Row | What it lists |
+|---|---|
+| By fighter | your record as each fighter, and against each fighter |
+| By weapon | as each of your weapons |
+| By stage | on each stage |
+| By mode | Story, Vs. CPU, Slash, Versus, Group Battle, the link cable, Online, Ranked, and Two on two besides |
+| By opponent | each CPU level (the game's own CPU, Novice, Adept, Veteran, Master), a player beside you, and each player online by name |
+| Kills | the blows that killed, by what struck (a strike, a running or leaping strike, from a climb, the second sword, a thrown weapon, a shot, a paired move) and where (head, chest, hips, ...), from behind; and the fights by how they ended: a kill, a surrender, on points, on the clock |
+| Match history | every fight (the newest 255), the newest first: who won, the fighters, how long; under them when, the mode and the match (Stock 3, fight 2, the match won), the opponent, how it was decided, the stage and the weapons |
+
+On the history, **Enter** or **Cross** plays a fight's replay where one
+was kept (Keep replays on; a replay the folder has let go of, or one of
+another build's, says why it does not play). A match is a match of the
+rules (Stock, First to, Crew; Group Battle's battle); a fight with no
+rule is a match of its own. Slash counts a run as one fight (won if you
+cut down all hundred). In versus on one PC the record is the first
+player's; online it is yours, whichever side you are.
+
+The record is the file `rebushido-stats.txt` beside `rebushido.cfg`, a
+line a fight, written again after each one (into a new file first, which
+then takes the old one's place, so a crash or a full disc never leaves
+half a file). A file the program cannot read (a newer version's, or one
+spoiled) is not written over: it is renamed
+`rebushido-stats.txt.broken-DATE` and kept, and a new record begun with
+whatever fights could be read from it. To start your record again, move
+the file away. Tests' runs keep none unless `--stats FILE` says where.
+
 ## Where the saves are
 
 ReBushido saves what the game saves, in the same way: **memory card
@@ -1518,6 +1561,8 @@ card file from an emulator works here.
 Your ranked identity is not a save of the game's: it is the file
 `rebushido-identity.key` beside `rebushido.cfg` ("Ranked", above). Keep a
 copy of it.
+Your record of fights is beside it too, `rebushido-stats.txt` ("Stats",
+above).
 
 ## The opening movie
 
