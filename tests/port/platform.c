@@ -53,6 +53,9 @@ s32 port_AskedTopMenuCover(void) { return -1; }
 /* ... nor training, which leaves the input as it is outside its fights */
 void port_TrainingTakeInput(struct PortInput *input) { (void)input; }
 
+/* ... nor a local tournament, which leaves it as it is where none is on */
+void port_TournamentTakeInput(struct PortInput *input) { (void)input; }
+
 s32 port_ReplayCoverAt(u32 index) {
     (void)index;
     return -1;

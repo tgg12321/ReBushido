@@ -10666,7 +10666,11 @@ fallen) is judged (`port_TournamentJudge`, from `fight_UpdateMode`): the
 one with fewer wounds (legs, sword arm, body, the off arm lost) wins the
 match, the tournament's dice where they are alike, and the game leaves
 the fight for the main menu as the pause's Return to Main Menu does. The
-log says so; no fight a person plays is ever judged.
+log says so; no fight a person plays is ever judged. It is common: in the
+proving runs (below) 11 of 34 matches of two CPUs went to the judges
+(the eight of `cpu8` 4 of 15, `window`'s 5 of 15, `byes` 2 of 4), which
+says more of the CPU's circling than any one fight did (CPU.md, "What is
+left").
 
 **The window** (`src/port/window/tournament_page.c`, pages of the
 settings menu, `menu.c`): the main menu's fifth row, **Tournament**

@@ -812,8 +812,9 @@ the stage").
     stay as they are (protocol 21, lobby 4); a room's tournament needs the
     lobby to carry the bracket and the rotation to follow it, a change of
     both, so it waits for its own work; a tournament resumed after the
-    program closes; Crew and two on two as a tournament's rule; the
-    owner's eye on the pages.
+    program closes; Crew and two on two as a tournament's rule; about a
+    third of the matches of two CPUs go to the judges (item 27's circling);
+    the owner's eye on the pages.
 32. **The sound remastered**, as a setting (the original's sound stays):
     a reverb of each stage's own (the dojo, the cave, the open), sound
     placed for headphones (HRTF), and better resampling of the game's
