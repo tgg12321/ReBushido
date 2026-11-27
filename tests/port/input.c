@@ -55,6 +55,9 @@ void port_TheatreInput(struct PortInput *input, u32 index) {
     (void)index;
 }
 
+/* ... nor a local tournament, which leaves it as it is where none is on */
+void port_TournamentTakeInput(struct PortInput *input) { (void)input; }
+
 s32 port_ReplayCoverAt(u32 index) {
     (void)index;
     return -1;

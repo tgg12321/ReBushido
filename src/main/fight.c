@@ -428,6 +428,11 @@ static void fight_UpdateMode(void) {
         (g_fight_mode == FIGHT_MODE_PRACTICE && g_fight_practice_round == 1) ||
         g_fight_mode == FIGHT_MODE_VS) {
 #if RB_PORT
+        /* a local tournament's fight of two CPUs too long: judged
+         * (port_tournament.h) */
+        if (port_TournamentJudge()) {
+            return;
+        }
         /* a match's strip shows the score in place of the wins
          * (port_match.h) */
         if (port_MatchHidesWins(g_fight_mode)) {

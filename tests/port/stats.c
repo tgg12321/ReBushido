@@ -1,8 +1,9 @@
 /* The port's record of fights (src/port/stats_store.c; port_stats.h): the
- * line of a fight written and read back, the file written whole through
- * a temporary file and a rename, read again at the start, a file of a
- * later version or with a broken line kept aside (and its good fights
- * kept), and the counting the Stats page shows. The host's files are the
+ * line of a fight written and read back, and of a local tournament (its
+ * entrants and matches, read back the same, kept beside the fights), the file
+ * written whole through a temporary file and a rename, read again at the start,
+ * a file of a later version or with a broken line kept aside (and its good
+ * fights kept), and the counting the Stats page shows. The host's files are the
  * test's own, in memory; nothing on the disk is read or written. */
 #include "common.h"
 #include "port_host.h"
@@ -273,6 +274,8 @@ static void test_Line(void) {
     test_CopyText(fight.opponent, "Mr 100% = x", sizeof(fight.opponent));
     test_CopyText(
         fight.replay, "2026-11-27_090507_vs.rbr", sizeof(fight.replay));
+    test_CopyText(
+        fight.tournament, "2026-11-27T09:01:00", sizeof(fight.tournament));
     length = port_StatsFormat(&fight, line, sizeof(line));
     CHECK(length > 0 && line[length - 1] == '\n');
     CHECK(port_StatsParse(line, length - 1, &back));
@@ -320,7 +323,7 @@ static void test_File(void) {
     CHECK(test_Find(TEST_PATH_PART) == NULL);
     CHECK_EQ(test_Lines(TEST_PATH), 4);
     CHECK(test_BytesEqual(
-        test_Find(TEST_PATH)->bytes, "rebushido-stats 1\n", 18));
+        test_Find(TEST_PATH)->bytes, "rebushido-stats 2\n", 18));
     kept[0] = first;
     kept[1] = second;
     kept[2] = third;
@@ -358,7 +361,7 @@ static void test_File(void) {
 
 /* A file that cannot be read is kept aside, never written over. */
 static void test_Broken(void) {
-    static const char later[] = "rebushido-stats 2\nfight result=won\n";
+    static const char later[] = "rebushido-stats 3\nfight result=won\n";
     static const char other[] = "this is not a record\n";
     static const char torn[] =
         "rebushido-stats 1\nfight result=won how=kill\nfight resu\n"
@@ -415,6 +418,122 @@ static void test_Broken(void) {
     CHECK_EQ(port_StatsCount(), 1);
     CHECK_EQ(port_StatsFightAt(0)->result, PORT_STATS_DRAW);
     CHECK(test_Find(TEST_PATH_ASIDE) == NULL);
+}
+
+/* ---- tournaments ---- */
+
+/* A tournament of three: a person, two CPUs; two matches. */
+static PortStatsTournament test_Tournament(void) {
+    PortStatsTournament t;
+    u32 i;
+
+    for (i = 0; i < sizeof(t); i++) {
+        ((u8 *)&t)[i] = 0;
+    }
+    t.year = 2026;
+    t.month = 11;
+    t.day = 27;
+    t.hour = 10;
+    t.minute = 2;
+    t.second = 3;
+    test_CopyText(t.begun, "2026-11-27T09:01:00", sizeof(t.begun));
+    t.count = 3;
+    t.is_double = 1;
+    t.seeding = 1;
+    t.rule = PORT_MATCH_STOCK_TEST;
+    t.rule_count = 2;
+    t.champion = 2;
+    t.played = 2;
+    test_CopyText(
+        t.entrant[0].name, "Trial 1: 100% = x", sizeof(t.entrant[0].name));
+    t.entrant[0].cpu = PORT_STATS_PERSON;
+    t.entrant[0].pad = 1;
+    t.entrant[0].place = 2;
+    t.entrant[0].losses = 2;
+    t.entrant[0].seed = 1;
+    test_CopyText(t.entrant[1].name, "CPU 2", sizeof(t.entrant[1].name));
+    t.entrant[1].cpu = 0;
+    t.entrant[1].pad = 0xFF;
+    t.entrant[1].place = 3;
+    t.entrant[1].losses = 2;
+    t.entrant[1].seed = 3;
+    test_CopyText(t.entrant[2].name, "Master", sizeof(t.entrant[2].name));
+    t.entrant[2].cpu = PORT_CPU_LEVELS_TEST;
+    t.entrant[2].pad = 0xFF;
+    t.entrant[2].place = 1;
+    t.entrant[2].losses = 0;
+    t.entrant[2].seed = 2;
+    t.match[0].part = 0;
+    t.match[0].round = 1;
+    t.match[0].first = 2;
+    t.match[0].second = 1;
+    t.match[0].winner = 2;
+    t.match[1].part = 3; /* the grand final's reset */
+    t.match[1].round = 1;
+    t.match[1].first = 0;
+    t.match[1].second = 2;
+    t.match[1].winner = 2;
+    return t;
+}
+
+/* A tournament's line written and read back the same; kept in the file
+ * after the fights, read again; a broken one keeps the file aside. */
+static void test_Tournaments(void) {
+    PortStatsTournament t = test_Tournament();
+    PortStatsTournament back;
+    PortStatsFight fight = test_Fight(PORT_STATS_LOST, 3, 1);
+    char line[2048];
+    u32 length;
+
+    length = port_StatsFormatTournament(&t, line, sizeof(line));
+    CHECK(length > 0 && line[length - 1] == '\n');
+    CHECK(port_StatsParseTournament(line, length - 1, &back));
+    CHECK(test_BytesEqual(&t, &back, sizeof(t)));
+    CHECK(test_StringsEqual(back.entrant[0].name, "Trial 1: 100% = x"));
+    /* no room: nothing */
+    CHECK_EQ(port_StatsFormatTournament(&t, line, 60), 0);
+    /* what is not a tournament */
+    CHECK(!port_StatsParseTournament("fight result=won", 16, &back));
+    CHECK(!port_StatsParseTournament("tournament entrants=1", 21, &back));
+    CHECK(!port_StatsParseTournament(
+        "tournament entrants=2 e1=pad9:1:0:1:x", 37, &back));
+    CHECK(!port_StatsParseTournament(
+        "tournament entrants=2 m1=final:1:1:2", 36, &back));
+    /* a later version's key passed over */
+    CHECK(port_StatsParseTournament(
+        "tournament entrants=2 mood=calm", 31, &back));
+    /* in the file, after the fights, and read again */
+    test_Clear();
+    port_SetStatsFile(TEST_PATH);
+    test_CopyText(
+        fight.tournament, "2026-11-27T09:01:00", sizeof(fight.tournament));
+    CHECK(port_StatsAdd(&fight));
+    CHECK(port_StatsAddTournament(&t));
+    CHECK(port_StatsAdd(&fight));
+    CHECK_EQ(test_Lines(TEST_PATH), 4);
+    port_SetStatsFile(TEST_PATH);
+    CHECK_EQ(port_StatsCount(), 2);
+    CHECK_EQ(port_StatsTournamentCount(), 1);
+    CHECK(port_StatsTournamentAt(1) == NULL);
+    CHECK(test_BytesEqual(port_StatsTournamentAt(0), &t, sizeof(t)));
+    CHECK(test_StringsEqual(
+        port_StatsFightAt(0)->tournament, "2026-11-27T09:01:00"));
+    CHECK(test_Find(TEST_PATH_ASIDE) == NULL);
+    /* a version 1 record has none, and is read as it is */
+    test_Clear();
+    test_Put(TEST_PATH, "rebushido-stats 1\nfight result=won\n");
+    port_SetStatsFile(TEST_PATH);
+    CHECK_EQ(port_StatsCount(), 1);
+    CHECK_EQ(port_StatsTournamentCount(), 0);
+    CHECK(test_Find(TEST_PATH_ASIDE) == NULL);
+    /* a torn tournament's line: the file aside, the rest kept */
+    test_Clear();
+    test_Put(TEST_PATH, "rebushido-stats 2\nfight result=won\n"
+                        "tournament entrants=2 e1=pad1:1:0\n");
+    port_SetStatsFile(TEST_PATH);
+    CHECK_EQ(port_StatsCount(), 1);
+    CHECK_EQ(port_StatsTournamentCount(), 0);
+    CHECK(test_Find(TEST_PATH_ASIDE) != NULL);
 }
 
 /* The counting the page shows. */
@@ -541,5 +660,6 @@ void test_Main(void) {
     test_Line();
     test_File();
     test_Broken();
+    test_Tournaments();
     test_Tally();
 }

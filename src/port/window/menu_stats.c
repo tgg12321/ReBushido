@@ -4,14 +4,16 @@
  * kills and wounds given and taken, the time fought, the ladder's rating
  * where the program has it -- and a row for each list: by fighter, by
  * weapon, by stage, by mode, by opponent, the kills by their kind and
- * place, and the history of fights, the newest first, whose rows play the
- * fight's replay where one was kept. Only the build with a window has
+ * place, the history of fights, the newest first, whose rows play the
+ * fight's replay where one was kept, and the local tournaments over, each
+ * its champion and every entrant's place. Only the build with a window has
  * this file; the record is the core's (src/port/stats_store.c). */
 #include <stdio.h>
 #include <string.h>
 
 #include "menu.h"
 #include "port_cpu.h"
+#include "port_match.h"
 #include "port_ranked.h"
 #include "port_replay.h"
 #include "port_stats.h"
@@ -36,8 +38,8 @@ static PortStatsTally g_tally;
 static char g_help[TEXT_BYTES * 2];
 
 static const char * const g_view_names[PORT_STATS_VIEWS] = {
-    "Stats",   "By fighter",  "By weapon", "By stage",
-    "By mode", "By opponent", "Kills",     "Match history"};
+    "Stats",       "By fighter", "By weapon",     "By stage",   "By mode",
+    "By opponent", "Kills",      "Match history", "Tournaments"};
 
 static const char * const g_cpu_shown[PORT_CPU_LEVELS + 1] = {
     "the game's own", "Novice", "Adept", "Veteran", "Master"};
@@ -251,6 +253,60 @@ static void port_StatsKills(void) {
     }
 }
 
+/* The local tournaments, the newest first: when, how many and how, and
+ * the champion; the places on the line under the rows (the help). */
+static void port_StatsTournaments(void) {
+    s32 count = port_StatsTournamentCount();
+    s32 i;
+
+    for (i = count - 1; i >= 0; i--) {
+        const PortStatsTournament *t = port_StatsTournamentAt(i);
+        StatsLine *line = port_StatsLine();
+
+        if (t == NULL || line == NULL) {
+            return;
+        }
+        snprintf(
+            line->label, sizeof(line->label),
+            "%04u-%02u-%02u %02u:%02u   %u entrants, %s, %s %u", t->year,
+            t->month, t->day, t->hour, t->minute, t->count,
+            t->is_double ? "double" : "single",
+            t->rule == PORT_MATCH_STOCK ? "Stock" : "First to", t->rule_count);
+        snprintf(line->value, sizeof(line->value), "won by %s",
+                 t->champion < t->count &&
+                         t->champion < PORT_STATS_TOURNAMENT_ENTRANTS
+                     ? t->entrant[t->champion].name
+                     : "?");
+    }
+    if (count == 0) {
+        port_StatsAddText("No tournaments yet", "");
+    }
+}
+
+/* A tournament's places, the first ones that fit, for the help line. */
+static const char *port_StatsTournamentPlaces(s32 item) {
+    const PortStatsTournament *t =
+        port_StatsTournamentAt(port_StatsTournamentCount() - 1 - item);
+    u32 at = 0;
+    s32 place;
+    s32 i;
+
+    g_help[0] = 0;
+    if (t == NULL) {
+        return "Local tournaments over (the main menu's Tournament)";
+    }
+    for (place = 1; place <= t->count; place++) {
+        for (i = 0; i < t->count && i < PORT_STATS_TOURNAMENT_ENTRANTS; i++) {
+            if (t->entrant[i].place == place && at + 1 < sizeof(g_help)) {
+                at += (u32)snprintf(
+                    g_help + at, sizeof(g_help) - at, "%s%d. %s",
+                    at == 0 ? "" : "   ", place, t->entrant[i].name);
+            }
+        }
+    }
+    return g_help;
+}
+
 s32 port_StatsPageItems(s32 view) {
     s32 i;
 
@@ -291,6 +347,9 @@ s32 port_StatsPageItems(s32 view) {
         break;
     case PORT_STATS_VIEW_HISTORY:
         return port_StatsCount();
+    case PORT_STATS_VIEW_TOURNAMENTS:
+        port_StatsTournaments();
+        break;
     }
     return g_line_count;
 }
@@ -410,6 +469,9 @@ const char *port_StatsPageHelp(s32 view, s32 item) {
         }
         return f->replay[0] != 0 ? "Enter / Cross: watch its replay"
                                  : "No replay was kept of this fight";
+    }
+    if (view == PORT_STATS_VIEW_TOURNAMENTS) {
+        return port_StatsTournamentPlaces(item);
     }
     if (view == PORT_STATS_VIEW_KILLS) {
         return "The first kill of each fight each way, by what struck and "

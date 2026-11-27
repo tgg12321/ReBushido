@@ -138,7 +138,7 @@ page, which the PlayStation disc shows first, is not shown, and its
 setting, Bug fixes, is in the settings menu with the rest. A memory card
 with the game's save on it is loaded without asking. Then the main menu,
 in the game's own look (its title says MAIN MENU where the game's said
-TOP MENU), with five rows:
+TOP MENU), with six rows:
 
 | The row | What it is |
 |---|---|
@@ -146,6 +146,7 @@ TOP MENU), with five rows:
 | **Versus** | two players, the second on the second pad |
 | **Training** | a page of its own: **Training**, a fight against a dummy ("Training", below), the game's own **Classic Training** (either kind of practice), **Training Options** and **Back** |
 | **Online Play** | the online pages, a page of the game's own look: Quick Match, host a room, browse rooms, join by code or by address ("Playing online"); Back on them comes back here |
+| **Tournament** | a local tournament of up to eight players and CPUs ("Tournament", below); while one is on, its bracket |
 | **Options** | the settings menu (below), in place of the game's own options page and in its look |
 
 Up and down choose, Cross takes the row, Triangle goes back (from the
@@ -190,8 +191,9 @@ none still held as it closes). Over the pause the fight's picture is
 darkened under the menu's panel, as under a game's own pause page.
 
 Its first page is a row for each group of settings -- **The game**,
-**Display**, **The remastered picture**, **Controls** and **Mods** --
-then **Replays**, **Stats** (your record, "Stats" below), **Play
+**Display**, **The remastered picture**, **Controls**, **Mods**,
+**Training** and **Tournament** (what a tournament's page begins with,
+"Tournament" below) -- then **Replays**, **Stats** (your record, "Stats" below), **Play
 online**, **Updates**, **Back to the game** and **Quit ReBushido**. A
 group's row opens its page: its settings, each with its value, a line
 under them about the one the cursor is on, and beside the cursor's value
@@ -871,6 +873,72 @@ pause menu's Select):
 
 No replay is kept of a training fight, and training is not offered
 online.
+
+## Tournament
+
+**Tournament** on the main menu runs a local tournament on one PC: two
+to eight entrants, each a player or the CPU, in a bracket of single or
+double elimination, every match played under one of the match rules.
+
+**Its page** (in the settings menu's look) has the tournament's four
+settings and then a row for each entrant:
+
+| Row | Values | What it does |
+|---|---|---|
+| Entrants | 2 to 8 | how many (`tournament_entrants`); where they do not fill the bracket (3, 5, 6, 7) the top seeds have byes, a first round they do not play |
+| Elimination | Single, Double | out at the first loss, or at the second (`tournament_elimination`) |
+| Seeding | Drawn, In order | the seeds drawn at random, or the entrants' order, the first the top seed (`tournament_seeding`) |
+| Each match | One fight, First to 2, First to 3, Stock 2, Stock 3 | each match's rule (`tournament_match`); "One fight" is fought again on a draw, so every match has a winner |
+| 1. ..., 2. ... | | each entrant: **Left** and **Right** say who plays it (Player 1's to Player 4's pad, or the CPU: the game's own, Novice, Adept, Veteran, Master); **Cross** opens its own page |
+| Begin the tournament | | draws the bracket |
+
+An entrant's page has its **Name** (Cross, then type; Enter keeps it),
+**Played by**, and for a CPU its **Fighter** and **Weapon**: one of the
+fighters with blades, or Any (drawn for each match from the six a new
+save has), one of the six blades or Any. A player always picks his
+fighter and weapon at the select screen. Two entrants cannot be played
+by the same pad.
+
+**Between matches** the bracket is shown: each round's matches, the
+winners in white, the next match lit, the line from each match to where
+its winner goes, and the champion's box; with double elimination the
+winners' bracket on top with the grand finals beside it, the losers'
+bracket under it. **Play the next match** plays it; **Leave the
+tournament** (press it twice) ends it there, and nothing of it is kept.
+Escape or Circle goes to the main menu, whose Tournament brings the
+bracket back; choosing another mode there leaves the tournament.
+
+**A match** with a player in it goes to the select screen of versus:
+each player picks with his own pad (a player is always the first side
+against the CPU), the CPU's side is picked for it, and a player picks the
+stage. A match of two CPUs goes straight to its fight, on one of the open
+stages the CPU's levels were measured on; Start on any pad pauses it, and
+the pause menu's Return to Main Menu leaves the match unplayed (it is
+offered again). Each match is a match of the rule chosen (the lives or
+the score over the fight, the card between fights), and when it is
+decided the game goes back to the main menu and the bracket.
+
+**Double elimination**: a first loss sends an entrant to the losers'
+bracket, a second loss is out. The grand final is the winners' bracket's
+champion against the losers' bracket's; if the losers' champion wins it,
+the winners' champion has his first loss and a second grand final (the
+reset) decides it, so nobody is out without losing twice.
+
+**The places**: the champion first, the final's loser second; in single
+elimination the semifinals' losers third, the quarterfinals' fifth; in
+double elimination the losers' final's loser third, the round before
+fourth, then fifth and seventh in pairs.
+
+**The record**: when a tournament is over, it is kept in your record
+(Options, **Stats**, **Tournaments**): when, how many, the rule, the
+champion, and every entrant's place. The fights you play in it count in
+your record as any versus fight does (also under **By mode**,
+*Tournament*); a match of two CPUs counts nothing there, but is a match
+of the tournament's result. A tournament left is not kept, and one is
+never resumed after the program closes.
+
+Not online: a tournament is one PC's (the rooms of several have their
+rotation instead).
 
 ## Everything unlocked
 
@@ -1603,10 +1671,11 @@ yours). Under them a row opens each list:
 | By fighter | your record as each fighter, and against each fighter |
 | By weapon | as each of your weapons |
 | By stage | on each stage |
-| By mode | Story, Vs. CPU, Slash, Versus, Group Battle, the link cable, Online, Ranked, and Two on two besides |
+| By mode | Story, Vs. CPU, Slash, Versus, Group Battle, the link cable, Online, Ranked, and Two on two and Tournament besides |
 | By opponent | each CPU level (the game's own CPU, Novice, Adept, Veteran, Master), a player beside you, and each player online by name |
 | Kills | the blows that killed, by what struck (a strike, a running or leaping strike, from a climb, the second sword, a thrown weapon, a shot, a paired move) and where (head, chest, hips, ...), from behind; and the fights by how they ended: a kill, a surrender, on points, on the clock |
 | Match history | every fight (the newest 255), the newest first: who won, the fighters, how long; under them when, the mode and the match (Stock 3, fight 2, the match won), the opponent, how it was decided, the stage and the weapons |
+| Tournaments | every local tournament over, the newest first: when, how many entrants, the elimination and the rule, the champion; the line under the rows has every entrant's place |
 
 On the history, **Enter** or **Cross** plays a fight's replay where one
 was kept (Keep replays on; a replay the folder has let go of, or one of
@@ -1617,7 +1686,7 @@ cut down all hundred). In versus on one PC the record is the first
 player's; online it is yours, whichever side you are.
 
 The record is the file `rebushido-stats.txt` beside `rebushido.cfg`, a
-line a fight, written again after each one (into a new file first, which
+line a fight and a line a tournament, written again after each one (into a new file first, which
 then takes the old one's place, so a crash or a full disc never leaves
 half a file). A file the program cannot read (a newer version's, or one
 spoiled) is not written over: it is renamed

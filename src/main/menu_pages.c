@@ -1716,8 +1716,10 @@ static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed) {
         !(pressed & PAD_ANY(PADRdown))) {
         if (pressed & PAD_ANY(PADRdown)) {
             /* training against a dummy is versus with training on
-             * (port_training.h); any other mode has it off */
+             * (port_training.h); any other mode has it off, and leaves a
+             * local tournament (port_tournament.h) */
             port_TrainingChoose(of->kind == PORT_TOP_TRAIN);
+            port_TournamentModeChosen();
             if (of->kind == PORT_TOP_TRAIN && !port_TrainingIsOn()) {
                 return MENU_TOP_RUNNING;
             }
@@ -1746,6 +1748,13 @@ static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed) {
     case PORT_TOP_ONLINE:
         snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
         port_TopMenuAsk(PORT_TOP_ASK_ONLINE);
+        break;
+    case PORT_TOP_TOURNAMENT:
+        /* the window's page of a tournament, or the bracket of the one
+         * on (port_tournament.h) */
+        snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuAsk(port_TournamentIsOn() ? PORT_TOP_ASK_BRACKET
+                                              : PORT_TOP_ASK_TOURNAMENT);
         break;
     default:
         snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);

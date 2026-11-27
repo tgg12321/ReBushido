@@ -67,6 +67,9 @@ static struct {
     /* a test's presses (--menu-keys), and blanks to wait (`wait:N`) */
     const char *words;
     s32 waiting;
+    /* the next opening is a tournament's bracket, which a test's presses
+     * are not for (they are the page it is begun from) */
+    s32 no_words;
 } g_port_menu;
 
 /* What the settings menu and the online pages share: the page's pixels,
@@ -622,7 +625,9 @@ static void port_OpenMenu(u32 blank, s32 is_beside) {
     g_port_menu.stick[1] = 0;
     g_port_menu.is_beside = is_beside;
     g_port_menu.opened_at = SDL_GetTicks();
-    g_port_menu.words = g_port_window_options.menu_keys;
+    g_port_menu.words =
+        g_port_menu.no_words ? NULL : g_port_window_options.menu_keys;
+    g_port_menu.no_words = FALSE;
     g_port_menu.waiting = 0;
     port_MenuOpen(path != NULL ? path : "rebushido.cfg");
     port_PageSoundsOn(is_beside);
@@ -648,6 +653,9 @@ static void port_ClosedMenu(u32 blank) {
               "blank %u",
               SDL_GetTicks() - g_port_menu.opened_at, blank);
     g_port_menu.is_beside = FALSE;
+    /* what the top menu asked while it was open (a tournament's bracket,
+     * which was up already) is not opened again */
+    port_MenuFollowAsks();
 }
 
 /* The menu, from the moment it opens to the moment it closes, with the
@@ -692,6 +700,14 @@ static void port_MenuBesideTurn(u32 blank) {
         if (shot != NULL) {
             port_PageShot(shot);
         }
+    }
+    if (port_MenuIsOpen() && g_port_window_options.menu_shots != NULL &&
+        port_MenuBracketShotDue()) {
+        /* a tournament's bracket, each time it comes up (a test's) */
+        port_MakeFolder(g_port_window_options.menu_shots);
+        snprintf(path, sizeof(path), "%s/bracket-%03u.png",
+                 g_port_window_options.menu_shots, g_port_menu.shots++);
+        port_PageShot(path);
     }
     if (!port_MenuIsOpen()) {
         port_ClosedMenu(blank);
@@ -756,6 +772,15 @@ void port_MaybeRunMenu(u32 blank) {
         g_port_menu.asks_seen = now.menu_asks;
         if (now.menu_ask_page == PORT_TOP_ASK_ONLINE) {
             port_AskForOnlinePages("Online Play");
+        } else if (now.menu_ask_page == PORT_TOP_ASK_TOURNAMENT) {
+            /* Tournament: its page, Back out of the menu */
+            port_MenuOpenOn(PORT_MENU_OPEN_TOURNAMENT);
+            port_AskForMenu("Tournament");
+        } else if (now.menu_ask_page == PORT_TOP_ASK_BRACKET) {
+            /* a tournament's bracket, between its matches */
+            port_MenuOpenOn(PORT_MENU_OPEN_BRACKET);
+            g_port_menu.no_words = !port_MenuIsOpen();
+            port_AskForMenu("the tournament's bracket");
         } else if (now.menu_ask_page == PORT_TOP_ASK_TRAINING) {
             /* Training Options: the Training page, Back out of the menu */
             port_MenuOpenOn(PORT_MENU_OPEN_TRAINING);

@@ -324,6 +324,9 @@ extern s32 port_MatchEndsSession(void);
 extern s32 port_SessionIsRoomMatch(void);
 /* a session of netplay is being played: the first pad is the host's */
 extern s32 port_SessionIsOn(void);
+/* The page's rule given back to the window's setting at the next ask (a
+ * local tournament's over: port_tournament.h). */
+extern void port_MatchForgetPage(void);
 
 /* ---- the run's choice, outside the state (src/port/play_switches.c) ---- */
 

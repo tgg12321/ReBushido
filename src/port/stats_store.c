@@ -2,7 +2,9 @@
  * (port_stats.h; docs/PORT.md, "Stats").
  *
  * The file is text, a line each: the first `rebushido-stats VERSION`, then
- * a line `fight` for each fight, oldest first, of words `key=value`. A
+ * a line `fight` for each fight, oldest first, of words `key=value`, and
+ * after them a line `tournament` for each local tournament over (version
+ * 2; port_tournament.h), oldest first, of words the same way. A
  * key this version does not know is passed over, a key the line does not
  * have is the value built in, so a later version may add keys without a
  * new number. A name (the opponent's, the replay's) has every byte that
@@ -10,8 +12,9 @@
  * written whole after each fight, into PATH.part and renamed over PATH, so
  * that it is the old one or the new one, never a part of either. A file
  * whose first line is not this format's, of a newer version, or with a
- * line that is not a fight, is renamed aside (PATH.broken-DATE) and kept;
- * the fights read from it are kept in the new one.
+ * line that is neither a fight nor a tournament, is renamed aside
+ * (PATH.broken-DATE) and kept; what was read from it is kept in the new
+ * one. A file of version 1 is read as it is (it has no tournaments).
  *
  * Outside the state (config/port_state.txt): nothing here is the game's,
  * and the game never reads it. */
@@ -21,7 +24,18 @@
 
 #define HEAD_WORD "rebushido-stats"
 #define FIGHT_WORD "fight"
+#define TOURNAMENT_WORD "tournament"
 #define LINE_BYTES 768
+/* a tournament's line: its words, eight entrants and fifteen matches */
+#define TOURNAMENT_LINE_BYTES 2048
+#define TOURNAMENTS_FIRST_ROOM 16
+/* an entrant's value, who:place:losses:seed:name, and a match's,
+ * part:round:first:second:winner: their fields, and the numbers among
+ * them */
+#define ENTRANT_FIELDS 5
+#define ENTRANT_NUMBERS 3
+#define MATCH_FIELDS 5
+#define MATCH_NUMBERS 4
 #define FIRST_ROOM 64
 #define WORD_BYTES 64
 #define HEX_DIGIT_BITS 4
@@ -65,8 +79,17 @@ static const char * const g_blow_words[PORT_STATS_BLOWS] = {
 static const char * const g_place_words[PORT_STATS_PLACES] = {
     "none", "head", "chest", "hip", "sword_arm", "off_arm", "legs"};
 static const char * const g_by_mode_words[PORT_STATS_MODES] = {
-    "Story",      "Vs. CPU", "Slash",  "Versus",    "Group Battle",
-    "Link cable", "Online",  "Ranked", "Two on two"};
+    "Story",      "Vs. CPU", "Slash",  "Versus",     "Group Battle",
+    "Link cable", "Online",  "Ranked", "Two on two", "Tournament"};
+/* a tournament's words: the bracket's parts (port_bracket.h), the
+ * seeding, and who plays an entrant */
+static const char * const g_part_words[] = {
+    "winners", "losers", "final", "reset"};
+#define PART_WORDS 4
+static const char * const g_seeding_words[] = {"random", "order"};
+#define SEEDING_WORDS 2
+static const char * const g_pad_words[] = {"pad1", "pad2", "pad3", "pad4"};
+#define PAD_WORDS 4
 
 static struct {
     char path[PORT_STATS_PATH_BYTES];
@@ -76,6 +99,9 @@ static struct {
     s32 room;
     u32 last_match;
     u32 generation;
+    PortStatsTournament *tournaments;
+    s32 tournament_count;
+    s32 tournament_room;
     /* the text written, kept to be written again */
     char *text;
     u32 text_room;
@@ -247,8 +273,10 @@ u32 port_StatsFormat(const PortStatsFight *fight, char *out, u32 room) {
     char taken[WORD_BYTES];
     char opponent[PORT_STATS_NAME_BYTES * 3 + 1];
     char replay[PORT_STATS_REPLAY_BYTES * 3 + 1];
+    char tournament[PORT_STATS_DATE_BYTES * 3 + 1];
     u32 length;
 
+    port_PutName(tournament, sizeof(tournament), fight->tournament);
     port_PutKill(given, sizeof(given), &fight->given);
     port_PutKill(taken, sizeof(taken), &fight->taken);
     port_PutName(opponent, sizeof(opponent), fight->opponent);
@@ -261,7 +289,7 @@ u32 port_StatsFormat(const PortStatsFight *fight, char *out, u32 room) {
         "match_fight=%d match_result=%s stage=%d me=%d:%d "
         "them=%d:%d result=%s how=%s kills=%d:%d given=%s taken=%s "
         "wounds_given=%d:%d:%d:%d wounds_taken=%d:%d:%d:%d "
-        "frames=%u opponent=%s replay=%s\n",
+        "frames=%u opponent=%s replay=%s tournament=%s\n",
         fight->year, fight->month, fight->day, fight->hour, fight->minute,
         fight->second, port_WordOf(g_mode_words, MODE_WORDS, fight->mode),
         port_WordOf(g_online_words, ONLINE_WORDS, fight->online), fight->teams,
@@ -276,7 +304,7 @@ u32 port_StatsFormat(const PortStatsFight *fight, char *out, u32 room) {
         given, taken, fight->wounds_given[0], fight->wounds_given[1],
         fight->wounds_given[2], fight->wounds_given[3], fight->wounds_taken[0],
         fight->wounds_taken[1], fight->wounds_taken[2], fight->wounds_taken[3],
-        fight->frames, opponent, replay);
+        fight->frames, opponent, replay, tournament);
     return length + 1 < room ? length : 0;
 }
 
@@ -394,6 +422,11 @@ static s32 port_GetValue(PortStatsFight *fight, const char *key, u32 key_length,
         port_GetName(fight->replay, sizeof(fight->replay), value, length);
         return TRUE;
     }
+    if (KEY_IS("tournament")) {
+        port_GetName(
+            fight->tournament, sizeof(fight->tournament), value, length);
+        return TRUE;
+    }
     if (!KEY_IS("teams") && !KEY_IS("side") && !KEY_IS("count") &&
         !KEY_IS("match") && !KEY_IS("match_fight") && !KEY_IS("stage") &&
         !KEY_IS("me") && !KEY_IS("them") && !KEY_IS("kills") &&
@@ -485,6 +518,313 @@ s32 port_StatsParse(const char *line, u32 length, PortStatsFight *out) {
     return TRUE;
 }
 
+/* ---- a tournament as a line ---- */
+
+/* A date's words (2026-11-27T14:03:22) of the six numbers. */
+static u32 port_PutDate(char *out, u32 room, u16 year, const u8 *parts) {
+    return port_StoreText(out, room, "%04d-%02d-%02dT%02d:%02d:%02d", year,
+                          parts[0], parts[1], parts[2], parts[3], parts[4]);
+}
+
+/* The tournament's line (port_stats.h): its words, then `eN` for each
+ * entrant (who:place:losses:seed:name) and `mN` for each match played
+ * (part:round:first:second:winner, the entrants from 1). */
+u32 port_StatsFormatTournament(
+    const PortStatsTournament *tournament, char *out, u32 room) {
+    u8 parts[DATE_PARTS - 1];
+    char date[WORD_BYTES];
+    char begun[PORT_STATS_DATE_BYTES * 3 + 1];
+    u32 at;
+    s32 i;
+
+    parts[0] = tournament->month;
+    parts[1] = tournament->day;
+    parts[2] = tournament->hour;
+    parts[3] = tournament->minute;
+    parts[4] = tournament->second;
+    port_PutDate(date, sizeof(date), tournament->year, parts);
+    port_PutName(begun, sizeof(begun), tournament->begun);
+    at = port_StoreText(
+        out, room,
+        TOURNAMENT_WORD " date=%s begun=%s elimination=%s seeding=%s rule=%s "
+                        "count=%d entrants=%d champion=%d played=%d",
+        date, begun, tournament->is_double ? "double" : "single",
+        port_WordOf(g_seeding_words, SEEDING_WORDS, tournament->seeding),
+        port_WordOf(g_rule_words, RULE_WORDS, tournament->rule),
+        tournament->rule_count, tournament->count, tournament->champion + 1,
+        tournament->played);
+    for (i = 0; i < tournament->count && i < PORT_STATS_TOURNAMENT_ENTRANTS;
+         i++) {
+        const PortStatsTournamentEntrant *entrant = &tournament->entrant[i];
+        char name[PORT_STATS_NAME_BYTES * 3 + 1];
+
+        port_PutName(name, sizeof(name), entrant->name);
+        if (at + 1 >= room) {
+            return 0;
+        }
+        at += port_StoreText(
+            out + at, room - at, " e%d=%s:%d:%d:%d:%s", i + 1,
+            entrant->cpu == PORT_STATS_PERSON
+                ? port_WordOf(g_pad_words, PAD_WORDS, entrant->pad)
+                : port_WordOf(g_cpu_words, CPU_WORDS, entrant->cpu + 1),
+            entrant->place, entrant->losses, entrant->seed, name);
+    }
+    for (i = 0; i < tournament->played && i < PORT_STATS_TOURNAMENT_MATCHES;
+         i++) {
+        const PortStatsTournamentMatch *match = &tournament->match[i];
+
+        if (at + 1 >= room) {
+            return 0;
+        }
+        at += port_StoreText(
+            out + at, room - at, " m%d=%s:%d:%d:%d:%d", i + 1,
+            port_WordOf(g_part_words, PART_WORDS, match->part), match->round,
+            match->first + 1, match->second + 1, match->winner + 1);
+    }
+    if (at + 2 >= room) {
+        return 0;
+    }
+    out[at++] = '\n';
+    out[at] = 0;
+    return at;
+}
+
+/* The `length` bytes at `text` split at ':' into `fields` (at most
+ * `most`; the last keeps the rest): how many there were. */
+static s32 port_SplitFields(
+    const char *text, u32 length, const char **fields, u32 *lengths, s32 most) {
+    s32 count = 0;
+    u32 at = 0;
+
+    while (count < most) {
+        u32 from = at;
+
+        while (at < length && (text[at] != ':' || count == most - 1)) {
+            at++;
+        }
+        fields[count] = text + from;
+        lengths[count] = at - from;
+        count++;
+        if (at >= length) {
+            break;
+        }
+        at++;
+    }
+    return count;
+}
+
+/* A number of `length` bytes: FALSE where it is not one. */
+static s32 port_GetNumber(const char *text, u32 length, s32 *out) {
+    char word[WORD_BYTES];
+    u32 i;
+
+    if (length == 0 || length >= sizeof(word)) {
+        return FALSE;
+    }
+    for (i = 0; i < length; i++) {
+        word[i] = text[i];
+    }
+    word[length] = 0;
+    return port_ParseNumber(word, out);
+}
+
+/* `eN` and `mN`: the N, from 1 to `most`, or -1. */
+static s32 port_KeyIndex(
+    const char *key, u32 key_length, char letter, s32 most) {
+    s32 index;
+
+    if (key_length < 2 || key[0] != letter ||
+        !port_GetNumber(key + 1, key_length - 1, &index) || index < 1 ||
+        index > most) {
+        return -1;
+    }
+    return index - 1;
+}
+
+/* An entrant's value: who:place:losses:seed:name. */
+static s32 port_GetEntrant(
+    PortStatsTournamentEntrant *entrant, const char *value, u32 length) {
+    const char *fields[ENTRANT_FIELDS];
+    u32 lengths[ENTRANT_FIELDS];
+    s32 numbers[ENTRANT_NUMBERS];
+    s32 word;
+    s32 i;
+
+    if (port_SplitFields(value, length, fields, lengths, ENTRANT_FIELDS) !=
+        ENTRANT_FIELDS) {
+        return FALSE;
+    }
+    word = port_WordNumber(g_pad_words, PAD_WORDS, fields[0], lengths[0]);
+    if (word >= 0) {
+        entrant->cpu = PORT_STATS_PERSON;
+        entrant->pad = (u8)word;
+    } else {
+        word = port_WordNumber(g_cpu_words, CPU_WORDS, fields[0], lengths[0]);
+        if (word < 1) {
+            return FALSE;
+        }
+        entrant->cpu = (s8)(word - 1);
+        entrant->pad = 0xFF;
+    }
+    for (i = 0; i < ENTRANT_NUMBERS; i++) {
+        if (!port_GetNumber(fields[i + 1], lengths[i + 1], &numbers[i])) {
+            return FALSE;
+        }
+    }
+    entrant->place = (u8)numbers[0];
+    entrant->losses = (u8)numbers[1];
+    entrant->seed = (u8)numbers[2];
+    port_GetName(entrant->name, sizeof(entrant->name),
+                 fields[ENTRANT_FIELDS - 1], lengths[ENTRANT_FIELDS - 1]);
+    return TRUE;
+}
+
+/* A match's value: part:round:first:second:winner. */
+static s32 port_GetMatch(
+    PortStatsTournamentMatch *match, const char *value, u32 length) {
+    const char *fields[MATCH_FIELDS];
+    u32 lengths[MATCH_FIELDS];
+    s32 numbers[MATCH_NUMBERS];
+    s32 word;
+    s32 i;
+
+    if (port_SplitFields(value, length, fields, lengths, MATCH_FIELDS) !=
+        MATCH_FIELDS) {
+        return FALSE;
+    }
+    word = port_WordNumber(g_part_words, PART_WORDS, fields[0], lengths[0]);
+    if (word < 0) {
+        return FALSE;
+    }
+    for (i = 0; i < MATCH_NUMBERS; i++) {
+        if (!port_GetNumber(fields[i + 1], lengths[i + 1], &numbers[i])) {
+            return FALSE;
+        }
+    }
+    match->part = (u8)word;
+    match->round = (u8)numbers[0];
+    match->first = (u8)(numbers[1] - 1);
+    match->second = (u8)(numbers[2] - 1);
+    match->winner = (u8)(numbers[3] - 1);
+    return TRUE;
+}
+
+/* One key's value into the tournament: FALSE where it is not one. */
+static s32 port_GetTournamentValue(
+    PortStatsTournament *tournament, const char *key, u32 key_length,
+    const char *value, u32 length) {
+    s32 index;
+    s32 number;
+    s32 word;
+
+#define KEY_IS(name) port_IsWord(key, key_length, name)
+    if (KEY_IS("date")) {
+        PortStatsFight fight;
+
+        if (!port_GetValue(&fight, key, key_length, value, length)) {
+            return FALSE;
+        }
+        tournament->year = fight.year;
+        tournament->month = fight.month;
+        tournament->day = fight.day;
+        tournament->hour = fight.hour;
+        tournament->minute = fight.minute;
+        tournament->second = fight.second;
+        return TRUE;
+    }
+    if (KEY_IS("begun")) {
+        port_GetName(
+            tournament->begun, sizeof(tournament->begun), value, length);
+        return TRUE;
+    }
+    if (KEY_IS("elimination")) {
+        tournament->is_double = port_IsWord(value, length, "double");
+        return tournament->is_double || port_IsWord(value, length, "single");
+    }
+    if (KEY_IS("seeding")) {
+        word = port_WordNumber(g_seeding_words, SEEDING_WORDS, value, length);
+        tournament->seeding = (u8)word;
+        return word >= 0;
+    }
+    if (KEY_IS("rule")) {
+        word = port_WordNumber(g_rule_words, RULE_WORDS, value, length);
+        tournament->rule = (u8)word;
+        return word >= 0;
+    }
+    index = port_KeyIndex(key, key_length, 'e', PORT_STATS_TOURNAMENT_ENTRANTS);
+    if (index >= 0) {
+        return port_GetEntrant(&tournament->entrant[index], value, length);
+    }
+    index = port_KeyIndex(key, key_length, 'm', PORT_STATS_TOURNAMENT_MATCHES);
+    if (index >= 0) {
+        return port_GetMatch(&tournament->match[index], value, length);
+    }
+    if (!KEY_IS("count") && !KEY_IS("entrants") && !KEY_IS("champion") &&
+        !KEY_IS("played")) {
+        /* a later version's key, passed over */
+        return TRUE;
+    }
+    if (!port_GetNumber(value, length, &number) || number < 0) {
+        return FALSE;
+    }
+    if (KEY_IS("count")) {
+        tournament->rule_count = (u8)number;
+    } else if (KEY_IS("entrants")) {
+        tournament->count = (u8)number;
+        return number <= PORT_STATS_TOURNAMENT_ENTRANTS;
+    } else if (KEY_IS("champion")) {
+        tournament->champion = (u8)(number - 1);
+    } else {
+        tournament->played = (u8)number;
+        return number <= PORT_STATS_TOURNAMENT_MATCHES;
+    }
+    return TRUE;
+#undef KEY_IS
+}
+
+/* A line read into a tournament (port_stats.h): FALSE where it is not
+ * one. */
+s32 port_StatsParseTournament(
+    const char *line, u32 length, PortStatsTournament *out) {
+    u32 at = sizeof(TOURNAMENT_WORD) - 1;
+    u32 i;
+
+    for (i = 0; i < sizeof(*out); i++) {
+        ((u8 *)out)[i] = 0;
+    }
+    if (length < at || !port_IsWord(line, at, TOURNAMENT_WORD) ||
+        (length > at && line[at] != ' ')) {
+        return FALSE;
+    }
+    while (at < length) {
+        u32 key;
+        u32 equals;
+
+        while (at < length && line[at] == ' ') {
+            at++;
+        }
+        if (at >= length) {
+            break;
+        }
+        key = at;
+        while (at < length && line[at] != ' ' && line[at] != '=') {
+            at++;
+        }
+        if (at >= length || line[at] != '=') {
+            return FALSE;
+        }
+        equals = at;
+        while (at < length && line[at] != ' ') {
+            at++;
+        }
+        if (!port_GetTournamentValue(out, line + key, equals - key,
+                                     line + equals + 1, at - equals - 1)) {
+            return FALSE;
+        }
+    }
+    return out->count >= 2;
+}
+
 /* ---- the fights in memory ---- */
 
 static s32 port_StoreRoom(s32 count) {
@@ -538,11 +878,44 @@ u32 port_StatsGeneration(void) { return g_store.generation; }
 
 const char *port_GetStatsFile(void) { return g_store.on ? g_store.path : ""; }
 
+/* A tournament kept in memory, the last. */
+static void port_StoreKeepTournament(const PortStatsTournament *tournament) {
+    if (g_store.tournament_count >= g_store.tournament_room) {
+        s32 room = g_store.tournament_room == 0 ? TOURNAMENTS_FIRST_ROOM
+                                                : g_store.tournament_room * 2;
+        PortStatsTournament *more =
+            port_HostAllocate((u32)room * sizeof(PortStatsTournament));
+        s32 i;
+
+        if (more == NULL) {
+            return;
+        }
+        for (i = 0; i < g_store.tournament_count; i++) {
+            more[i] = g_store.tournaments[i];
+        }
+        g_store.tournaments = more;
+        g_store.tournament_room = room;
+    }
+    g_store.tournaments[g_store.tournament_count] = *tournament;
+    __asm__ volatile("" ::: "memory");
+    g_store.tournament_count++;
+    g_store.generation++;
+}
+
+s32 port_StatsTournamentCount(void) { return g_store.tournament_count; }
+
+const PortStatsTournament *port_StatsTournamentAt(s32 index) {
+    return index >= 0 && index < g_store.tournament_count
+               ? &g_store.tournaments[index]
+               : NULL;
+}
+
 /* ---- the file ---- */
 
 static s32 port_StoreWrite(void) {
     char part[PORT_STATS_PATH_BYTES + sizeof(".part")];
-    u32 need = HEAD_ROOM + (u32)g_store.count * LINE_BYTES;
+    u32 need = HEAD_ROOM + (u32)g_store.count * LINE_BYTES +
+               (u32)g_store.tournament_count * TOURNAMENT_LINE_BYTES;
     u32 at;
     s32 file;
     s32 ok;
@@ -567,6 +940,10 @@ static s32 port_StoreWrite(void) {
     for (i = 0; i < g_store.count; i++) {
         at += port_StatsFormat(
             &g_store.fights[i], g_store.text + at, g_store.text_room - at);
+    }
+    for (i = 0; i < g_store.tournament_count; i++) {
+        at += port_StatsFormatTournament(
+            &g_store.tournaments[i], g_store.text + at, g_store.text_room - at);
     }
     port_StoreText(part, sizeof(part), "%s.part", g_store.path);
     file = port_HostCreate(part);
@@ -668,8 +1045,13 @@ static void port_StoreRead(void) {
         } else if (length > 0) {
             PortStatsFight fight;
 
+            PortStatsTournament tournament;
+
             if (port_StatsParse(text + at, length, &fight)) {
                 port_StoreKeep(&fight);
+            } else if (
+                port_StatsParseTournament(text + at, length, &tournament)) {
+                port_StoreKeepTournament(&tournament);
             } else {
                 broken = TRUE;
             }
@@ -677,17 +1059,20 @@ static void port_StoreRead(void) {
         at = end + 1;
     }
     if (broken) {
-        port_StoreKeepAside("has lines that are not fights");
+        port_StoreKeepAside("has lines that are not fights nor "
+                            "tournaments");
         if (g_store.on) {
             port_StoreWrite();
         }
     }
-    port_Log("stats: %s: %d fights\n", g_store.path, g_store.count);
+    port_Log("stats: %s: %d fights, %d tournaments\n", g_store.path,
+             g_store.count, g_store.tournament_count);
 }
 
 /* The record's file (port_stats.h): read now. */
 void port_SetStatsFile(const char *path) {
     g_store.count = 0;
+    g_store.tournament_count = 0;
     g_store.last_match = 0;
     g_store.generation++;
     g_store.on = path != NULL && path[0] != 0;
@@ -712,6 +1097,12 @@ s32 port_StatsAdd(PortStatsFight *fight) {
                 : g_store.last_match + 1;
     }
     port_StoreKeep(fight);
+    return port_StoreWrite();
+}
+
+/* A tournament added and the file written (port_stats.h). */
+s32 port_StatsAddTournament(const PortStatsTournament *tournament) {
+    port_StoreKeepTournament(tournament);
     return port_StoreWrite();
 }
 
@@ -825,6 +1216,9 @@ void port_StatsTally(PortStatsTally *out) {
         port_ScoreKey(out->by_stage, fight->stage, fight->result);
         port_ScoreKey(out->by_against, fight->fighter[1], fight->result);
         port_Score(&out->by_mode[port_StatsModeOf(fight)], fight->result);
+        if (fight->tournament[0] != 0) {
+            port_Score(&out->by_mode[PORT_STATS_BY_TOURNAMENT], fight->result);
+        }
         if (fight->teams == 2) {
             port_Score(&out->by_mode[PORT_STATS_BY_TWO_ON_TWO], fight->result);
         }

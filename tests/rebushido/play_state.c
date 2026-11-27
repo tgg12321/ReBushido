@@ -92,6 +92,11 @@ void test_Main(void) {
     WHERE(PortMatch, cpu_row);
     WHERE(PortMatch, page_cpu);
     WHERE(PortMatch, cpu_taken);
+    WHERE(PortTournament, phase);
+    WHERE(PortTournament, match);
+    WHERE(PortTournament, side_entrant[0]);
+    WHERE(PortTournament, side_entrant[1]);
+    WHERE(PortTournament, decided);
     WHERE(PortTraining, is_on);
     WHERE(PortTraining, recording);
     WHERE(PortTraining, playing);

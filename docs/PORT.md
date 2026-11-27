@@ -10615,6 +10615,205 @@ recording does not outlive the program. The hit areas show the body's
 spheres and the blade's points, not the sweep between two frames that
 the hit test actually tests (`fight_TestBladesOnBodies`).
 
+## A local tournament
+
+ROADMAP 31: a bracket of up to eight players or CPUs on one PC, single
+or double elimination, each match a match of the rules (above, "Match
+rules"), the bracket shown between matches and the result kept in the
+record (below, "Stats"). How a player runs one: PLAYING.md,
+"Tournament". All of it is under `RB_PORT`: `include/port_bracket.h`,
+`include/port_tournament.h`; the PlayStation builds play as they did,
+and nothing changes where no tournament is on (every hook returns at
+once when `g_port_tournament.phase` is `PORT_TOURNAMENT_OFF`).
+
+**The bracket** (`src/port/bracket.c`) is arithmetic alone, with no
+variable of its own: a `PortBracket` of bytes that the tournament keeps
+in the game's state. Two to eight entrants in seed order, in a bracket of
+the next power of two (2, 4, 8) with the standard order of seeds (1-8,
+4-5, 2-7, 3-6), so that a place with no entrant is a bye against a top
+seed and no two byes meet; a match with a bye is not played, its entrant
+goes on (`port_BracketSettle`). Each match's two slots are fed by a seed
+or by the winner or the loser of a match before (`PORT_BRACKET_FROM_...`),
+and the matches are kept in the order they are played: the winners'
+first round, then each later winners' round followed by the two losers'
+rounds it feeds (a round of the losers' bracket's own winners, then one
+where that winners' round's losers come in, crossed over so that two who
+just met need not meet again), then the grand finals. The next match is
+the first with both slots known and no result. Double elimination's
+grand final is the winners' champion against the losers', **with a
+bracket reset** (the choice made): if the losers' champion wins, the
+winners' champion has his first loss and a second grand final decides,
+so nobody is out with one loss; where the winners' champion wins the
+reset is skipped. The places come from how far each got (the round of
+the last loss; the losers' rounds after the winners', the grand finals
+last): single elimination's first, second, third (both semifinals'
+losers), fifth; double's first, second, third, fourth, fifth (two),
+seventh (two). The seeds drawn are a Fisher-Yates of the tournament's
+own dice (`port_BracketShuffle`, xorshift32), never the game's `rand()`.
+
+**The state.** `g_port_tournament` (`src/port/tournament.c`, a state
+file) holds the setup (each entrant's name, who plays it: one of the
+PC's four pads or the CPU at a level, a CPU's fighter and weapon or
+`PORT_TOURNAMENT_RANDOM`; the elimination, the seeding, the rule and its
+number, the dice), the bracket, the phase (`BETWEEN` at the main menu,
+`STARTING` once Play is asked, `PLAYING` from the select screen or the
+fight to the match's end, `DONE`), the match in play and its sides, each
+side's fighter and weapon, and the matches judged. So a rollback, a
+frame run ahead and a fight's replay see the tournament as the fight
+did. The window's asks (Begin, Play, Leave) and `--tournament` are kept
+outside the state (`src/port/tournament_ask.c`), each a count that only
+goes forward and the number of the input it is for (`g_port_input_count`
+as it was asked), and taken in as the game takes that input
+(`port_TournamentTakeInput`, from `port_TakeInput`; `taken`, in the
+state, the counts taken), as the window's menu sounds are: a frame run
+ahead takes it and gives it back with its state, and a step the rollback
+self-test runs again takes it at the same input. (The first way, the ask
+written into the state at the host's boundary as training's moment is,
+failed the self-test: its first run took it at one boundary and its run
+again at none, the stage choice of a CPUs' fight begun there the first
+difference.) The log's lines and the record are written at the host's
+boundary between two steps (`port_TournamentBoundary` in `main.c`),
+once, for the tournament's number (`number`), so nothing a rollback runs
+again writes twice; `--tournament-auto` asks Play from there.
+
+**A match.** At the main menu's top page (`menu_Update`, before the
+top menu's own frame) `port_TournamentTopMenu` asks the window for the
+bracket where it is to be shown (`PORT_TOP_ASK_BRACKET`, the top menu's
+cursor put on Tournament), and once Play has made the phase `STARTING`
+seats the bracket's next match: its two entrants on the two sides, a
+player first where the other is the CPU; each CPU's fighter and weapon
+as set or drawn by the dice (the six fighters of an empty save, the six
+blades; never the other side's fighter); a stage drawn from the eight of
+open ground the CPU's levels were measured on. A match with a player
+goes to versus mode's select screen as if the top menu's Versus row were
+chosen (`g_game_settings.menu_mode`, `menu_GetChosenMode`: the select
+screen's mode and its second pad come from them; the first try left
+them as the last row chosen, and the screen was a one-player mode's): the pads are the
+entrants' (`port_TournamentTakeInput` in `port_TakeInput`: each side's
+pad is the pad of the entrant who plays it, the others' buttons none;
+where both are CPUs, any pad's Start on the first, to pause), no rule
+page (`port_MatchRulePageOpen`: the page's rule is the tournament's), and
+the CPU's side picked on the screen itself (`select_PortTournamentCpu`:
+its cursor put on its character's place, or the first open one no cursor
+is on, then on its weapon's place where its clan's row has it, and Cross
+pressed on its pad, after the player's weapon), so the screen's sounds,
+pictures and flags are the game's own; a player picks the stage. A match
+of two CPUs goes straight to its fight (`menu_LeaveForFight` with the
+settings' picks and stage the tournament's, the stage choice reset as a
+select screen resets it). `fight_ApplyConfig` gives each side to the CPU
+or the player (`port_TournamentApplyConfig`), `port_MatchBegin` takes the
+tournament's rule, `port_MatchCpuLevel` a CPU entrant's level (so the
+port's CPU, `src/port/cpu.c`, plays it at that level; the original's
+where it is the game's own). "One fight" is First to 1: a draw scores
+nothing and the fight is fought again, so every match has a winner.
+Where the match is decided (`port_MatchAfterFight`, its result's card
+down) `port_TournamentMatchOver` tells the bracket and goes back to the
+main menu as a Crew match's end does. Back at the main menu without a
+result (the select screen left, the pause's Return to Main Menu) the
+match is not played and the bracket is shown again. Choosing another
+mode on the main menu ends a tournament (`port_TournamentModeChosen`).
+
+**The judges.** The port's CPU can circle another for ever (CPU.md,
+"What is left"), and with two CPUs nobody is there to stop it: a window
+run of the test met a winners' semifinal still going after 60,000
+frames. So a fight of two CPUs that has gone three minutes of the
+game's time (`PORT_TOURNAMENT_JUDGE_FRAMES`, 5,400 frames, neither
+fallen) is judged (`port_TournamentJudge`, from `fight_UpdateMode`): the
+one with fewer wounds (legs, sword arm, body, the off arm lost) wins the
+match, the tournament's dice where they are alike, and the game leaves
+the fight for the main menu as the pause's Return to Main Menu does. The
+log says so; no fight a person plays is ever judged. It is common: in the
+proving runs (below) 11 of 34 matches of two CPUs went to the judges
+(the eight of `cpu8` 4 of 15, `window`'s 5 of 15, `byes` 2 of 4), which
+says more of the CPU's circling than any one fight did (CPU.md, "What is
+left").
+
+**The window** (`src/port/window/tournament_page.c`, pages of the
+settings menu, `menu.c`): the main menu's fifth row, **Tournament**
+(`PORT_TOP_TOURNAMENT`, between Online Play and Options; the top page has
+six rows now, in the places of the game's first five and its last), asks
+for the tournament's page (`PORT_TOP_ASK_TOURNAMENT`, or the bracket
+where one is on): its four settings (the settings menu's seventh group,
+*Tournament*: `tournament_entrants`, `tournament_elimination`,
+`tournament_seeding`, `tournament_match`, entries of `settings_list.h`),
+a row for each entrant (Left and Right who plays it; Cross its own page:
+its name typed, who plays it, a CPU's fighter and weapon) and Begin,
+which refuses two entrants of one pad and hands the setup to the game
+(`port_AskTournamentStart`, dice from the PC's clock). The entrants
+themselves are the page's alone and last as long as the program. The
+bracket's page draws the bracket itself (`port_TournamentDrawBracket`):
+each round a column, each match a box of its two entrants (the winner
+white, the loser dark, a bye dim, the next match lit with the cursor's
+glow), the lines from each match to where its winner goes (lit where it
+has gone), the champion's box; with double elimination the winners'
+rounds above with the grand finals and the champion beside them, the
+losers' rounds under; under it Play (with the next match's entrants) and
+Leave (twice), or, at the end, Back to the main menu, and a line of the
+next match's round and who plays it, or the places. It is opened beside
+the game over the main menu (the game draws its backdrop under it, as
+for the other pages), and closes itself when the game leaves the main
+menu. With `--menu-shots` a test's picture is taken each time it comes
+up (`bracket-NNN.png`).
+
+**The record.** A fight a person plays in a tournament is counted as any
+versus fight (the person's side; the CPU's level the entrant's), with a
+word more, `tournament=`, the tournament's date; the Stats page counts
+those fights under *Tournament* besides their mode. A fight of two CPUs
+counts nothing there, as before. When the tournament is over its own
+line goes into the record: `tournament`, the date over and begun, the
+elimination, the seeding, the rule, the entrants (`eN=who:place:losses:
+seed:name`, `who` `pad1` to `pad4` or the CPU's level) and every match
+played in order (`mN=part:round:first:second:winner`). The file's
+version is 2 (a program of version 1 keeps a file of 2 aside, as it
+keeps any later one's; this one reads both). The Stats page's last list,
+**Tournaments**, has each, newest first, its line under the rows every
+entrant's place. A tournament left is not kept, and none is resumed
+after the program closes (the choice made: a tournament is an evening's,
+and nothing of the game's state is saved beside a session).
+
+**Not in a session.** The Tournament row is dark in a session, and the
+lobby and the session protocol are as they were (protocol 21, lobby 4):
+a tournament of a room of several (ROADMAP 22) is left for later.
+
+**How it is proved.** `tests/port/bracket.c` (`python3 tests/run.py
+--rebushido port/bracket`, both sizes): every count from two to eight,
+single and double, played to the end by the top seed always winning, the
+bottom seed, each slot by turns and forty throws of dice, 73,974 checks:
+every match played between two entrants still in and never a bye, byes
+only where the field does not fill the bracket and never two met, N - 1
+matches single and 2N - 2 or 2N - 1 double, everyone out with one loss
+(two), the champion's none (or one after a reset), one first, one second
+and places that count the field; the standard seeding of eight and five
+(the top three's byes), a reset played and skipped, the round names, the
+shuffle. `tests/port/stats.c`: a tournament's line written and read back
+the same, kept after the fights and read again, a version 1 file read
+as it is, a torn tournament's line keeping the file aside.
+`tools/port_tournament.py` (WSL, the disc): `window`, the window's
+program with SDL's dummy drivers, a tournament begun as a player begins
+one (the main menu's fifth row down, the page's presses: eight entrants,
+double, the first entrant made the CPU Master with Kannuki and the
+katana, Begin, Play), eight CPUs to the champion, each later match begun
+by `--tournament-auto`; its matches held to the bracket's rules, its
+record's line to the log, no fight in the record; pictures of the pages
+and of the bracket each time it came up: `tmp/tournament/`. `cpu8`, the
+same tournament by `--tournament` on both sizes of the headless port, the
+same matches, places and record on both; `byes`, five CPUs single in
+order, the first match seeds four and five, the top three's first match a
+semifinal; `person`, Player 1 (pressing nothing in his fight) and two
+CPUs (both set to Gengoro and the yari): his bye, the CPUs' semifinal
+straight to its fight (the second side's Gengoro made another fighter),
+the final at the select screen, the CPU's side picked for it as set, the
+CPU winning; his fight in the record, lost to the CPU at the winner's
+level, with the tournament's date; `rollback`, byes' tournament under the
+rollback self-test (`--rollback-test 8 --rollback-every 24`) and
+run-ahead 2, the same matches, places and record as without.
+
+**What is left.** A tournament of a room of several (ROADMAP 22's rooms;
+the lobby would carry the bracket); a tournament resumed after the
+program closes; the owner's eye on `tmp/tournament/`; two on two and
+Crew are not offered as a tournament's rule (Crew's picks of a whole
+crew at the select screen for each match, two on two's partners).
+
 ## ReBushido's main menu
 
 The owner, 2026-11-19: drop the options page at boot, put every setting
@@ -10637,9 +10836,11 @@ sets the game's row (`TOP_ROW`) to the one the cursor's row stands for
 -- its picture, its caption, and what `menu_ChooseTopRow`, the game's
 own cross and triangle, chooses for a mode's row, the second pad's
 rules and the sounds included -- and draws the page as
-`menu_DrawTopRows` does, its five rows in the places of the game's
-first four and its last, without their names. Cross on Singleplayer,
-Back, Online Play or Options is the port's: a page, or the count and
+`menu_DrawTopRows` does, its six rows (five on the top page since the
+local tournament's, "A local tournament" above; the other pages have
+empty places) in the places of the game's first five and its last,
+without their names. Cross on Singleplayer, Back, Online Play,
+Tournament or Options is the port's: a page, or the count and
 the page asked for (`port_TopMenuAsk`). The view is the side view
 (`first_person` held at 0 there and in `fight_ApplyConfig`). The
 game's Difficulty, Music and Monitor are the window's `difficulty`,
@@ -11660,7 +11861,8 @@ boundary and end hold it, or waits for that fight to be counted.
 
 **The file**, `rebushido-stats.txt` beside the settings (as the ranked
 identity is; `--stats FILE` in any run, the window's in a player's run
-only): text, the first line `rebushido-stats 1`, then a line a fight,
+only): text, the first line `rebushido-stats 2` (1 before the local
+tournament's lines), then a line a fight,
 oldest first, of words `key=value`:
 
     fight date=2026-11-27T08:07:01 mode=vs online=local teams=1 cpu=person side=0 rule=stock count=2 match=1
@@ -11683,9 +11885,8 @@ At about 330 bytes a fight, a thousand fights are a third of a
 megabyte, written in a millisecond or two at the boundary after a fight.
 
 **The page.** The settings menu's first page has **Stats** under
-Replays (not the top menu: its five rows are the game's own page's
-places, each with the game's picture and caption, and all five are
-taken; the replays it opens are the settings menu's too). Its first view
+Replays (not the top menu: its rows are the game's own page's places,
+each with the game's picture and caption, and all are taken; the replays it opens are the settings menu's too). Its first view
 is the totals (`port_StatsTally`: fights and matches won, lost and drawn,
 the longest run of fights won and the one going, kills and wounds given
 and taken, the time fought, the ladder's rating where `port_RankedGet`
@@ -11730,8 +11931,8 @@ is a session's last fight where a player leaves before its end is
 final); a fight that ended between a guest's parting and the resync,
 in the host's game, is counted on the host and lost on that guest (the
 state put in is past its end); a CPU's level is the run's setting as the fight ends; local
-versus is the first player's record alone; a tournament's results
-(ROADMAP 31) are to be kept here.
+versus is the first player's record alone. A local tournament's result
+is kept here since version 2 of the file ("A local tournament", above).
 
 ## Rooms of several
 

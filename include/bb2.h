@@ -94,6 +94,8 @@
 #include "port_cpu.h"
 #include "port_stats.h"
 #include "port_theatre.h"
+#include "port_bracket.h"
+#include "port_tournament.h"
 #endif
 
 #endif /* BB2_H */

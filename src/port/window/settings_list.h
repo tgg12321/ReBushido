@@ -1123,6 +1123,67 @@ PORT_SETTING(training_hit_areas,
     .help = "The bodies' kill and wound zones and the blades' reach over "
             "the fighters, in the remastered picture")
 
+/* ---- a local tournament ---- */
+
+PORT_SETTINGS_HEADING(
+    "A local tournament (the main menu's Tournament; include/\n"
+    "port_tournament.h): what its page begins one with")
+
+/* How many entrants the tournament's page begins with, 2 to 8. */
+PORT_SETTING(tournament_entrants,
+    .name = "tournament_entrants", .value = "4",
+    .note = "2 to 8: the entrants of a tournament",
+    .read = PORT_READ_NUMBER, .least = 2, .most = 8,
+    .is = "a number from 2 to 8",
+    .menu = PORT_MENU_TOURNAMENT, .rank = 10, .takes = PORT_TAKES_NOW,
+    .label = "Entrants",
+    .help = "How many players and CPUs, two to eight; byes where they "
+            "do not fill the bracket",
+    .choices = {"2", "3", "4", "5", "6", "7", "8"},
+    .shown = {"2", "3", "4", "5", "6", "7", "8"})
+
+/* Single elimination (a match lost is out) or double (a second loss is
+ * out, a losers' bracket and a grand final with a reset). */
+PORT_SETTING(tournament_elimination,
+    .name = "tournament_elimination", .value = "single",
+    .note = "single or double: out at the first loss, or\n"
+            "the second (a losers' bracket, a grand final)",
+    .read = PORT_READ_WORDS, .words = {"single", "double"},
+    .is = "single or double",
+    .menu = PORT_MENU_TOURNAMENT, .rank = 20, .takes = PORT_TAKES_NOW,
+    .label = "Elimination",
+    .help = "Out at the first loss, or at the second: a losers' bracket "
+            "and a grand final",
+    .shown = {"Single", "Double"})
+
+/* The seeds drawn, or in the order the entrants are listed. */
+PORT_SETTING(tournament_seeding,
+    .name = "tournament_seeding", .value = "random",
+    .note = "random or order: the seeds drawn, or the\n"
+            "entrants' order (the first the top seed)",
+    .read = PORT_READ_WORDS, .words = {"random", "order"},
+    .is = "random or order",
+    .menu = PORT_MENU_TOURNAMENT, .rank = 30, .takes = PORT_TAKES_NOW,
+    .label = "Seeding",
+    .help = "Drawn at random, or the entrants' order, the first the top "
+            "seed (the byes go to the top seeds)",
+    .shown = {"Drawn", "In order"})
+
+/* Each match's rule (include/port_match.h): one fight (First to 1, a
+ * draw fought again), First to N or Stock N. */
+PORT_SETTING(tournament_match,
+    .name = "tournament_match", .value = "one",
+    .note = "one, first_to_2, first_to_3, stock_2 or\n"
+            "stock_3: each match's rule",
+    .read = PORT_READ_WORDS,
+    .words = {"one", "first_to_2", "first_to_3", "stock_2", "stock_3"},
+    .is = "one, first_to_2, first_to_3, stock_2 or stock_3",
+    .menu = PORT_MENU_TOURNAMENT, .rank = 40, .takes = PORT_TAKES_NOW,
+    .label = "Each match",
+    .help = "One fight (a draw is fought again), First to N or Stock N",
+    .shown = {"One fight", "First to 2", "First to 3", "Stock 2",
+              "Stock 3"})
+
 /* ---- the controls ---- */
 
 PORT_SETTINGS_HEADING(
