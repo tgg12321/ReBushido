@@ -12,8 +12,10 @@
 PortMatch g_port_match;
 
 s32 port_MatchModeHasRules(s32 mode) {
-    return mode == FIGHT_MODE_VS || mode == FIGHT_MODE_NETWORK ||
-           mode == FIGHT_MODE_VSCPU;
+    /* training's fights are single fights that never end (port_training.h) */
+    return (mode == FIGHT_MODE_VS || mode == FIGHT_MODE_NETWORK ||
+            mode == FIGHT_MODE_VSCPU) &&
+           !port_TrainingIsOn();
 }
 
 static s32 port_MatchCount(s32 count) {

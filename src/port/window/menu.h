@@ -197,6 +197,7 @@ extern void port_MenuOpen(const char *path);
 enum {
     PORT_MENU_OPEN_MAIN = 0,
     PORT_MENU_OPEN_ONLINE = 1,
+    PORT_MENU_OPEN_TRAINING = 2, /* the Training group's page */
 };
 
 extern void port_MenuOpenOn(s32 page);

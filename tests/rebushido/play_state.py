@@ -97,6 +97,21 @@ MEMBERS = {
     'port_match_to_top': 'PortMatch.to_top',
     'port_match_page_teams': 'PortMatch.page_teams',
     'port_match_teams': 'PortMatch.teams',
+    'port_training_on': 'PortTraining.is_on',
+    'port_training_recording': 'PortTraining.recording',
+    'port_training_playing': 'PortTraining.playing',
+    'port_training_frozen': 'PortTraining.frozen',
+    'port_training_slow': 'PortTraining.slow',
+    'port_training_holding': 'PortTraining.holding',
+    'port_training_dummy': 'PortTraining.dummy',
+    'port_training_record_at': 'PortTraining.record_at',
+    'port_training_play_at': 'PortTraining.play_at',
+    'port_training_played_slot': 'PortTraining.played_slot',
+    'port_training_frames': 'PortTraining.frames',
+    'port_training_restarts': 'PortTraining.restarts',
+    'port_training_holds': 'PortTraining.holds',
+    'port_training_p1_shown': 'PortTraining.shown[0][0].buttons',
+    'port_training_p2_shown': 'PortTraining.shown[1][0].buttons',
 }
 # Two on two's state is duo.c's own structure, which no header shows: its
 # offsets are those duo.c's PORT_DUO_AT holds the build to, members of

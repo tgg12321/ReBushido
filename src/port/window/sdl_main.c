@@ -1395,6 +1395,9 @@ int main(int argc, char **argv) {
         g_port_settings.match_rule, g_port_settings.match_count);
     /* two on two (port_duo.h); --teams has the last word */
     port_SetTeamsDefault(g_port_settings.teams);
+    /* training's dummy, slot and slow motion (port_training.h); the
+     * command line's --training-... have the last word */
+    port_WindowTrainingSwitches();
     /* ReBushido's top menu (port_top_menu.h), in a player's run: a test's
      * (--plan, --frames) presses through the original's menus, and has
      * them unless its --menu, which comes after, says otherwise */

@@ -692,6 +692,12 @@ static void port_MenuBack(void) {
                g_menu.page == PAGE_REPLAYS ||
                (g_menu.page == PAGE_ONLINE &&
                 g_menu.opened_on != PORT_MENU_OPEN_ONLINE)) {
+        if (g_menu.page == PAGE_GROUP &&
+            g_menu.opened_on == PORT_MENU_OPEN_TRAINING) {
+            /* opened on it (Training Options): Back out of the menu */
+            port_MenuClose();
+            return;
+        }
         port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
     } else {
         port_MenuClose();
@@ -951,6 +957,16 @@ void port_MenuOpen(const char *path) {
             }
         }
         port_MenuBuild(PAGE_ONLINE, 0);
+    } else if (g_menu.opened_on == PORT_MENU_OPEN_TRAINING) {
+        /* Training Options: the Training group's page */
+        for (i = 0; i < g_menu.row_count; i++) {
+            if (g_menu.rows[i].kind == ROW_GROUP &&
+                g_menu.rows[i].index == PORT_MENU_TRAINING - 1) {
+                g_menu.main_cursor = i;
+            }
+        }
+        g_menu.group = PORT_MENU_TRAINING - 1;
+        port_MenuBuild(PAGE_GROUP, 0);
     }
     g_menu.is_open = TRUE;
 }

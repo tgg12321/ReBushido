@@ -30,7 +30,7 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
          GAME_ROW_STORY,
          SIDE},
         {"Versus", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_VS, SIDE},
-        {"Training", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_PRACTICE, SIDE},
+        {"Training", {NULL, NULL}, PORT_TOP_TRAINING, GAME_ROW_PRACTICE, SIDE},
         {"Online Play",
          {"Online Play", "Host or join a game with another PC"},
          PORT_TOP_ONLINE,
@@ -43,6 +43,29 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
         {"Vs. CPU", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_VSCPU, SIDE},
         {"Slash", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_CHANBARA, SIDE},
         {"Group Battle", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_TEAM, SIDE},
+        {"Back",
+         {"Back", "To the main menu"},
+         PORT_TOP_BACK,
+         GAME_ROW_STORY,
+         0},
+    },
+    {
+        {"Training",
+         {"Training", "A fight against a dummy, without end"},
+         PORT_TOP_TRAIN,
+         GAME_ROW_VS,
+         SIDE},
+        {"Classic Training",
+         {NULL, NULL},
+         PORT_TOP_MODE,
+         GAME_ROW_PRACTICE,
+         SIDE},
+        {"Training Options",
+         {"Training Options", "The dummy, slow motion and what is shown"},
+         PORT_TOP_TRAINING_OPTIONS,
+         GAME_ROW_OPTIONS,
+         0},
+        {NULL, {NULL, NULL}, PORT_TOP_EMPTY, GAME_ROW_STORY, 0},
         {"Back",
          {"Back", "To the main menu"},
          PORT_TOP_BACK,
@@ -84,10 +107,21 @@ const PortTopRow *port_TopMenuRow(void) {
     return &g_port_top_rows[g_port_top_menu.page][port_TopMenuCursor()];
 }
 
-s32 port_TopMenuRowIsOn(s32 row, u32 rows_on) {
-    const PortTopRow *of = &g_port_top_rows[g_port_top_menu.page][row];
+s32 port_TopRowIsLit(const PortTopRow *of, u32 rows_on) {
+    if (of->kind == PORT_TOP_EMPTY) {
+        return FALSE;
+    }
+    if (of->kind == PORT_TOP_TRAIN && port_SessionIsOn()) {
+        /* training is never a session's */
+        return FALSE;
+    }
+    return (of->kind != PORT_TOP_MODE && of->kind != PORT_TOP_TRAIN) ||
+           ((rows_on >> of->row) & 1);
+}
 
-    return of->kind != PORT_TOP_MODE || ((rows_on >> of->row) & 1);
+s32 port_TopMenuRowIsOn(s32 row, u32 rows_on) {
+    return port_TopRowIsLit(
+        &g_port_top_rows[g_port_top_menu.page][row], rows_on);
 }
 
 /* The cursor on to the next row that can be chosen, round at the ends. */

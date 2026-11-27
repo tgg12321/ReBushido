@@ -265,8 +265,10 @@ void menu_Init(void) {
     if (!g_menu_reopen_mode) {
         link_RequestClose();
 #if RB_PORT
-        /* ReBushido's top menu comes up on its top page */
+        /* ReBushido's top menu comes up on its top page, and training
+         * is over (port_training.h) */
         port_TopMenuReset();
+        port_TrainingChoose(FALSE);
 #endif
     }
     motion_ForgetFiles();

@@ -493,6 +493,10 @@ static void fight_RunPauseMenu(GpuDb *paused_frame_db, s32 paused_db_index) {
     }
 
     g_fight_was_paused = 1;
+#if RB_PORT
+    /* the pause's presses are its own, not training's (port_training.h) */
+    port_TrainingPause(TRUE);
+#endif
     snd_Play(MENU_SOUND_PAUSE, SND_VOLUME_MAX, SND_VOLUME_MAX);
     /* the buffer the fight's last frame is not in */
     prim_buffer_addr = g_disp_prim_buffers[g_disp_frame_count & 1];
@@ -597,7 +601,66 @@ static void fight_RunPauseMenu(GpuDb *paused_frame_db, s32 paused_db_index) {
     DrawSync(0);
     ResetRCnt(RCntCNT1);
     g_fight_was_paused = 1;
+#if RB_PORT
+    port_TrainingPause(FALSE);
+#endif
 }
+
+#if RB_PORT
+/* Training's slow motion and freeze (port_training.h): the fight held
+ * between two of its frames, as the pause holds it, its last frame shown
+ * again under nothing, the input taken each frame for training's presses
+ * (which keeps what is pressed for the fight's next frame), until the
+ * frames of slow motion are over, a step or a run on is asked, or Start
+ * asks for the pause menu, which then comes up as it does for Start. */
+static void fight_RunTrainingHold(GpuDb *paused_db, s32 paused_db_index) {
+    u32 local_ot[2];
+    GpuDb *current_db;
+    u32 prim_buffer_addr;
+    s32 index;
+
+    port_TrainingHoldBegin();
+    prim_buffer_addr = g_disp_prim_buffers[g_disp_frame_count & 1];
+    do {
+        index = g_disp_frame_count & 1;
+        g_disp_prim_cursor =
+            (u32 *)ADDR(prim_buffer_addr + (index * PAUSE_PRIM_BUFFER_SIZE));
+        g_disp_ot = &local_ot[index];
+        current_db = &g_disp_db[index];
+        ClearOTagR(g_disp_ot, 1);
+        /* the frame's boundary: the input taken, but not into the game's
+         * pad state, whose presses are the fight's next frame's */
+        port_TakeInput();
+        cdrom_Update();
+        snd_FlushQueue();
+        DrawSync(0);
+        VSync(2);
+        PutDispEnv(&current_db->disp);
+        PutDrawEnv(&current_db->draw);
+#if RB_REMASTER_VIEW
+        port_RemasterPause(
+            PORT_PAUSE_FROZEN, paused_db->draw.clip.x, paused_db->draw.clip.y);
+        DrawOTag(&paused_db->ot[DISP_OT_SIZE - 1]);
+        port_RemasterPause(PORT_PAUSE_PANEL, 0, 0);
+#else
+        DrawOTag(&paused_db->ot[DISP_OT_SIZE - 1]);
+#endif
+        DrawOTag(g_disp_ot);
+        g_disp_frame_count++;
+        /* each frame held a frame begun, as the fight's are: a test's
+         * plan counts them (plan.c) */
+        ResetRCnt(RCntCNT1);
+    } while (port_TrainingHoldGoesOn());
+#if RB_REMASTER_VIEW
+    port_RemasterPause(PORT_PAUSE_OFF, 0, 0);
+#endif
+    DrawSync(0);
+    ResetRCnt(RCntCNT1);
+    if (port_TrainingHoldEnd()) {
+        fight_RunPauseMenu(paused_db, paused_db_index);
+    }
+}
+#endif
 
 void rng_SetSeed(s32 seed) { g_rng_state = seed; }
 
@@ -757,6 +820,12 @@ void main(void) {
                  --g_fight_auto_pause_countdown == 0)) {
                 fight_RunPauseMenu(frame_db, index);
             }
+#if RB_PORT
+            /* training's slow motion and freeze (port_training.h) */
+            else if (port_TrainingHolds()) {
+                fight_RunTrainingHold(frame_db, index);
+            }
+#endif
         }
     }
 }

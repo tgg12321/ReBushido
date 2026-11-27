@@ -679,6 +679,21 @@ the stage").
     save and load, `src/port/state.c`) to drill it; slow motion and a step
     of one frame. A page of its own on the top menu, every option as a
     setting of `settings_list.h`.
+    **Done** ([`PORT.md`](PORT.md), "Training"; [`PLAYING.md`](PLAYING.md),
+    "Training"): the main menu's Training is a page (Training, Classic
+    Training, Training Options, Back); a versus fight with no rule that
+    starts both fighters again two seconds after a kill, left by the
+    pause menu; the dummy stands, guards (the CPU's answer to an attack
+    about to land, pressed on its pad) or plays back one of four slots
+    (or one at random) recorded by Select and Cross with the player's
+    pad on the dummy's side; Select and L1/R1 keep and put back the
+    moment (state.c's save and load); Select and L2 slow motion,
+    Triangle the freeze, Square a step of one frame; the input display
+    and the hit areas (the body's 22 spheres and their cores, the
+    blades) over the fight, at the window's resolution; six settings of
+    the settings menu's Training page. Proved by `tools/port_training.py`
+    on both sizes. Left: a guard that weighs the distance, the blade's sweep drawn as the hit test
+    tests it, the owner's eye on `tmp/training/`.
 27. **The CPU's difficulty** (the owner, 2026-11-26): a few levels beside
     the original's CPU, which stays as it is. The owner: the CPU must not
     "cheat"; it plays as a real player would, only making better

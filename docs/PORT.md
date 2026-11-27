@@ -10392,12 +10392,165 @@ fighter left lying by his player on a roof below (the rooftop) may be
 out of his enemies' CPU partners' reach. The owner's eye on the band,
 the tags and the page.
 
+## Training
+
+ROADMAP 26 (the owner, 2026-11-26): a training mode, a fight against a
+dummy for learning the game with nothing of the fight changed. All of it
+is under `RB_PORT` (`include/port_training.h`); the PlayStation builds
+play as they did, and nothing of a fight that is not training's changes:
+every hook returns at once when `g_port_training.is_on` is clear, which
+only the Training page's row sets.
+
+**The mode.** The main menu's Training is a page of its own
+(`PORT_TOP_PAGE_TRAINING`, `src/port/top_menu.c`): Training
+(`PORT_TOP_TRAIN`: the game's Versus row chosen with
+`port_TrainingChoose(TRUE)`), Classic Training (the game's own
+practice row, as the main menu's Training was), Training Options (the
+settings menu opened on its Training group, `PORT_TOP_ASK_TRAINING`,
+`PORT_MENU_OPEN_TRAINING`; Back leaves the menu), an empty place
+(`PORT_TOP_EMPTY`, never lit, no underline) and Back. Any other mode
+chosen, and the main menu loaded afresh (`menu_Init`), turn training off.
+It is never on in a session (`port_SessionIsOn`). The select screen's
+pads are training's (`select_PortTrainingPads`): the first pad's presses
+are the second side's while the first side's fighter, and then weapon,
+is picked; Triangle with nothing of the second side's picked goes to the
+first side (its pick taken back) instead of leaving the screen.
+`port_MatchModeHasRules` is FALSE in training, so there is no rule page,
+the match is a single fight and the game's WINS counter is drawn. A kill
+(`fight_AfterDefeat`, two seconds after the first fall) and a
+surrender's cutscene (`cutscene_KaishakuUpdate`) end in
+`port_TrainingRestart`: practice's own restart (`g_fight_restart`,
+`fight_FindNearestStartPair` of the one standing, `SCREEN_FIGHT_INIT`),
+nothing loaded, no replay, no menu; the wins are counted first. No replay
+file is kept (`port_ReplayMayRecord`).
+
+**The dummy and Select's presses.** `port_TrainingTakeInput` runs in
+`port_TakeInput` after the take hook, on the input the game is about to
+take: outside a fight of training (or in the pause menu,
+`port_TrainingPause`) it only notes the first pad. In one, the first
+pad's fresh presses under Select are training's commands and the pad is
+cleared for that frame; the second pad's buttons are the dummy's:
+nothing; the guard (`port_TrainingGuard`: while the player's attack is
+armed and its first hit frame is this frame or the next, the frontal
+attack's button against an attack of the second kind, the reverse's
+against the first, as `cpu.c`'s threat answers with
+`g_cpu_script_guard_a`/`_b`; it reads the Fighter, it is no part of the
+CPU's decisions); a slot's frame; or, recording, the first pad's own
+(which its fighter does not get). Both pads' buttons as given are pushed
+onto the input display's lists (`shown`, the newest first with the
+frames it was held). The slots (four of `PORT_TRAINING_SLOT_FRAMES`, a
+minute) are kept outside the state in `src/port/training_kept.c`, with
+the run's switches (`port_SetTrainingSwitches`: the window's
+`training_dummy`, `training_slot`, `training_random`, `training_slow`,
+or `--training-dummy`, `--training-slot`, `--training-random`,
+`--training-slow`); nothing is written there by a frame run ahead or
+again. A random slot is training's own generator, never the game's rng.
+
+**The moment.** Select and L1 or R1 ask (outside the state) for the
+moment to be kept or put back; the host's loop does it between two steps
+(`port_TrainingBoundary` in `main.c`, at the boundary of the step that
+asked, first of the host's turns there: before the rollback
+self-test's save or load and `port_OnlineBoundary`):
+`port_StateSave` into a buffer of `port_StateSize()`, or `port_StateLoad`
+of it. A put back leaves the state's `run` runs as they are (a test's
+plan: the run's input goes on from where it is, as a player's hands do),
+and the pads as the PC holds them now (`port_GetPadsNow`,
+`port_SetPadsNow`, `pad.c`: what a plan holds, and the driver's last
+read of it and of the keys and controllers, `g_port_pad_read`, which is
+in the state). Put back with the moment, the driver's read was the one
+it was kept at, Select and L1 held, and the next input kept the moment
+again over the one being drilled; a plan's button let go since stayed
+held. It also sets training's `last` to the buttons held now, so that a button held
+through it is not pressed again. Everything else of the game goes back,
+the dummy's place in its slot and the console's clock with it: a plan's
+presses timed in blanks after the moment fall again, so a plan times
+what follows a put back in frames (`f`, which the plan counts itself).
+
+**Slow motion and the freeze** hold the fight between two of its frames
+as the pause holds it (`fight_RunTrainingHold`, `main.c`, beside
+`fight_RunPauseMenu`): the last frame drawn again (`port_RemasterPause`
+as the pause has it), the input taken each frame (`port_TakeInput`, not
+`pad_Update`, so that the game's pad state, and its presses, are the
+fight's next frame's), the sound and the drive served, `ResetRCnt` each
+frame so that a plan counts the held frames as frames. Frozen it holds
+until Select and Square (one frame, then frozen again) or Triangle;
+slowed it holds `training_slow - 1` frames after each of the fight's.
+What is pressed while held is OR'd into the fight's next frame
+(`latched`), and Start while held opens the pause menu. Each frame of
+the fight is the game's own: slow motion and the freeze change when the
+frames are shown, not what they compute.
+
+**The window.** `src/port/window/training_page.c` lays, through the
+overlay the match's strip uses (`port_DrawOverlay`), four canvases at
+the window's own resolution: each pad's column of presses (shown with
+`training_inputs`), the line of what training does, and the hit areas
+(with `training_hit_areas`). Those are where `fighter_PlacePoints` put
+the 22 body points and the weapon's points for the hit tests of the
+frame (`SPAD->body_points`, `SPAD->weapon_points`), noted after
+`fight_UpdateFighterPair` (`port_TrainingNoteAreas`) and projected with
+the frame's camera as two on two's tags are (`g_render_view_matrix`, the
+GTE's plane and offset), each point's sphere by its radius and its core
+(`g_fighter_body_points`, `BodyPoint.radius`, `core_radius`: the head,
+the chest and the hips have one; a blade that reaches it kills, one that
+reaches the sphere wounds, `fighter_TakeHit`), into
+`g_port_training_areas` (outside the state: the picture's). The canvas
+of the areas is as large as they are, beyond the 4:3 area where the
+picture is wider. It is drawn over either picture, the software one and
+the remastered one alike, and not over the pause menu. With run-ahead the
+areas are those of the last frame computed.
+
+**The settings.** Six entries of `settings_list.h`, the settings menu's
+sixth group, *Training* (`PORT_MENU_TRAINING`; the menu holds 80 now);
+`port_WindowApplyChoice` hands a change of any `training_` setting to
+`port_WindowTrainingSwitches`.
+
+**How it is proved.** `tools/port_training.py` (run by `make
+port-stage-select`) plays three plans on both sizes with `--menu
+rebushido`, the traces held to each other: `train` enters training
+through its page, picks both sides with the first pad (no rule page),
+records the dummy (a change of stance, a step), keeps the moment, plays
+the slot back (the dummy given Square at the slot's frame it was
+recorded at), freezes (no frame of the fight in 40 blanks while it holds
+frame after frame), steps one frame, runs on, slows (30 frames in 120
+blanks where 60 ran before), puts the moment back (the fight's count of
+frames back to where it was kept, the recording kept), strikes until the
+dummy falls (both start again: still the fight, nobody fallen, one
+restart), and leaves by the pause menu's Return to Main Menu (training
+off); `train_guard`, the dummy guarding the first fighter's strikes;
+`train_playback`, a recording of 30 frames played round and round by
+itself. The `train` plan run with `--run-ahead 2` prints the same trace
+as without, its moments kept and put back included. `--rollback` runs
+`train` through `tools/port_rollback.py`, moments and all: rolled back
+every 8 frames, run again and quietly, on both sizes, the same. It
+first failed twice, both training's own and neither a gap in
+`state.c`: the moment was kept or put back after the self-test's own
+load at the same boundary (so the first run kept the self-test's
+snapshot, not the frame's), and a frame run again quietly asked
+nothing (`g_port_rerun` was taken for a frame ahead); then the driver's
+read put back with the moment kept the moment again (above). The same
+run with every page put back (`port_StateForget` before the load)
+failed the same way, which cleared the pages' epochs. Pictures for the owner: `tmp/training/window/` (the
+window's own pixels, headless, the remastered picture on llvmpipe).
+
+**What is left.** A recording needs no mirroring when the fighters
+change sides: the game turns the second fighter's left and right by
+its place in the fight, not by where it stands on the screen
+(`fighter_ReadPad`: the second fighter's pad always has left and right
+exchanged, so that its "towards" is a fixed button), and a slot plays
+back towards and away as they were recorded. The guard does not look at the distance, so it also
+swings at a blow that would miss. No replay of a training fight; a
+recording does not outlive the program. The hit areas show the body's
+spheres and the blade's points, not the sweep between two frames that
+the hit test actually tests (`fight_TestBladesOnBodies`).
+
 ## ReBushido's main menu
 
 The owner, 2026-11-19: drop the options page at boot, put every setting
 in the menu's Options, drop the first person's view, Link Mode becomes
 Online Play, and Group Battle, Slash, Vs. CPU and Story go under one
-Singleplayer row; Training stays on the top menu. The window's setting
+Singleplayer row; Training stays on the top menu (since 2026-11-26 a
+page of its own, the game's training on it as Classic Training: above,
+"Training"). The window's setting
 `menu` (`rebushido`, as built, or `original`; `--menu` on the command
 line), `include/port_top_menu.h`; docs/PLAYING.md, "The main menu".
 

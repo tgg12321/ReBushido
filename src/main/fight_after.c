@@ -689,6 +689,11 @@ void cutscene_KaishakuUpdate(void) {
             story_PlayInterludeScene(INTERLUDE_GUEST_FELL);
         } else {
             g_sys_screen = SCREEN_AFTER_MATCH_INIT;
+#if RB_PORT
+            /* training: both start again instead, as after a kill
+             * (port_training.h) */
+            port_TrainingRestart();
+#endif
         }
     }
     g_sys_screen_frames++;

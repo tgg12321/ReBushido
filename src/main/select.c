@@ -906,10 +906,41 @@ static s32 select_RelocateFile(SelectFile *file) {
 
 /* ---- a frame of the screen ---- */
 
+#if RB_PORT
+#define SELECT_PAD_FIRST 0xFFFFU
+
+/* Training (port_training.h): the first pad picks for both sides, the
+ * dummy's fighter after its own and the dummy's weapon after its own, by
+ * the second side's own steps as versus has them: its presses are the
+ * second pad's while the first side's pick is made. Triangle with nothing
+ * of the dummy's picked takes the first side's back, as the practice
+ * round's does, instead of leaving the screen. The second pad picks
+ * nothing. */
+static void select_PortTrainingPads(s32 *held, s32 *pressed) {
+    s32 side = 0;
+    u32 own = (u32)*pressed & SELECT_PAD_FIRST;
+
+    if (!port_TrainingIsOn()) {
+        return;
+    }
+    if (g_select_step == SELECT_STEP_FIGHTER &&
+        g_select_picks.rec[0].fighter != SELECT_NONE) {
+        side =
+            !((own & PADRup) && g_select_picks.rec[1].fighter == SELECT_NONE);
+    } else if (g_select_step == SELECT_STEP_WEAPON &&
+               g_select_picks.rec[0].weapon != SELECT_NONE) {
+        side = 1;
+    }
+    *held = (s32)(((u32)*held & SELECT_PAD_FIRST) << (side * PAD_BITS));
+    *pressed = (s32)(own << (side * PAD_BITS));
+}
+#endif
+
 /* A frame of the screen: moves the doors, starts the frame's pool, draws
  * the doors (not while the weapons are up) and runs the step. Returns 1
  * when everything is picked, -1 when the screen is left, 0 otherwise. In
  * training mode only the first pad is read. */
+
 s32 select_Update(s32 held, s32 pressed) {
     MenuDrawCtx ctx;
     PrimPool *pool;
@@ -920,6 +951,7 @@ s32 select_Update(s32 held, s32 pressed) {
     /* two on two's partners picked by the third and fourth pads
      * (port_match.h) */
     port_MatchPartnerPads(&held, &pressed);
+    select_PortTrainingPads(&held, &pressed);
 #endif
     g_select_held = held;
     g_select_pressed = pressed;

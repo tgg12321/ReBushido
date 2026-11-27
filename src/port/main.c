@@ -260,6 +260,12 @@ static const char g_port_usage[] =
     "  --teams one|cpu|pads  one on one, or two on two with the CPU's\n"
     "                 partners or the third and fourth pads' (the\n"
     "                 window's teams; docs/PLAYING.md, \"Two on two\")\n"
+    "  --training-dummy stand|guard|playback  what training's dummy does\n"
+    "                 (the window's training_dummy; docs/PLAYING.md,\n"
+    "                 \"Training\")\n"
+    "  --training-slot N  the slot, 1 to 4, recorded and played back\n"
+    "  --training-random  playback plays a random slot of those recorded\n"
+    "  --training-slow N  slow motion shows each frame N times, 2 to 8\n"
     "  --match single|stock:N|first_to:N|crew:N  the match rule the stage\n"
     "                 select starts at, N 1 to 9, a crew's 2 to 8 (five\n"
     "                 if not given; the window's match_rule and\n"
@@ -662,6 +668,48 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetStageTimeDefault(time);
         } else if (port_TextsEqual(word, "--match")) {
             port_ParseMatch(i + 1 < argc ? argv[++i] : "");
+        } else if (port_TextsEqual(word, "--training-dummy") && has_value) {
+            PortTrainingSwitches switches = *port_GetTrainingSwitches();
+            const char *does = argv[++i];
+
+            if (port_TextsEqual(does, "stand")) {
+                switches.dummy = PORT_TRAINING_STAND;
+            } else if (port_TextsEqual(does, "guard")) {
+                switches.dummy = PORT_TRAINING_GUARD;
+            } else if (port_TextsEqual(does, "playback")) {
+                switches.dummy = PORT_TRAINING_PLAYBACK;
+            } else {
+                port_UsageError(
+                    "--training-dummy takes stand, guard or playback, not ",
+                    does);
+            }
+            port_SetTrainingSwitches(&switches);
+        } else if ((port_TextsEqual(word, "--training-slot") ||
+                    port_TextsEqual(word, "--training-slow")) &&
+                   has_value) {
+            PortTrainingSwitches switches = *port_GetTrainingSwitches();
+            s32 is_slot = port_TextsEqual(word, "--training-slot");
+            const char *value = argv[++i];
+            s32 number = value[0] >= '1' && value[0] <= '9' && value[1] == 0
+                             ? value[0] - '0'
+                             : 0;
+
+            if (is_slot && number >= 1 && number <= PORT_TRAINING_SLOTS) {
+                switches.slot = number - 1;
+            } else if (!is_slot && number >= PORT_TRAINING_SLOW_LEAST &&
+                       number <= PORT_TRAINING_SLOW_MOST) {
+                switches.slow = number;
+            } else {
+                port_UsageError(is_slot ? "--training-slot takes 1 to 4, not "
+                                        : "--training-slow takes 2 to 8, not ",
+                                value);
+            }
+            port_SetTrainingSwitches(&switches);
+        } else if (port_TextsEqual(word, "--training-random")) {
+            PortTrainingSwitches switches = *port_GetTrainingSwitches();
+
+            switches.random = TRUE;
+            port_SetTrainingSwitches(&switches);
         } else if (port_TextsEqual(word, "--teams") && has_value) {
             const char *teams = argv[++i];
 
@@ -1217,6 +1265,10 @@ s32 port_Main(s32 argc, char **argv) {
         port_BeforeStep();
         port_StepGame();
         port_AfterStep();
+        /* training's moment kept or put back (port_training.h): at the
+         * boundary of the step that asked, before anything else of the
+         * host's there (the rollback self-test's save or load) */
+        port_TrainingBoundary();
         port_OnRollbackFrame();
         port_OnlineBoundary();
     }

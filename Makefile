@@ -391,6 +391,7 @@ port-stage-select:
 	python3 tools/port_stage_select.py
 	python3 tools/port_match.py
 	python3 tools/port_duo.py
+	python3 tools/port_training.py
 
 # Two programs of the port playing each other over UDP on 127.0.0.1
 # (docs/NETPLAY.md, sections 11 to 13; tools/port_net.py): the game's own

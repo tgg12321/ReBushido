@@ -60,6 +60,7 @@
 #include "port_remaster.h"
 #include "port_spu.h"
 #include "port_play.h"
+#include "port_training.h"
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
 #include "port_match.h"
@@ -2309,6 +2310,8 @@ static PortOverlay g_port_duo_band;
 static PortOverlay g_port_duo_tags[PORT_DUO_FIGHTERS];
 /* the mods' weapons on the weapon select, a side each (match_page.c) */
 static PortOverlay g_port_weapon_picks[PORT_WEAPON_SIDES];
+/* training's input display and its line (training_page.c) */
+static PortOverlay g_port_training_pages[PORT_TRAINING_CANVASES];
 /* the window's own pages, the settings menu and the online pages
  * (sdl_menu.c) */
 static PortOverlay g_port_page;
@@ -2383,6 +2386,18 @@ static void port_DrawMatchPage(void) {
     for (who = 0; who < PORT_WEAPON_SIDES; who++) {
         port_WeaponPickChoose(who);
         port_DrawOverlay(&g_port_weapon_picks[who], port_WeaponPickPixels);
+    }
+    /* training's line, and its input display where it is on
+     * (port_training.h) */
+    for (who = 0; who < PORT_TRAINING_CANVASES; who++) {
+        if ((who < PORT_TRAINING_CANVAS_STATUS &&
+             !g_port_settings.training_inputs) ||
+            (who == PORT_TRAINING_CANVAS_AREAS &&
+             !g_port_settings.training_hit_areas)) {
+            continue;
+        }
+        port_TrainingCanvasChoose(who);
+        port_DrawOverlay(&g_port_training_pages[who], port_TrainingPixels);
     }
 }
 
@@ -3150,10 +3165,24 @@ void port_WindowGameSwitches(void) {
                         (g_port_settings.music == 0 ? 4U : 0U));
 }
 
+void port_WindowTrainingSwitches(void) {
+    PortTrainingSwitches switches;
+
+    switches.dummy = g_port_settings.training_dummy;
+    switches.slot = g_port_settings.training_slot - 1;
+    switches.random = g_port_settings.training_random;
+    switches.slow = g_port_settings.training_slow;
+    port_SetTrainingSwitches(&switches);
+}
+
 void port_WindowApplyChoice(s32 choice) {
     const char *name = port_FindChoice(choice)->name;
 
-    if (strcmp(name, "fullscreen") == 0) {
+    if (strncmp(name, "training_", 9) == 0) {
+        /* the dummy, the slot and slow motion from the next frame of
+         * training; what is shown is read as it is drawn */
+        port_WindowTrainingSwitches();
+    } else if (strcmp(name, "fullscreen") == 0) {
         port_SetFullscreen(g_port_settings.is_fullscreen);
     } else if (strcmp(name, "fps") == 0) {
         port_SetCounter(g_port_settings.fps);

@@ -62,6 +62,27 @@ void port_SetPadButton(s32 pad, u32 button, s32 down) {
     }
 }
 
+/* The pads as the PC holds them now (port_platform.h). */
+void port_GetPadsNow(PortPadsNow *now) {
+    s32 pad;
+
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
+        now->held[pad] = g_port_pad_held[pad];
+        now->read_held[pad] = g_port_pad_read_held[pad];
+    }
+    now->read = g_port_pad_read;
+}
+
+void port_SetPadsNow(const PortPadsNow *now) {
+    s32 pad;
+
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
+        g_port_pad_held[pad] = now->held[pad];
+        g_port_pad_read_held[pad] = now->read_held[pad];
+    }
+    g_port_pad_read = now->read;
+}
+
 /* Both pads now (port_platform.h). */
 void port_SampleInput(PortInput *input) {
     s32 pad;
@@ -158,6 +179,9 @@ void port_TakeInput(void) {
     if (g_port_take_hook != NULL) {
         g_port_take_hook(&g_port_input);
     }
+    /* in a fight of training, Select's presses are training's and the
+     * second pad is the dummy's (port_training.h) */
+    port_TrainingTakeInput(&g_port_input);
     port_TakeTopMenuCover();
     port_ReplayTook(&g_port_input, g_port_input_count);
     port_PlayAskedSound();

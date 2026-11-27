@@ -200,8 +200,7 @@ void port_ReadTopMenu(PortTopView *view) {
     view->cursor = g_port_top_menu.cursor[g_port_top_menu.page];
     for (i = 0; i < PORT_TOP_ROWS; i++) {
         view->names[i] = rows[i].name;
-        view->is_on[i] =
-            rows[i].kind != PORT_TOP_MODE || ((rows_on >> rows[i].row) & 1);
+        view->is_on[i] = port_TopRowIsLit(&rows[i], rows_on);
     }
     view->caption[0] = rows[view->cursor].caption[0];
     view->caption[1] = rows[view->cursor].caption[1];

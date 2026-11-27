@@ -1007,6 +1007,85 @@ PORT_SETTING(net_delay,
     .read = PORT_READ_NUMBER, .least = 0, .most = PORT_NET_DELAY_MAX,
     .is = "a number from 0 to 8")
 
+/* ---- training ---- */
+
+PORT_SETTINGS_HEADING(
+    "Training (the main menu's Training; include/port_training.h): the\n"
+    "dummy, its recordings, slow motion and what is shown over the fight")
+
+/* What the dummy does in a fight of training: stands; guards, pressing
+ * the attack the game's CPU answers an attack about to land with; or
+ * plays back a slot recorded for it (Select and Cross in the fight). */
+PORT_SETTING(training_dummy,
+    .name = "training_dummy", .value = "stand",
+    .note = "stand, guard or playback: what the dummy\n"
+            "does (playback plays its slot round again)",
+    .read = PORT_READ_WORDS, .words = {"stand", "guard", "playback"},
+    .is = "stand, guard or playback",
+    .menu = PORT_MENU_TRAINING, .rank = 10, .takes = PORT_TAKES_NOW,
+    .label = "Dummy",
+    .help = "Stands, guards as the game's CPU would, or plays back its "
+            "recording",
+    .shown = {"Stands", "Guards", "Plays back"})
+
+/* The slot recorded into and played back, of four, each a minute. */
+PORT_SETTING(training_slot,
+    .name = "training_slot", .value = "1",
+    .note = "1 to 4: the slot Select and Cross record\n"
+            "into, and the dummy plays back",
+    .read = PORT_READ_NUMBER, .least = 1, .most = 4,
+    .is = "a number from 1 to 4",
+    .menu = PORT_MENU_TRAINING, .rank = 20, .takes = PORT_TAKES_NOW,
+    .label = "Slot",
+    .help = "The slot recorded into and played back, each a minute long",
+    .choices = {"1", "2", "3", "4"},
+    .shown = {"1", "2", "3", "4"})
+
+/* Playback picks one of the slots recorded at random each time round. */
+PORT_SETTING(training_random,
+    .name = "training_random", .value = "off",
+    .note = "on: playback plays a random slot of those\n"
+            "recorded, a new one each time round",
+    .menu = PORT_MENU_TRAINING, .rank = 30, .takes = PORT_TAKES_NOW,
+    .label = "Random slot",
+    .help = "Playback plays one of the slots recorded, at random, each "
+            "time round")
+
+/* Slow motion (Select and L2): a frame of the fight in every 2 to 8. */
+PORT_SETTING(training_slow,
+    .name = "training_slow", .value = "2",
+    .note = "2 to 8: slow motion shows each of the\n"
+            "fight's frames so many times",
+    .read = PORT_READ_NUMBER, .least = 2, .most = 8,
+    .is = "a number from 2 to 8",
+    .menu = PORT_MENU_TRAINING, .rank = 40, .takes = PORT_TAKES_NOW,
+    .label = "Slow motion",
+    .help = "How slow Select and L2 makes the fight",
+    .choices = {"2", "3", "4", "8"},
+    .shown = {"Half speed", "A third", "A quarter", "An eighth"})
+
+/* Both players' presses, frame by frame, over a fight of training. */
+PORT_SETTING(training_inputs,
+    .name = "training_inputs", .value = "on",
+    .note = "on: both pads' presses shown over a fight\n"
+            "of training, the frames each was held",
+    .menu = PORT_MENU_TRAINING, .rank = 50, .takes = PORT_TAKES_NOW,
+    .label = "Input display",
+    .help = "Both players' presses over the fight, with the frames each "
+            "was held")
+
+/* The fighters' hit areas, their kill and wound zones and the weapons'
+ * reach, drawn over a fight of training in the remastered picture. */
+PORT_SETTING(training_hit_areas,
+    .name = "training_hit_areas", .value = "on",
+    .note = "on: the bodies' kill and wound zones and\n"
+            "the blades' reach drawn over a fight of\n"
+            "training (the remastered picture)",
+    .menu = PORT_MENU_TRAINING, .rank = 60, .takes = PORT_TAKES_NOW,
+    .label = "Hit areas",
+    .help = "The bodies' kill and wound zones and the blades' reach over "
+            "the fighters, in the remastered picture")
+
 /* ---- the controls ---- */
 
 PORT_SETTINGS_HEADING(

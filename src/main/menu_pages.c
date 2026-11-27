@@ -1580,6 +1580,10 @@ static void menu_DrawPortTopRows(MenuCtx *ctx, const PortTopRow *of) {
                                           : row * TOP_ROW_PITCH + TOP_ROWS_Y;
         draw.ot_index = row == PORT_TOP_LAST_ROW ? MENU_LAYER_TOP_LAST_ROW
                                                  : MENU_LAYER_TOP_ROWS;
+        if (g_port_top_rows[g_port_top_menu.page][row].kind == PORT_TOP_EMPTY) {
+            /* no row there (the Training page's fourth) */
+            continue;
+        }
         if (row == cursor) {
             draw.semi = 0;
             draw.col_r = ROW_GLOW_R;
@@ -1702,19 +1706,38 @@ static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed) {
     menu_DrawPortTopRows(ctx, of);
     menu_DrawSideViewChoice(ctx, of->views);
     if (!(pressed & PAD_ANY(PADRdown)) && (pressed & PAD_ANY(PADRup)) &&
-        g_port_top_menu.page == PORT_TOP_PAGE_SINGLE) {
+        g_port_top_menu.page != PORT_TOP_PAGE_TOP) {
         snd_Play(MENU_SOUND_CANCEL, SND_VOLUME_MAX, SND_VOLUME_MAX);
         port_TopMenuOpenPage(PORT_TOP_PAGE_TOP);
         g_menu_pulse = 0;
         return MENU_TOP_RUNNING;
     }
-    if (of->kind == PORT_TOP_MODE || !(pressed & PAD_ANY(PADRdown))) {
+    if (of->kind == PORT_TOP_MODE || of->kind == PORT_TOP_TRAIN ||
+        !(pressed & PAD_ANY(PADRdown))) {
+        if (pressed & PAD_ANY(PADRdown)) {
+            /* training against a dummy is versus with training on
+             * (port_training.h); any other mode has it off */
+            port_TrainingChoose(of->kind == PORT_TOP_TRAIN);
+            if (of->kind == PORT_TOP_TRAIN && !port_TrainingIsOn()) {
+                return MENU_TOP_RUNNING;
+            }
+        }
         return menu_ChooseTopRow(pressed);
     }
     switch (of->kind) {
+    case PORT_TOP_EMPTY:
+        return MENU_TOP_RUNNING;
     case PORT_TOP_SINGLE:
         snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
         port_TopMenuOpenPage(PORT_TOP_PAGE_SINGLE);
+        break;
+    case PORT_TOP_TRAINING:
+        snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuOpenPage(PORT_TOP_PAGE_TRAINING);
+        break;
+    case PORT_TOP_TRAINING_OPTIONS:
+        snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuAsk(PORT_TOP_ASK_TRAINING);
         break;
     case PORT_TOP_BACK:
         snd_Play(MENU_SOUND_CANCEL, SND_VOLUME_MAX, SND_VOLUME_MAX);

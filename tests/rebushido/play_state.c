@@ -89,6 +89,21 @@ void test_Main(void) {
     WHERE(PortMatch, to_top);
     WHERE(PortMatch, page_teams);
     WHERE(PortMatch, teams);
+    WHERE(PortTraining, is_on);
+    WHERE(PortTraining, recording);
+    WHERE(PortTraining, playing);
+    WHERE(PortTraining, frozen);
+    WHERE(PortTraining, slow);
+    WHERE(PortTraining, holding);
+    WHERE(PortTraining, dummy);
+    WHERE(PortTraining, record_at);
+    WHERE(PortTraining, play_at);
+    WHERE(PortTraining, played_slot);
+    WHERE(PortTraining, frames);
+    WHERE(PortTraining, restarts);
+    WHERE(PortTraining, holds);
+    WHERE(PortTraining, shown[0][0].buttons);
+    WHERE(PortTraining, shown[1][0].buttons);
     /* the hit tests' scratch, which first_frame_sweep.toml reads by
      * address: a sweep's far end as it is and as it was */
     CHECK_EQ(SCRATCHPAD, 0x1F800000);
