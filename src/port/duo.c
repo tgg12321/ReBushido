@@ -680,7 +680,8 @@ static void port_DuoStand(
 static s32 port_DuoPartnerIsCpu(s32 slot) {
     return g_port_duo.teams != PORT_TEAMS_TWO_PADS ||
            g_fight_config.is_cpu[slot] ||
-           (port_IsNetplayOn() && port_NetplayPads() < PORT_DUO_FIGHTERS);
+           (port_SessionGamePads() != 0 &&
+            port_SessionGamePads() < PORT_DUO_FIGHTERS);
 }
 
 /* ---- teams of characters of their own ---- */

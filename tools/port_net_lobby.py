@@ -62,8 +62,9 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
              the second match in the card between its fights, the CPU
              plays his fighter from the next fight's first step to the
              match's end; every fight of both matches kept as a replay
-             on the three who stayed, the same on all and played back
-             (alone, after those; -win in the Windows half)
+             on the three who stayed, the same on all, played back, and
+             played from its session's power on by both sizes (alone,
+             after those; -win in the Windows half)
 
 `windows` (Windows' own Python) adds the window's programs: a session
 headless and with a window (tools/port_net.py's, with a window: in real
@@ -1260,6 +1261,9 @@ def same_replays(case, folders):
             code, said = port_replay.check_replay(HEADLESS, paths[n], [])
             if code != 0:
                 case.fail('%s: %s' % (paths[n], said))
+        # ... and across builds, from its session's power on
+        for problem in port_replay.check_online_lead(HEADLESS, files[0][n]):
+            case.fail(problem)
     return counts[0]
 
 
@@ -1418,8 +1422,8 @@ def case_rooms_four_stock(case):
     fighter is the CPU's from the second fight's first step to the match's
     end, which those who stayed tell the room. Every hash of a match the
     same on its four players and its spectator, and every fight's replay
-    the same on the three who played both matches to their ends and
-    played back."""
+    the same on the three who played both matches to their ends, played
+    back, and played from its session's power on (the lead-in)."""
     rooms_four(case, True)
 
 

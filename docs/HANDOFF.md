@@ -92,14 +92,18 @@ lessons still holds unless this section says otherwise.
 
 ## Next, what needs no owner
 
-- ROADMAP 24's leftovers: a thrown object's sounds still the slot's; a
-  leave in a room of several whose match has several fights (no case);
-  four real PCs. (Partners' own voices, mods' pages on the second bank,
-  the silent guest and a leave between fights are done, 2026-11-25:
-  NETPLAY.md, section 19; MODS.md, "A fighter's pages"; the owner's ear
-  on `tmp/2v2-voices/` and eye on `tmp/2v2-mods/`.)
+- ROADMAP 24's leftovers: four real PCs. (Partners' own voices, mods'
+  pages on the second bank, the silent guest and a leave between fights
+  are done, 2026-11-25: NETPLAY.md, section 19; MODS.md, "A fighter's
+  pages"; the owner's ear on `tmp/2v2-voices/` and eye on
+  `tmp/2v2-mods/`. A thrown thing's sounds its thrower's and a room's
+  match of several fights left between them, `rooms-four-stock`, done
+  2026-11-26: PORT.md, "A thrown thing's sounds"; NETPLAY.md, section
+  19.)
 - Replays across builds: done (a replay's lead-in from power on;
-  PORT.md, "Across builds: the lead-in"); online fights carry no lead-in yet.
+  PORT.md, "Across builds: the lead-in"), online fights' too since
+  2026-11-26 (from the session's power on, *An online fight's*). Left: a
+  run begun with a fight chosen.
 - 17's leftovers done (2026-11-26, PORT.md, "The dressing", "The fourth
   pass": foliage in the lights' cubes, a mist the fight camera sees, the
   bamboo's culms as meshes); the owner's eye on `tmp/stages17d/`.

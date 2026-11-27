@@ -359,6 +359,21 @@ extern void port_SessionInput(u32 frame, struct PortInput *input, u16 *used);
 /* The agreed random seed, into the game, at the session's first frame. */
 extern void port_SessionSeed(void);
 
+/* What the game reads of the session it is played in, and a replay's
+ * playback from power on of a fight played online holds as it was
+ * (docs/PORT.md, "Across builds: the lead-in"): the pads of the session's
+ * input (2 or 4; 0 outside a session), with port_match.h's
+ * port_SessionIsOn and port_SessionIsRoomMatch. port_SessionGameNow: the
+ * rules, pads and seed of the session being played (a player's, not a
+ * spectator's), FALSE if none; port_HoldSessionGame holds them for the
+ * playback, port_SessionGameSeed puts the held seed into the game as the
+ * session's first frame does, port_ReleaseSessionGame lets go. */
+extern s32 port_SessionGamePads(void);
+extern s32 port_SessionGameNow(u32 *rules, u32 *pads, u32 *seed);
+extern void port_HoldSessionGame(u32 rules, u32 pads, u32 seed);
+extern void port_SessionGameSeed(void);
+extern void port_ReleaseSessionGame(void);
+
 /* What two players compare to know they can meet (--check-online, the
  * Play online page): the protocol, and short forms of the build's, the
  * disc's and the gameplay mods' sums, `P7-BBBB-DDDD-MMMM`, into `out`

@@ -352,13 +352,61 @@ s32 port_SessionPcs(void) { return g_session.pcs; }
 
 s32 port_SessionPads(void) { return g_session.pads; }
 
+/* A session's game as a replay's playback from power on has it
+ * (port_HoldSessionGame): what the game reads of the session it was
+ * played in, held while the playback runs. */
+static struct {
+    s32 on;
+    u32 rules;
+    u32 pads;
+    u32 seed;
+} g_session_game;
+
 /* (port_match.h) */
 s32 port_SessionIsRoomMatch(void) {
-    return g_session.role != PORT_SESSION_NONE &&
-           (g_session.rules & PORT_SESSION_RULE_ONE_MATCH) != 0;
+    u32 rules = g_session_game.on ? g_session_game.rules : g_session.rules;
+
+    return (g_session.role != PORT_SESSION_NONE || g_session_game.on) &&
+           (rules & PORT_SESSION_RULE_ONE_MATCH) != 0;
 }
 
-s32 port_SessionIsOn(void) { return g_session.role != PORT_SESSION_NONE; }
+s32 port_SessionIsOn(void) {
+    return g_session.role != PORT_SESSION_NONE || g_session_game.on;
+}
+
+/* (port_net.h) */
+s32 port_SessionGamePads(void) {
+    return port_IsNetplayOn()  ? port_NetplayPads()
+           : g_session_game.on ? (s32)g_session_game.pads
+                               : 0;
+}
+
+s32 port_SessionGameNow(u32 *rules, u32 *pads, u32 *seed) {
+    if (g_session.role != PORT_SESSION_HOST &&
+        g_session.role != PORT_SESSION_JOIN) {
+        return FALSE;
+    }
+    *rules = g_session.rules;
+    *pads = (u32)g_session.pads;
+    *seed = g_session.seed;
+    return TRUE;
+}
+
+void port_HoldSessionGame(u32 rules, u32 pads, u32 seed) {
+    g_session_game.on = TRUE;
+    g_session_game.rules = rules;
+    g_session_game.pads = pads == 4 ? 4 : 2;
+    g_session_game.seed = seed;
+}
+
+void port_ReleaseSessionGame(void) { g_session_game.on = FALSE; }
+
+void port_SessionGameSeed(void) {
+    if (g_session_game.on) {
+        rng_SetSeed((s32)g_session_game.seed);
+        srand(g_session_game.seed);
+    }
+}
 
 void port_CancelSession(void) { g_session.canceled = 1; }
 

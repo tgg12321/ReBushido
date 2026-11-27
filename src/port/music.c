@@ -992,7 +992,8 @@ static void port_MusicFindExtras(void) {
 }
 
 s32 port_MusicExtraCount(void) {
-    if (port_GetSessionRole() != PORT_SESSION_NONE) {
+    /* (a replay of a fight played online, from power on, too) */
+    if (port_SessionIsOn()) {
         return 0;
     }
     if (!g_port_music.extras_found) {
