@@ -168,9 +168,13 @@ lessons still holds unless this section says otherwise.
   the first session land on the lobby's Leave; the host now waits for
   the session's end (`until:message`).
 - **Open, no cause yet**: some Windows online window cases (`win-pages`
-  three times, `rooms-four-win` and `room` once each) fail only inside a
+  three times, `rooms-four-win`, `room` and `win-pages-four` once each;
+  the last, 2026-11-27, a guest whose first word to the lobby server on
+  127.0.0.1 went unanswered and gave up) fail only inside a
   full gate on a loaded machine and pass alone every time (`win-pages`
-  6 of 6, five of them under load); the provers' stage counts are 66
+  6 of 6, five of them under load; `win-pages-four` 3 of 3); a gate's
+  `port_net four` once found a port of 127.0.0.1 taken by another run
+  ("no socket at"), passing again alone; the provers' stage counts are 66
   primitives a stage fewer than stored baselines even on the baseline's
   own code, in agents' worktrees only (the baselines of `e7da37638` and
   `cf2896ad5` have the same counts on every stage; likely the version's
