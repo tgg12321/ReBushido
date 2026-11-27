@@ -180,6 +180,17 @@ extern void port_DuoForget(void);
 struct SoundDef;
 struct SoundVab;
 extern struct SoundDef *port_DuoSound(s32 sound, struct SoundDef *def);
+/* A thrown thing's sounds are its thrower's, not the slot's (object.c):
+ * an object of g_object_pool (`index`) was launched by the one in `slot`
+ * (object_Launch, in his step); and an event of one is being raised,
+ * whose sounds are then its thrower's own (port_DuoSound), or for a sound
+ * of its `kind` (OBJECT_NONE for one of the thrower's, the game's
+ * `obj->owner`) where it is not the kind he starts with, the one's of the
+ * four who does, as the game gives such a sound to that fighter's slot;
+ * until port_DuoObjectSoundsDone. */
+extern void port_DuoObjectLaunched(s32 index, s32 slot);
+extern void port_DuoObjectSounds(s32 index, s32 kind);
+extern void port_DuoObjectSoundsDone(void);
 /* A partner's bank of sounds, open (PORT_DUO_VAB): its head; NULL if not. */
 extern struct SoundVab *port_DuoVab(s32 id);
 /* The stage's banks of sounds are to be loaded again (fight.c,
