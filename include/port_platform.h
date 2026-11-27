@@ -224,10 +224,20 @@ typedef struct PortInput {
  * game sees it from the next vertical blank. `button` is one of Sony's
  * PAD... masks (libetc.h). */
 extern void port_SetPadButton(s32 pad, u32 button, s32 down);
-/* All that the script holds on the pads, read and set (a moment of
- * training's put back keeps it: port_training.h). */
-extern void port_GetScriptPads(u32 held[PORT_INPUT_PADS]);
-extern void port_SetScriptPads(const u32 held[PORT_INPUT_PADS]);
+
+/* The pads as the PC holds them now, outside the game: what a run's
+ * script holds and the driver's last read of it and of the keys and
+ * controllers. A moment of training's put back keeps them as they are
+ * (port_training.h): put back with the state, the read would be the
+ * moment's, its buttons pressed again. */
+typedef struct {
+    u32 held[PORT_INPUT_PADS];
+    u32 read_held[PORT_INPUT_PADS];
+    PortInput read;
+} PortPadsNow;
+
+extern void port_GetPadsNow(PortPadsNow *now);
+extern void port_SetPadsNow(const PortPadsNow *now);
 /* The window's keys and controllers (src/port/window/): the buttons
  * they hold on a pad now. NULL in the build without a window. */
 extern u32 (*g_port_device_hook)(s32 pad);

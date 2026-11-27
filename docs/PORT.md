@@ -10448,13 +10448,19 @@ again. A random slot is training's own generator, never the game's rng.
 
 **The moment.** Select and L1 or R1 ask (outside the state) for the
 moment to be kept or put back; the host's loop does it between two steps
-(`port_TrainingBoundary`, after `port_OnlineBoundary` in `main.c`):
+(`port_TrainingBoundary` in `main.c`, at the boundary of the step that
+asked, first of the host's turns there: before the rollback
+self-test's save or load and `port_OnlineBoundary`):
 `port_StateSave` into a buffer of `port_StateSize()`, or `port_StateLoad`
 of it. A put back leaves the state's `run` runs as they are (a test's
 plan: the run's input goes on from where it is, as a player's hands do),
-and the buttons the plan holds on the pads (`port_GetScriptPads`,
-`port_SetScriptPads`, `pad.c`: put back with the moment, a button the
-plan had let go since stayed held for ever), and sets training's `last` to the buttons held now, so that a button held
+and the pads as the PC holds them now (`port_GetPadsNow`,
+`port_SetPadsNow`, `pad.c`: what a plan holds, and the driver's last
+read of it and of the keys and controllers, `g_port_pad_read`, which is
+in the state). Put back with the moment, the driver's read was the one
+it was kept at, Select and L1 held, and the next input kept the moment
+again over the one being drilled; a plan's button let go since stayed
+held. It also sets training's `last` to the buttons held now, so that a button held
 through it is not pressed again. Everything else of the game goes back,
 the dummy's place in its slot and the console's clock with it: a plan's
 presses timed in blanks after the moment fall again, so a plan times
@@ -10514,17 +10520,24 @@ off); `train_guard`, the dummy guarding the first fighter's strikes;
 `train_playback`, a recording of 30 frames played round and round by
 itself. The `train` plan run with `--run-ahead 2` prints the same trace
 as without, its moments kept and put back included. `--rollback` runs
-`train` through `tools/port_rollback.py` without the moment: the
-self-test's rounds and a save and load of training's own between two
-steps in the middle of them do not agree (the self-test fails at the
-first moment kept), so the self-test proves the rest of training and
-not the moment. Pictures for the owner: `tmp/training/window/` (the
+`train` through `tools/port_rollback.py`, moments and all: rolled back
+every 8 frames, run again and quietly, on both sizes, the same. It
+first failed twice, both training's own and neither a gap in
+`state.c`: the moment was kept or put back after the self-test's own
+load at the same boundary (so the first run kept the self-test's
+snapshot, not the frame's), and a frame run again quietly asked
+nothing (`g_port_rerun` was taken for a frame ahead); then the driver's
+read put back with the moment kept the moment again (above). The same
+run with every page put back (`port_StateForget` before the load)
+failed the same way, which cleared the pages' epochs. Pictures for the owner: `tmp/training/window/` (the
 window's own pixels, headless, the remastered picture on llvmpipe).
 
-**What is left.** The dummy's recording is the pad as pressed: played
-back with the fighters' sides swapped, its left and right are the
-screen's, not towards and away (the game turns them by where the
-opponent stands). The guard does not look at the distance, so it also
+**What is left.** A recording needs no mirroring when the fighters
+change sides: the game turns the second fighter's left and right by
+its place in the fight, not by where it stands on the screen
+(`fighter_ReadPad`: the second fighter's pad always has left and right
+exchanged, so that its "towards" is a fixed button), and a slot plays
+back towards and away as they were recorded. The guard does not look at the distance, so it also
 swings at a blow that would miss. No replay of a training fight; a
 recording does not outlive the program. The hit areas show the body's
 spheres and the blade's points, not the sweep between two frames that

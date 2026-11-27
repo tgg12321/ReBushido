@@ -1265,9 +1265,11 @@ s32 port_Main(s32 argc, char **argv) {
         port_BeforeStep();
         port_StepGame();
         port_AfterStep();
+        /* training's moment kept or put back (port_training.h): at the
+         * boundary of the step that asked, before anything else of the
+         * host's there (the rollback self-test's save or load) */
+        port_TrainingBoundary();
         port_OnRollbackFrame();
         port_OnlineBoundary();
-        /* training's moment kept or put back (port_training.h) */
-        port_TrainingBoundary();
     }
 }

@@ -692,8 +692,7 @@ the stage").
     and the hit areas (the body's 22 spheres and their cores, the
     blades) over the fight, at the window's resolution; six settings of
     the settings menu's Training page. Proved by `tools/port_training.py`
-    on both sizes. Left: recordings mirrored when the sides swap, a guard
-    that weighs the distance, the blade's sweep drawn as the hit test
+    on both sizes. Left: a guard that weighs the distance, the blade's sweep drawn as the hit test
     tests it, the owner's eye on `tmp/training/`.
 27. **The CPU's difficulty** (the owner, 2026-11-26): a few levels beside
     the original's CPU, which stays as it is. The owner: the CPU must not

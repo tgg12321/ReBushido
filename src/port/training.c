@@ -140,7 +140,7 @@ static u16 port_TrainingDummy(u16 *own) {
     if (training->recording) {
         buttons = *own;
         *own = 0;
-        if (!g_port_ahead && !g_port_rerun) {
+        if (!g_port_ahead) {
             port_TrainingKeep(
                 training->recording - 1, training->record_at, buttons);
         }
@@ -176,9 +176,10 @@ static u16 port_TrainingDummy(u16 *own) {
 
 static void port_TrainingCommand(u16 fresh) {
     PortTraining *training = &g_port_training;
-    /* asked of what is outside the state once: not by a frame run ahead
-     * or run again, which put the state back after */
-    s32 is_heard = !g_port_ahead && !g_port_rerun;
+    /* asked of what is outside the state: not by a frame run ahead, which
+     * is put back after; a frame run again is the frame's own, and asks
+     * again what it asked the first time */
+    s32 is_heard = !g_port_ahead;
 
     if (fresh & PADRdown) {
         if (training->recording) {

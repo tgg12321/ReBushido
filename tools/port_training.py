@@ -31,9 +31,8 @@ and whose checkpoints must hold what training did.
 
 With --rollback, `train` is run by tools/port_rollback.py instead: the
 state saved, put back and run again every 24 frames across the whole of
-it, on both sizes, but for training's own moment (Select and L1, R1),
-which the self-test does not run again: a save and a load of training's
-between two steps inside the self-test's frames make it fail.
+it, on both sizes, the moments training keeps and puts back among them
+(run again, and quietly, as the self-test runs its frames).
 
 In WSL, with the programs `make port` builds and the player's disc (as
 tools/port_stage_select.py finds them). Exit 0 if every check passes."""
@@ -376,11 +375,6 @@ def main(argv):
             toml = os.path.join(out, '%s-rollback.toml' % name)
             with open(toml, 'w', encoding='utf-8', newline='\n') as f:
                 text = re.sub(r'^shot = .*\n', '', text % vals, flags=re.M)
-                # no moment kept or put back: training's own save and load
-                # between two steps are not the self-test's to run again
-                # (docs/PORT.md, "Training")
-                text = '\n'.join(line for line in text.split('\n') if ' L1"' not in line and ' R1"' not in line)
-                text = text.replace('when = "port_training_frames < 200"\nat_frame = true', 'frames = 20')
                 f.write(re.sub(r'^(name = .*)$', r'\1\nshot = false', text, flags=re.M))
             code |= subprocess.run([sys.executable, os.path.join(REPO, 'tools', 'port_rollback.py'), '--test', toml,
                                     '--out', os.path.join(out, 'rollback-' + name)]

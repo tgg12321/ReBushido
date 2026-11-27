@@ -117,15 +117,18 @@ static u16 g_port_training_held;
 
 void port_TrainingNoteHeld(u16 buttons) { g_port_training_held = buttons; }
 
+/* The moment put back: the game's state, but for the run's input. */
 static void port_TrainingPutBack(void) {
-    u32 held[PORT_INPUT_PADS];
+    PortPadsNow pads;
 
-    /* the plan's runs, and the buttons it holds on the pads (pad.c) */
-    port_GetScriptPads(held);
+    /* the plan's runs, and the pads as the PC holds them now (pad.c):
+     * the driver's read put back with the moment would be the one it was
+     * kept at, Select and L1 held, and keep the moment again */
+    port_GetPadsNow(&pads);
     port_TrainingRunCopy(TRUE);
     port_StateLoad(g_port_training_moment);
     port_TrainingRunCopy(FALSE);
-    port_SetScriptPads(held);
+    port_SetPadsNow(&pads);
     g_port_training.last = g_port_training_held;
 }
 

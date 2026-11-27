@@ -62,22 +62,25 @@ void port_SetPadButton(s32 pad, u32 button, s32 down) {
     }
 }
 
-/* The buttons a run's script holds (port_platform.h): a moment of
- * training's put back keeps them, as the plan that holds them goes on. */
-void port_GetScriptPads(u32 held[PORT_INPUT_PADS]) {
+/* The pads as the PC holds them now (port_platform.h). */
+void port_GetPadsNow(PortPadsNow *now) {
     s32 pad;
 
     for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
-        held[pad] = g_port_pad_held[pad];
+        now->held[pad] = g_port_pad_held[pad];
+        now->read_held[pad] = g_port_pad_read_held[pad];
     }
+    now->read = g_port_pad_read;
 }
 
-void port_SetScriptPads(const u32 held[PORT_INPUT_PADS]) {
+void port_SetPadsNow(const PortPadsNow *now) {
     s32 pad;
 
     for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
-        g_port_pad_held[pad] = held[pad];
+        g_port_pad_held[pad] = now->held[pad];
+        g_port_pad_read_held[pad] = now->read_held[pad];
     }
+    g_port_pad_read = now->read;
 }
 
 /* Both pads now (port_platform.h). */
