@@ -718,9 +718,10 @@ the stage").
     what it saw of the opponent 6 to 9 frames back (never under 5), by a
     pad's buttons, its memory and dice in the game's state (the level in
     the gameplay switches: replays and sessions keep it). Measured CPU
-    against CPU, 96 fights a pair (`tools/port_cpu_bench.py`): against the
-    original 34%, 46%, 61%, 67%; each level beats the one below (CPU.md,
-    "Measuring the levels"); a fight is the same bytes on both sizes and
+    against CPU, 288 fights a pair (`tools/port_cpu_bench.py`, 2026-11-27,
+    the novice's reaction made a beginner's): against the original 39%,
+    47%, 61%, 65%; each level beats the one below outside the noise (67%,
+    59%, 62%; CPU.md, "Measuring the levels"); a fight is the same bytes on both sizes and
     passes the rollback self-test. The choice on the select screens
     (2026-11-27): a CPU row on Vs. CPU's rule page, a page of it alone
     before the story's and Slash's grid, in the game's state. Left: the port's CPU in fights of four and for a takeover; walking round

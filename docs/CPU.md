@@ -268,24 +268,42 @@ its number. `--log` keeps each fight's `--cpu-log`; `--tune` tries numbers
 of a level (`--cpu-tune`). `--check` holds determinism: one fight twice on
 each size of the port, the trace and the log the same byte for byte.
 
-96 fights a pair, 2026-11-26 (a draw is a fight that reached the limit,
-24,000 blanks, with both standing; the rate is of the fights decided):
+288 fights a pair, 2026-11-27 (`--fights 288`; a draw is a fight that
+reached the limit, 24,000 blanks, with both standing; the rate is of the
+fights decided):
 
 | A against B | A won | B won | draws | A's rate |
 |---|---|---|---|---|
-| Novice against the original | 33 | 63 | 0 | 34% |
-| Adept against the original | 43 | 51 | 2 | 46% |
-| Veteran against the original | 58 | 37 | 1 | 61% |
-| Master against the original | 64 | 31 | 1 | 67% |
-| Adept against Novice | 51 | 45 | 0 | 53% |
-| Veteran against Adept | 56 | 37 | 3 | 60% |
-| Master against Veteran | 53 | 33 | 10 | 62% |
-| Master against Novice | 65 | 24 | 7 | 73% |
+| Novice against the original | 111 | 175 | 2 | 39% |
+| Adept against the original | 133 | 150 | 5 | 47% |
+| Veteran against the original | 174 | 112 | 2 | 61% |
+| Master against the original | 184 | 101 | 3 | 65% |
+| Adept against Novice | 190 | 94 | 4 | 67% |
+| Veteran against Adept | 164 | 116 | 8 | 59% |
+| Master against Veteran | 160 | 99 | 29 | 62% |
+| Veteran against Novice | 203 | 84 | 1 | 71% |
+| Master against Adept | 160 | 83 | 45 | 66% |
+| Master against Novice | 209 | 59 | 20 | 78% |
 
-Each level beats the one below it, and the veteran and the master beat
-the game's own CPU (at its versus level, 0x800) while seeing it a
-reaction time late. With 96 fights a rate is good to about five points
-either way: the adept's edge over the novice is the thinnest.
+With some 280 fights decided a rate is good to about six points either
+way (two standard errors): each level beats the one below it by more than
+that (the thinnest, the veteran over the adept, 59%: 53% to 65%), each
+beats every level below it by more the further down it is, and the
+veteran and the master beat the game's own CPU (at its versus level,
+0x800) while seeing it a reaction time late; the original stands between
+the adept and the veteran.
+
+The first measure (96 fights a pair, 2026-11-26) had the adept over the
+novice at 53%, within the noise. What separated them (`--tune`, 192
+fights each, the adept against the novice): the novice's reaction from 9
+to 11 frames (11 to 14 with its jitter, 0.37 to 0.47 s, a beginner's
+time to make out an attack and answer it), 67%; the adept not learning
+which of its attacks land, 55%; the adept keeping inside its attacks'
+reach (`slack` 0), 54%; stepping back from more attacks (`evade` 190),
+55%: none of the adept's choices alone moved it outside the noise, the
+novice's slower eye did. Before, at 96 fights: novice against the
+original 34%, adept 46%, veteran 61%, master 67%; the veteran over the
+adept 60%, the master over the veteran 62%, over the novice 73%.
 
 How quickly the port's answers, by the same tool (32 fights of the
 master against the original): it begins its guards and steps at quartiles
