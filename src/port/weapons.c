@@ -221,7 +221,9 @@ enum {
     SAID_CPU_REACH = 1 << 10,
     SAID_CPU_RANGE = 1 << 11,
     SAID_MODEL = 1 << 12,
-    SAID_MOTIONS = 1 << 13
+    SAID_MOTIONS = 1 << 13,
+    SAID_SOUNDS = 1 << 14,
+    SAID_DROPPED = 1 << 15
 };
 
 /* Whether `model` is one a weapon in a hand can be: one of the models the
@@ -308,6 +310,10 @@ static const char *port_WeaponTakeLine(
         bit = SAID_MODEL;
     } else if (port_WeaponWordIs(name, name_length, "motions")) {
         bit = SAID_MOTIONS;
+    } else if (port_WeaponWordIs(name, name_length, "sounds")) {
+        bit = SAID_SOUNDS;
+    } else if (port_WeaponWordIs(name, name_length, "dropped")) {
+        bit = SAID_DROPPED;
     } else if (port_WeaponWordIs(name, name_length, "author") ||
                port_WeaponWordIs(name, name_length, "about")) {
         return NULL;
@@ -326,7 +332,7 @@ static const char *port_WeaponTakeLine(
             return "format takes the format's number, 1";
         }
         if (numbers[0] > PORT_WEAPON_FORMAT) {
-            return "a later format than this program reads (2): a later "
+            return "a later format than this program reads (3): a later "
                    "ReBushido is needed";
         }
         weapon->format = numbers[0];
@@ -412,6 +418,24 @@ static const char *port_WeaponTakeLine(
                        : "motions takes the name of a mod's motions/NAME.bbm";
         }
         break;
+    case SAID_SOUNDS:
+    case SAID_DROPPED:
+        i = port_WeaponIdOf(value, value_length);
+        if (i < 0) {
+            return bit == SAID_SOUNDS
+                       ? "sounds is the weapon whose sounds it makes: katana, "
+                         "long_sword, nodachi, broadsword, naginata, yari, "
+                         "long_gun, short_gun"
+                       : "dropped is the weapon whose dropped weapon it "
+                         "becomes: katana, long_sword, nodachi, broadsword, "
+                         "naginata, yari, long_gun, short_gun";
+        }
+        if (bit == SAID_SOUNDS) {
+            weapon->sounds = i;
+        } else {
+            weapon->dropped = i;
+        }
+        break;
     case SAID_CPU_REACH:
         if (count != 1 || numbers[0] < 0 || numbers[0] > CPU_REACH_MAX ||
             numbers[0] % CPU_REACH_UNIT != 0) {
@@ -442,6 +466,20 @@ static const char *port_WeaponCheck(const PortWeapon *weapon, u32 said) {
     if ((said & (SAID_MODEL | SAID_MOTIONS)) &&
         weapon->format < PORT_WEAPON_FORMAT_OWN_FILES) {
         return "model and motions are format 2's: say `format = 2`";
+    }
+    if ((said & (SAID_SOUNDS | SAID_DROPPED)) &&
+        weapon->format < PORT_WEAPON_FORMAT_SOUNDS) {
+        return "sounds and dropped are format 3's: say `format = 3`";
+    }
+    /* a blade's sounds are a blade's, a gun's a gun's: the team battles'
+     * table has the blades' alone */
+    if (weapon->sounds != PORT_WEAPON_UNSET && weapon->base >= 0 &&
+        WEAPON_IS_GUN(weapon->sounds) != WEAPON_IS_GUN(weapon->base)) {
+        return WEAPON_IS_GUN(weapon->base)
+                   ? "sounds: a gun's sounds are a gun's, long_gun or "
+                     "short_gun"
+                   : "sounds: a blade's sounds are a blade's, katana to "
+                     "yari";
     }
     if (weapon->point_count != 0 &&
         weapon->point_count != g_fighter_weapon_point_counts[weapon->base]) {
@@ -493,6 +531,8 @@ s32 port_WeaponParse(
     weapon->model_key[0] = TEXT_END;
     weapon->motions_key[0] = TEXT_END;
     weapon->motion_number = PORT_WEAPON_UNSET;
+    weapon->sounds = PORT_WEAPON_UNSET;
+    weapon->dropped = PORT_WEAPON_UNSET;
     while (at < length) {
         u32 start = at;
         u32 end;
@@ -724,6 +764,17 @@ void port_WeaponsStart(void) {
                      ? weapon->point_count
                      : g_fighter_weapon_point_counts[weapon->base],
                  weapon->speed, weapon->power);
+        if (weapon->sounds != PORT_WEAPON_UNSET ||
+            weapon->dropped != PORT_WEAPON_UNSET) {
+            port_Log("weapons: %s: the %s's sounds, dropped as the %s is\n",
+                     weapon->key,
+                     port_WeaponIdName(weapon->sounds != PORT_WEAPON_UNSET
+                                           ? weapon->sounds
+                                           : weapon->base),
+                     port_WeaponIdName(weapon->dropped != PORT_WEAPON_UNSET
+                                           ? weapon->dropped
+                                           : weapon->base));
+        }
         if (weapon->replaces) {
             if (g_port_weapons.replacing[weapon->base] != NULL) {
                 port_Log("weapons: %s stands in for the %s over %s, which "
@@ -903,6 +954,28 @@ s32 port_WeaponCpuRange(s32 index, s32 weapon_id, s32 own) {
     return weapon != NULL && weapon->cpu_range != PORT_WEAPON_CPU_UNSET
                ? weapon->cpu_range
                : own;
+}
+
+s32 port_WeaponSoundKind(
+    s32 index, s32 weapon_id, s32 character, s32 alt, s32 own) {
+    const PortWeapon *weapon = port_WeaponOf(index, weapon_id);
+
+    if (weapon == NULL || weapon->sounds == PORT_WEAPON_UNSET ||
+        character < 0 || character >= CHARACTER_COUNT) {
+        return own;
+    }
+    return alt ? g_resource_weapon_sound_kinds_alt[character][weapon->sounds]
+               : g_resource_weapon_sound_kinds[character][weapon->sounds];
+}
+
+s32 port_WeaponDropped(s32 index, s32 weapon_id, s32 clan, s32 own) {
+    const PortWeapon *weapon = port_WeaponOf(index, weapon_id);
+
+    if (weapon == NULL || weapon->dropped == PORT_WEAPON_UNSET || clan < 0 ||
+        clan >= CLANS) {
+        return own;
+    }
+    return g_object_dropped_weapon_kinds[clan][weapon->dropped];
 }
 
 /* ---- a weapon's own files ---- */

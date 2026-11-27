@@ -23,6 +23,14 @@ u8 g_fighter_clan_weapon_models[WEAPON_ID_COUNT][2] = {
     {0, 1}, {2, 3}, {4, 5}, {6, 7}, {8, 9}, {8, 9}, {46, 47}, {46, 47}};
 u8 g_fighter_practice_weapon_models[WEAPON_ID_COUNT] = {
     51, 52, 53, 54, 55, 56, 51, 51};
+/* the first two characters' rows of the weapon sounds, and the dropped
+ * weapons' kinds */
+u8 g_resource_weapon_sound_kinds[CHARACTER_COUNT][WEAPON_ID_COUNT] = {
+    {0, 3, 7, 9, 10, 12, 14, 15}, {2, 5, 6, 8, 10, 12, 14, 15}};
+u8 g_resource_weapon_sound_kinds_alt[CHARACTER_COUNT][6] = {
+    {0, 2, 4, 5, 6, 7}, {1, 3, 4, 5, 6, 7}};
+u8 g_object_dropped_weapon_kinds[2][WEAPON_ID_COUNT] = {
+    {18, 20, 22, 24, 26, 26, 28, 28}, {19, 21, 23, 25, 27, 27, 29, 29}};
 
 /* ---- the host, in memory ---- */
 
@@ -61,11 +69,13 @@ static const MadeEntry g_made_tree[] = {
     /* a weapon with a model and motions of its own (format 2), and one
      * whose motions are larger than the game's room for them */
     {"mods/blades/weapons/kanabo.txt",
-     "format = 2\n"
+     "format = 3\n"
      "name = Kanabo\n"
      "base = katana\n"
      "model = Kanabo\n"
-     "motions = kanabo\n"},
+     "motions = kanabo\n"
+     "sounds = broadsword\n"
+     "dropped = Nodachi\n"},
     {"mods/blades/weapons/huge.txt", "format = 2\nbase = yari\n"
                                      "motions = huge\n"},
     {"mods/blades/motions/kanabo.bbm",
@@ -279,7 +289,17 @@ static void test_File(void) {
         "format = 1\nbase = katana\nbase = yari\n", "line 3: said twice");
     test_Wrong("format = 1\nkatana\n", "line 2: not NAME = VALUE");
     test_Wrong("base = katana\n", "no `format = 1`");
-    test_Wrong("format = 3\nbase = katana\n", "line 1: a later format");
+    test_Wrong("format = 4\nbase = katana\n", "line 1: a later format");
+    test_Wrong("format = 2\nbase = katana\nsounds = nodachi\n",
+               "sounds and dropped are format 3's");
+    test_Wrong("format = 3\nbase = katana\nsounds = club\n",
+               "line 3: sounds is the weapon");
+    test_Wrong("format = 3\nbase = katana\ndropped =\n",
+               "line 3: dropped is the weapon");
+    test_Wrong("format = 3\nbase = katana\nsounds = short_gun\n",
+               "sounds: a blade's sounds are a blade's");
+    test_Wrong("format = 3\nsounds = yari\nbase = long_gun\n",
+               "sounds: a gun's sounds are a gun's");
     test_Wrong("format = 1\nbase = katana\nmodel = club\n",
                "model and motions are format 2's");
     test_Wrong("format = 2\nbase = katana\nmodel = a/club\n",
@@ -341,6 +361,9 @@ static void test_None(void) {
             CHECK_EQ(port_WeaponDefaultStance(index, weapon, 1), 1);
             CHECK_EQ(port_WeaponCpuReach(index, weapon, 418), 418);
             CHECK_EQ(port_WeaponCpuRange(index, weapon, -88), -88);
+            CHECK_EQ(port_WeaponSoundKind(index, weapon, 1, FALSE, 5), 5);
+            CHECK_EQ(port_WeaponSoundKind(index, weapon, 1, TRUE, 3), 3);
+            CHECK_EQ(port_WeaponDropped(index, weapon, 1, 21), 21);
         }
     }
     CHECK_EQ(port_WeaponsSessionHash(), 0);
@@ -514,6 +537,15 @@ static void test_Pick(void) {
     CHECK(port_WeaponOf(1, WEAPON_ID_KATANA) == NULL);
     /* the pick is the katana's alone */
     CHECK(port_WeaponOf(0, WEAPON_ID_LONG_SWORD) == NULL);
+    /* its sounds are the character's with the broadsword, in both tables;
+     * it falls as the clan's nodachi; the second side's are the game's */
+    CHECK_EQ(port_WeaponSoundKind(0, WEAPON_ID_KATANA, 1, FALSE, 2), 8);
+    CHECK_EQ(port_WeaponSoundKind(0, WEAPON_ID_KATANA, 0, FALSE, 0), 9);
+    CHECK_EQ(port_WeaponSoundKind(0, WEAPON_ID_KATANA, 1, TRUE, 1), 5);
+    CHECK_EQ(port_WeaponSoundKind(1, WEAPON_ID_KATANA, 1, FALSE, 2), 2);
+    CHECK_EQ(port_WeaponDropped(0, WEAPON_ID_KATANA, 0, 18), 22);
+    CHECK_EQ(port_WeaponDropped(0, WEAPON_ID_KATANA, 1, 19), 23);
+    CHECK_EQ(port_WeaponDropped(1, WEAPON_ID_KATANA, 1, 19), 19);
     shown = port_WeaponPickShown(0, &count);
     CHECK(shown != NULL && test_StringsEqual(shown, "Kanabo"));
     /* the row is gone three frames on */

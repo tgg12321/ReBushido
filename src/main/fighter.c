@@ -2818,11 +2818,24 @@ void fighter_Update(s32 fighter_index, PadState *pad) {
                 fighter_index, FIGHT_EVENT_DEATH_CRY, &fighter->world_pos.x, 0);
         }
         if (fighter->roster_id != ROSTER_VICTIM) {
+#if RB_PORT
+            /* a mod's weapon may fall as another weapon does (`dropped =`,
+             * port_weapons.h) */
+            s32 clan = g_fighter_clans[fighter->character];
+
+            object_DropWeapon(
+                fighter,
+                port_WeaponDropped(
+                    fighter_index, fighter->weapon_id, clan,
+                    g_object_dropped_weapon_kinds[clan][fighter->weapon_id]),
+                (Vec3 *)PTR(bone_matrices[FIGHTER_BONE_WEAPON_HAND])->t);
+#else
             object_DropWeapon(
                 fighter,
                 g_object_dropped_weapon_kinds
                     [g_fighter_clans[fighter->character]][fighter->weapon_id],
                 (Vec3 *)PTR(bone_matrices[FIGHTER_BONE_WEAPON_HAND])->t);
+#endif
         }
         fighter->is_defeated = 1;
         if (g_fight_winner == FIGHT_NOBODY) {

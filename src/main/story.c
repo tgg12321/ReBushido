@@ -87,9 +87,18 @@ void fight_LoadWeapons(void) {
 
     for (i = 0; i < 2; i++) {
         resource_RequestWeapon(g_fighters[i].weapon_model);
+#if RB_PORT
+        /* a mod's weapon's sounds (`sounds =`, port_weapons.h) */
+        resource_SetWeaponSounds(
+            i, port_WeaponSoundKind(
+                   i, g_fighters[i].weapon_id, g_fighters[i].character, FALSE,
+                   g_resource_weapon_sound_kinds[g_fighters[i].character]
+                                                [g_fighters[i].weapon_id]));
+#else
         resource_SetWeaponSounds(
             i, g_resource_weapon_sound_kinds[g_fighters[i].character]
                                             [g_fighters[i].weapon_id]);
+#endif
         if (g_fighters[i].sub_weapon_kind != OBJECT_NONE) {
             resource_RequestWeapon(
                 g_object_weapon_models[g_fighters[i].sub_weapon_kind]);
@@ -114,6 +123,22 @@ void fight_LoadWeaponOf(s32 fighter_index) {
 
     resource_RequestWeapon(g_fighters[fighter_index].weapon_model);
 
+#if RB_PORT
+    {
+        /* a mod's weapon's sounds (`sounds =`, port_weapons.h) */
+        const Fighter *fighter = &g_fighters[fighter_index];
+        s32 alt = g_fight_mode == FIGHT_MODE_TEAM;
+
+        resource_SetWeaponSounds(
+            fighter_index,
+            port_WeaponSoundKind(
+                fighter_index, fighter->weapon_id, fighter->character, alt,
+                alt ? g_resource_weapon_sound_kinds_alt[fighter->character]
+                                                       [fighter->weapon_id]
+                    : g_resource_weapon_sound_kinds[fighter->character]
+                                                   [fighter->weapon_id]));
+    }
+#else
     if (g_fight_mode == FIGHT_MODE_TEAM) {
         resource_SetWeaponSounds(
             fighter_index, g_resource_weapon_sound_kinds_alt
@@ -125,6 +150,7 @@ void fight_LoadWeaponOf(s32 fighter_index) {
             g_resource_weapon_sound_kinds[g_fighters[fighter_index].character]
                                          [g_fighters[fighter_index].weapon_id]);
     }
+#endif
     resource_LoadWeapons(load_addr);
 }
 

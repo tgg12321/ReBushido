@@ -755,6 +755,10 @@ extern void port_RemasterBeginStageTextures(void);
  * model in slot `slot` (src/port/fighter_view.c): the picture draws a
  * mod's weapon's own model there (port_weapons.h). None of the state. */
 extern void port_RemasterNoteHeldWeapon(const void *node, s32 slot);
+/* And a defeated fighter's weapon lying loose (object_QueueAll, and the
+ * replay's draws of it): `node`, fallen from the fighter in place
+ * `owner`. */
+extern void port_RemasterNoteLooseWeapon(const void *node, s32 owner);
 extern void port_RemasterNoteStageTexture(
     const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y);
 /* The game is drawing a picture it will then keep on show without drawing

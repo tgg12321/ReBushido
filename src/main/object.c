@@ -179,6 +179,13 @@ static void object_QueueAll(void) {
             kind == OBJECT_FROG && obj->rest_state == OBJECT_REST_HOPPING) {
             weapon_model += WEAPON_MODEL_FROG_IN_AIR;
         }
+#if RB_REMASTER_VIEW
+        /* the picture's: a dropped weapon is its fighter's, whose mod's
+         * weapon may have a model of its own (port_weapons.h) */
+        if (OBJECT_IS_WEAPON(kind)) {
+            port_RemasterNoteLooseWeapon(g_disp_prim_cursor, obj->owner);
+        }
+#endif
         weapon_Queue(weapon_model, WEAPON_DRAW_FREE, &obj->pos.x, obj->rot);
         replay_RecordObjectDraw(obj->slot, weapon_model, &obj->pos.x, obj->rot);
     }

@@ -901,6 +901,24 @@ void fight_Init(void) {
             /* chanbara's opponents share one set of weapon sounds; the
              * weapons of practice and of a team battle have their own */
             if (g_fight_mode != FIGHT_MODE_CHANBARA || i != 1) {
+#if RB_PORT
+                /* a mod's weapon may make another weapon's sounds
+                 * (`sounds =`, port_weapons.h) */
+                s32 alt = (g_fight_mode == FIGHT_MODE_PRACTICE &&
+                           g_fight_practice_round == 0) ||
+                          g_fight_mode == FIGHT_MODE_TEAM;
+
+                resource_SetWeaponSounds(
+                    i, port_WeaponSoundKind(
+                           i, g_fighters[i].weapon_id, g_fighters[i].character,
+                           alt,
+                           alt ? g_resource_weapon_sound_kinds_alt
+                                     [g_fighters[i].character]
+                                     [g_fighters[i].weapon_id]
+                               : g_resource_weapon_sound_kinds
+                                     [g_fighters[i].character]
+                                     [g_fighters[i].weapon_id]));
+#else
                 if ((g_fight_mode == FIGHT_MODE_PRACTICE &&
                      g_fight_practice_round == 0) ||
                     g_fight_mode == FIGHT_MODE_TEAM) {
@@ -914,6 +932,7 @@ void fight_Init(void) {
                         g_resource_weapon_sound_kinds[g_fighters[i].character]
                                                      [g_fighters[i].weapon_id]);
                 }
+#endif
             }
             if (g_fighters[i].sub_weapon_kind != OBJECT_NONE) {
                 resource_RequestWeapon(
