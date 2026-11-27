@@ -727,8 +727,9 @@ the stage").
     before the story's and Slash's grid, in the game's state. Two on two
     and the online takeover (2026-11-27): a memory for each of the four
     fighters, so the port's CPU plays partners, the CPU's team and a
-    leaver's fighter, at the host's level online. Left: walking round
-    obstacles (it walks straight and sidles when blocked); dirt, thrown
+    leaver's fighter, at the host's level online. Walking round the
+    stage's obstacles by their corners, as the original plans (2026-11-27).
+    Left: circling at an edge; dirt, thrown
     weapons and guns; levels learned from replays of real players; a
     person's test of how it feels to fight.
 28. **A resync button** (the owner, 2026-11-26, instead of a desync

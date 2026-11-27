@@ -174,6 +174,8 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
 #define FRAMES_A_SECOND 30
 /* the place it likes is drawn again this often */
 #define MARGIN_FRAMES 60
+/* this far past where it likes to be it runs */
+#define RUN_DISTANCE 9000
 
 /* An attack of the motion file's list of the kinds that are made at the
  * distances between its two (cpu.h, CPU_ATTACK_KIND: 0 and 7). */
@@ -617,10 +619,53 @@ static s32 port_CpuClear(const Fighter *fighter, s32 probe) {
     return fighter->cpu_probes[probe] == CPU_FOUND_LEVEL;
 }
 
-/* The buttons that walk it out to `want` from `distance`, or round to
- * face the opponent; 0 where it is. */
-static u32 port_CpuWalk(Fighter *fighter, PortCpuMind *mind, s32 distance,
-                        s32 want, s32 tolerance, s32 angle) {
+/* On its way to him (at `x`, `z`, where it saw him): with an obstacle of
+ * the stage across the way, the pad's directions to its corners, the way
+ * round it as the game's CPU plans one (cpu_PortPlanDetour); 0 where the
+ * way is straight. */
+static u32 port_CpuDetour(
+    Fighter *fighter, s32 x, s32 z, s32 distance, s32 far) {
+    CpuRoute *route = &fighter->cpu_route;
+    const CpuWaypoint *next;
+    s32 dx;
+    s32 dz;
+
+    /* looked for each time it decides where to walk (every few frames,
+     * as the game's CPU looks every eighth), and planned again as he moves
+     * from where it has got to */
+    if (cpu_PortFindObstacle(fighter, x, z) < distance) {
+        cpu_PortPlanDetour(fighter, x, z);
+    } else {
+        route->count = 0;
+    }
+    /* node[0] is him: the corners are above it */
+    while (route->count > 1) {
+        next = &route->node[route->count - 1];
+        dx = next->x - fighter->world_pos.x;
+        dz = next->z - fighter->world_pos.z;
+        if (dx * dx + dz * dz >= CPU_WAYPOINT_RADIUS * CPU_WAYPOINT_RADIUS) {
+            return (u32)cpu_PortSteerTo(fighter, next->x, next->z, far);
+        }
+        route->count--;
+    }
+    return 0;
+}
+
+/* The buttons that walk it out to `want` from `distance` (round the
+ * stage's obstacles to him, at `x`, `z`), or round to face the opponent;
+ * 0 where it is. */
+static u32 port_CpuWalk(Fighter *fighter, s32 x, s32 z, s32 distance, s32 want,
+                        s32 tolerance, s32 angle) {
+    if (distance > want + tolerance) {
+        u32 round = port_CpuDetour(
+            fighter, x, z, distance, distance > want + RUN_DISTANCE);
+
+        if (round != 0) {
+            return round;
+        }
+    } else {
+        fighter->cpu_route.count = 0;
+    }
     if (angle > ANGLE_TURN / 16) {
         /* turned from him: a few frames of sidling face it round */
         return FIGHTER_PAD_SIDE_A;
@@ -632,7 +677,7 @@ static u32 port_CpuWalk(Fighter *fighter, PortCpuMind *mind, s32 distance,
                        : FIGHTER_PAD_SIDE_B;
         }
         /* far off, a run */
-        if (distance > want + 9000) {
+        if (distance > want + RUN_DISTANCE) {
             return FIGHTER_PAD_TOWARD | PADL1;
         }
         return FIGHTER_PAD_TOWARD;
@@ -649,7 +694,6 @@ static u32 port_CpuWalk(Fighter *fighter, PortCpuMind *mind, s32 distance,
             return FIGHTER_PAD_SIDE_B;
         }
     }
-    (void)mind;
     return 0;
 }
 
@@ -995,8 +1039,8 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         mind->hold_frames--;
         return mind->hold;
     }
-    mind->hold =
-        port_CpuWalk(fighter, mind, distance, want, level->tolerance, angle);
+    mind->hold = port_CpuWalk(
+        fighter, seen->x, seen->z, distance, want, level->tolerance, angle);
     mind->hold_frames = 4;
     return mind->hold;
 }

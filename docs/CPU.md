@@ -242,7 +242,11 @@ time it has seen that motion in the match); an opening (an attack seen to
 have missed with frames still to go, a stagger, a reload, getting up: a
 strike, if one of its attacks fits the distance); the distance it likes
 (just past the opponent's reach, by its level's margin and spread, walking
-to it and facing him); now and then a strike of its own. Its attacks are
+to it and facing him; where one of the stage's obstacles lies across the
+way to where it saw him, round it by its corners, the way the game's CPU
+plans: `cpu_PortFindObstacle`, `cpu_PortPlanDetour` and
+`cpu_PortSteerTo`, lent by `src/main/cpu.c`, the obstacles a player
+sees); now and then a strike of its own. Its attacks are
 the motion file's list (the moves a player knows, each with its
 distances), pressed as the list's pad script; from the adept up, picked by
 how each has done in the match. From the veteran up it counts how often
@@ -332,6 +336,18 @@ novice's slower eye did. Before, at 96 fights: novice against the
 original 34%, adept 46%, veteran 61%, master 67%; the veteran over the
 adept 60%, the master over the veteran 62%, over the novice 73%.
 
+Walking round the stage's obstacles (below, 2026-11-27) came after that
+table; the same fights again with it (288 a pair, the same seeds): of
+the novice against the original 17 of the first 208 fights went
+otherwise, and the totals came to the same, 39%; the adept over the
+novice 67% (189 to 93, 2 draws; 4 runs lost to the disc's link being
+replaced under them), the veteran over the adept 59% (165 to 117), the
+master over the veteran 61% (159 to 100, 29 draws), the master against
+the original 64% (183 to 101): the order stands, each step outside the
+noise. The bench's stages are open ground, and its CPUs stand near each
+other; the detour is for the stages where a house, a rock or a fence
+comes between them.
+
 How quickly the port's answers, by the same tool (32 fights of the
 master against the original): it begins its guards and steps at quartiles
 8 / 10 / 10.75 frames after the attack began in the first place and
@@ -363,9 +379,9 @@ quietly.
 
 ## 4. What is left
 
-- Getting about: it walks straight to the distance it likes and sidles
-  when the way is blocked; the original's route round a stage's obstacles
-  and its circling at an edge are not used.
+- Getting about: it walks round the stage's obstacles to him (since
+  2026-11-27), but the original's circling of an opponent at an edge,
+  and its leaps down and climbs up a height on the way, are not used.
 - Dirt, thrown sub-weapons and guns, which it neither uses nor answers
   better than by its guard.
 - Levels learned from replays of real players (item 23's files hold every

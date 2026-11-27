@@ -105,7 +105,8 @@ lessons still holds unless this section says otherwise.
   59%, 62%); the select screens' choice too
   (2026-11-27; the owner's eye on `tmp/cpu-select/`), and the port's CPU
   in two on two and for an online takeover (a memory per fighter; the
-  host's level). Left: walking round obstacles, dirt and thrown
+  host's level), and walking round the stage's obstacles. Left:
+  circling at an edge, dirt and thrown
   weapons and guns, levels learned from real players' replays; the
   owner's hands on how each level feels.
 - ROADMAP 24's leftovers: four real PCs. (Partners' own voices, mods'
