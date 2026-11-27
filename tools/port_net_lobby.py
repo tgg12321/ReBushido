@@ -2124,9 +2124,9 @@ def case_pages_refused(case):
 
 
 # The room page's host leaves the first match in its fight: two Escapes,
-# at these blanks of the session (its fight is from near blank 2,900 to
-# 4,000).
-ROOM_ESCAPES = '3200,3300'
+# at these blanks of the session (its fight is from blank 2,176 to 3,193,
+# frames 1,378 to 1,887: Escapes after it raced the match's end).
+ROOM_ESCAPES = '2700,2800'
 
 
 def case_win_room(case):
