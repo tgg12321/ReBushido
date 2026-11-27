@@ -199,8 +199,10 @@ lessons still holds unless this section says otherwise.
   code and a window guest's refusal, as a window's host under load can
   take 30 s to open its window before it reads the code. Found beside
   it: `win-room`'s Escapes (blanks 3,200 and 3,300) came after its first
-  fight was over (blank 3,193), and the leave raced the match's end; they
-  are at 2,700 and 2,800 now, in the fight.
+  fight was over (blank 3,193), and the leave raced the match's end; and
+  100 blanks apart they were over the 3 s that make two Escapes a leave
+  (`NETPLAY_LEAVE_MS`) where a loaded machine showed 25 blanks a second.
+  They are at 2,700 and 2,730 now, in the fight.
 - **Open, no cause yet**: a gate's
   `port_net four` once found a port of 127.0.0.1 taken by another run
   ("no socket at"), passing again alone; the provers' stage counts are 66
