@@ -162,6 +162,18 @@ extern void port_SetNetplayInProcess(s32 on);
 extern void port_NetplayLeave(void);
 extern void port_NetplayAskLeave(void);
 extern void port_SetNetplayLeaveAt(u32 frame);
+/* A resync (docs/NETPLAY.md, section 21). Where a hash of another's is not
+ * this program's own, the session goes on, parted, until the host puts
+ * its state on every machine: at a press of any player's (F5,
+ * port_NetplayAskResync, heard only while parted), or by itself `frames`
+ * frames after the parting (180; 0: only at a press; --resync-auto).
+ * For tests: --resync-ask-at asks at this program's frame `frame` once
+ * it is parted, and --net-part-at makes this program's state another's at
+ * its frame `frame` (a word of the RAM the game never reads). */
+extern void port_NetplayAskResync(void);
+extern void port_SetNetplayResyncAuto(u32 frames);
+extern void port_SetNetplayResyncAskAt(u32 frame);
+extern void port_SetNetplayPartAt(u32 frame);
 /* For tests (--net-plan-pads): the local pad is only the PC's pad of this
  * program's place in the session (a plan presses both pads, each program
  * its own); a player plays with either. */
@@ -182,9 +194,10 @@ extern void port_EndNetplay(void);
 /* What netplay is doing, for the window's line (sdl_net.c). */
 enum {
     PORT_NETPLAY_PLAYING = 0,
-    PORT_NETPLAY_WAITING = 1, /* for the other's inputs */
-    PORT_NETPLAY_LOADING = 2, /* at a load, which both wait at */
-    PORT_NETPLAY_ALONE = 3,   /* the other has gone: this one plays on */
+    PORT_NETPLAY_WAITING = 1,   /* for the other's inputs */
+    PORT_NETPLAY_LOADING = 2,   /* at a load, which both wait at */
+    PORT_NETPLAY_ALONE = 3,     /* the other has gone: this one plays on */
+    PORT_NETPLAY_RESYNCING = 4, /* the host's state goes to every machine */
 };
 
 typedef struct {
@@ -209,6 +222,16 @@ typedef struct {
     s32 cpu_pad;      /* the last pad the CPU took over, or -1 */
     u32 cpu_ms;       /* how long ago it did */
     s32 cpu_on_leave; /* this player's leave gives his fighter to the CPU */
+    /* a resync (docs/NETPLAY.md, section 21): the machines' games found
+     * parted, and the frames until the host resyncs by itself (0: only at
+     * a press, or asked already); the resyncs had, and how long ago the
+     * last (0: none) */
+    s32 parted;
+    u32 resync_percent; /* resyncing: the share of the state had */
+    u32 resync_in;
+    s32 resync_asked;
+    u32 resyncs;
+    u32 resynced_ms;
 } PortNetplayStats;
 
 extern void port_GetNetplayStats(PortNetplayStats *stats);
@@ -483,6 +506,9 @@ extern void port_SetRelayMapped(const PortNetAddress *mapped);
  * key forgotten (the next session says them again). */
 extern void port_ResetRelay(void);
 extern s32 port_IsRelayOn(void);
+/* The way the meeting found is the lobby's relay, which passes no more
+ * than so many datagrams a second on (a resync's state is sent slower). */
+extern s32 port_RelayIsRelayed(void);
 /* The room's code: the one joined, or the one the host was given; ""
  * before there is one. */
 extern const char *port_GetRelayCode(void);

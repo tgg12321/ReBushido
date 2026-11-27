@@ -179,6 +179,10 @@ extern void port_RankedMatchEnds(s32 end, s32 winner, s32 met);
  * (replay.c), uploaded if the lobby asks. */
 extern void port_RankedFrame(u32 frame, u16 first, u16 second);
 extern void port_RankedHash(u32 frame, u64 hash);
+/* A resync put the host's state in (docs/NETPLAY.md, section 21): the
+ * hashes of frames after `agreed`, where the two machines had parted, are
+ * left out of the digest on both. */
+extern void port_RankedResynced(u32 agreed);
 extern void port_RankedReplayWritten(const char *path);
 /* For tests (--ranked-lie): the other player reported the winner. */
 extern void port_RankedLie(void);

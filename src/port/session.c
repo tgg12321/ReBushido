@@ -84,8 +84,12 @@
  * model, textures and motions in the state beside the slots' (port_duo.h,
  * docs/NETPLAY.md, section 20). 20: a second of his own sounds as himself,
  * his voice, weapon's and class's banks of sounds in the state, in the
- * port's second bank of sound memory (port_duo.h, port_spu.h). */
-#define SESSION_PROTOCOL 20
+ * port's second bank of sound memory (port_duo.h, port_spu.h). 21: a
+ * resync (docs/NETPLAY.md, section 21): netplay's input datagram carries
+ * the resyncs its sender has had and a resync asked for, and the host's
+ * state goes to every guest in chunks (KIND_RESYNC, KIND_RESYNC_ACK) where
+ * the machines' games part. */
+#define SESSION_PROTOCOL 21
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)

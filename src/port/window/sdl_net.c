@@ -47,6 +47,10 @@
  * for this long. */
 #define WAIT_DRAW_MS 16
 #define ALONE_SHOWN_MS 8000
+/* A resync's "back in step" is shown this long; the game's frames a
+ * second, for the seconds until one by itself. */
+#define RESYNCED_SHOWN_MS 4000
+#define FRAMES_A_SECOND 60
 #define MS_PER_SECOND 1000
 /* Colours, 0xAARRGGBB: the box under the line, its letters, and a wait's. */
 #define COLOR_BOX 0xB0000000U
@@ -117,6 +121,58 @@ static u32 port_NetWords(char *out, u32 room) {
          * (docs/NETPLAY.md, section 19) */
         snprintf(out, room, "Player %d has left: the CPU plays his fighter",
                  stats.cpu_pad + 1);
+        return COLOR_WAIT;
+    }
+    if (stats.state == PORT_NETPLAY_RESYNCING) {
+        /* the host's state going to every machine (docs/NETPLAY.md,
+         * section 21) */
+        if (stats.watching) {
+            snprintf(out, room,
+                     "Watching: the game fell out of step with the "
+                     "players'; waiting for their resync");
+        } else if (stats.local_mask & 1U) {
+            snprintf(out, room,
+                     "Resyncing: your game goes to the other "
+                     "player%s   %u%%",
+                     stats.pads > 2 ? "s" : "", stats.resync_percent);
+        } else {
+            snprintf(out, room, "Resyncing: the host's game is coming   %u%%",
+                     stats.resync_percent);
+        }
+        return COLOR_WAIT;
+    }
+    if (stats.parted) {
+        /* parted, and no resync yet: what puts it right */
+        const char *whose = stats.pads > 2 ? "players'" : "player's";
+
+        if (stats.watching) {
+            snprintf(out, room,
+                     "Watching: the game fell out of step with the "
+                     "players'; waiting for their resync");
+        } else if (stats.resync_asked) {
+            snprintf(out, room,
+                     "The game fell out of step with the other %s   |   "
+                     "resync asked: the host's game comes in a moment",
+                     whose);
+        } else if (stats.resync_in != 0) {
+            snprintf(out, room,
+                     "The game fell out of step with the other %s   |   "
+                     "F5: resync now   |   by itself in %u s",
+                     whose,
+                     (stats.resync_in + FRAMES_A_SECOND - 1) / FRAMES_A_SECOND);
+        } else {
+            snprintf(out, room,
+                     "The game fell out of step with the other %s   |   "
+                     "F5: resync (the host's game on every machine)",
+                     whose);
+        }
+        return COLOR_WAIT;
+    }
+    if (stats.resynced_ms != 0 && stats.resynced_ms < RESYNCED_SHOWN_MS &&
+        stats.state == PORT_NETPLAY_PLAYING) {
+        snprintf(out, room,
+                 "Back in step: the host's game was put in (resync %u)",
+                 stats.resyncs);
         return COLOR_WAIT;
     }
     if (stats.watching) {
