@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "menu.h"
+#include "port_stats.h"
 #include "shared.h"
 #include "sdl_window.h"
 #include "update.h"
@@ -17,8 +18,9 @@
 #define TEXT_BYTES 0x10000
 /* how much room the text is given to grow in, a line at a time */
 #define TEXT_ROOM (TEXT_BYTES + 0x4000)
-/* a page's rows: the most is a group's, its settings and Back */
-#define ROWS_MAX 96
+/* a page's rows: the most is the Stats page's history, its fights and
+ * Back */
+#define ROWS_MAX 256
 #define LABEL_BYTES 160
 #define VALUE_BYTES 160
 #define BUTTONS 14
@@ -35,6 +37,7 @@ enum {
     PAGE_ONLINE,  /* Play online: host or join a session of netplay */
     PAGE_UPDATE,  /* Updates: the newer release, its notes (update.h) */
     PAGE_REPLAYS, /* the replays kept, to watch (menu_replays.c) */
+    PAGE_STATS,   /* the player's record (menu_stats.c): a view of it */
 };
 
 /* What can be typed into a row of the Play online page. */
@@ -60,6 +63,10 @@ enum {
     ROW_REPLAYS,      /* the Replays page */
     ROW_REPLAY,       /* a replay of it: `index` its row (menu_replays.c) */
     ROW_FILM,         /* the film being made of one, or the last one's end */
+    ROW_STATS,        /* the Stats page */
+    ROW_STATS_VIEW,   /* a list of it: `index` the view (menu.h) */
+    ROW_STAT_LINE,    /* a line of a view: `index` (menu_stats.c) */
+    ROW_STAT_FIGHT,   /* a fight of the history: `index` its row */
 };
 
 typedef struct {
@@ -110,6 +117,11 @@ static struct {
     s32 update_generation;
     /* whether the Replays page was built with its row of the film */
     s32 film_shown;
+    /* the Stats page's view, where its totals' cursor was, and the
+     * record's count of changes it was built for */
+    s32 stats_view;
+    s32 stats_cursor;
+    u32 stats_generation;
     /* frames since the cursor last moved (its glow), and of the page's
      * fade in */
     s32 pulse;
@@ -169,6 +181,7 @@ static void port_MenuBuild(s32 page, s32 cursor) {
         /* Replays above Play online: Play online stays the third row up
          * from the first, where the tests reach it (tools/port_net.py) */
         port_MenuAddRow(ROW_REPLAYS, 0);
+        port_MenuAddRow(ROW_STATS, 0);
         port_MenuAddRow(ROW_ONLINE, 0);
         port_MenuAddRow(ROW_UPDATES, 0);
         port_MenuAddRow(ROW_CLOSE, 0);
@@ -243,6 +256,31 @@ static void port_MenuBuild(s32 page, s32 cursor) {
                     port_MenuAddRow(ROW_CHOICE, i);
                 }
             }
+        }
+        port_MenuAddRow(ROW_BACK, 0);
+    } else if (page == PAGE_STATS) {
+        s32 count = port_StatsPageItems(g_menu.stats_view);
+        /* the totals' last lines open the lists */
+        s32 lists = g_menu.stats_view == PORT_STATS_VIEW_TOTALS
+                        ? PORT_STATS_VIEWS - 1
+                        : 0;
+
+        g_menu.stats_generation = port_StatsGeneration();
+        for (i = 0; i < count && i < ROWS_MAX - 1; i++) {
+            if (g_menu.stats_view == PORT_STATS_VIEW_HISTORY) {
+                port_MenuAddRow(ROW_STAT_FIGHT, i);
+            } else if (i >= count - lists) {
+                port_MenuAddRow(ROW_STATS_VIEW,
+                                PORT_STATS_VIEW_FIGHTERS + i - (count - lists));
+            } else {
+                port_MenuAddRow(ROW_STAT_LINE, i);
+            }
+        }
+        if (count == 0) {
+            port_MenuAddRow(g_menu.stats_view == PORT_STATS_VIEW_HISTORY
+                                ? ROW_STAT_FIGHT
+                                : ROW_STAT_LINE,
+                            -1);
         }
         port_MenuAddRow(ROW_BACK, 0);
     } else {
@@ -532,6 +570,19 @@ static void port_MenuDescribe(
     case ROW_FILM:
         port_ReplaysFilmDescribe(label, LABEL_BYTES, value, VALUE_BYTES);
         break;
+    case ROW_STATS:
+    case ROW_STATS_VIEW:
+        snprintf(
+            label, LABEL_BYTES, "%s",
+            port_StatsViewName(
+                row->kind == ROW_STATS ? PORT_STATS_VIEW_TOTALS : row->index));
+        snprintf(value, VALUE_BYTES, "...");
+        break;
+    case ROW_STAT_LINE:
+    case ROW_STAT_FIGHT:
+        port_StatsPageDescribe(g_menu.stats_view, row->index, label,
+                               LABEL_BYTES, value, VALUE_BYTES);
+        break;
     case ROW_NET_ITEM:
         port_OnlineDescribe(
             row->index,
@@ -602,6 +653,14 @@ static const char *port_MenuHelp(void) {
         return port_ReplaysHelp(row->index);
     case ROW_FILM:
         return port_ReplaysFilmHelp();
+    case ROW_STATS:
+        return "Your record: fights and matches won and lost, by fighter, "
+               "weapon, stage, mode and opponent, the kills, the history";
+    case ROW_STATS_VIEW:
+        return "Enter / Cross: the list";
+    case ROW_STAT_LINE:
+    case ROW_STAT_FIGHT:
+        return port_StatsPageHelp(g_menu.stats_view, row->index);
     case ROW_QUIT:
         return "The program ends (closing the window does too); the "
                "settings are kept";
@@ -688,8 +747,13 @@ static void port_MenuMove(s32 step) {
 static void port_MenuBack(void) {
     if (g_menu.page == PAGE_BUTTONS) {
         port_MenuBuild(PAGE_GROUP, g_menu.group_cursor);
+    } else if (g_menu.page == PAGE_STATS &&
+               g_menu.stats_view != PORT_STATS_VIEW_TOTALS) {
+        /* a list: back to the totals, on its row */
+        g_menu.stats_view = PORT_STATS_VIEW_TOTALS;
+        port_MenuBuild(PAGE_STATS, g_menu.stats_cursor);
     } else if (g_menu.page == PAGE_GROUP || g_menu.page == PAGE_UPDATE ||
-               g_menu.page == PAGE_REPLAYS ||
+               g_menu.page == PAGE_REPLAYS || g_menu.page == PAGE_STATS ||
                (g_menu.page == PAGE_ONLINE &&
                 g_menu.opened_on != PORT_MENU_OPEN_ONLINE)) {
         if (g_menu.page == PAGE_GROUP &&
@@ -766,6 +830,25 @@ static void port_MenuAccept(void) {
         break;
     case ROW_FILM:
         port_ReplaysFilmAccept();
+        break;
+    case ROW_STATS:
+        g_menu.main_cursor = g_menu.cursor;
+        g_menu.stats_view = PORT_STATS_VIEW_TOTALS;
+        port_MenuBuild(PAGE_STATS, 0);
+        break;
+    case ROW_STATS_VIEW:
+        g_menu.stats_cursor = g_menu.cursor;
+        g_menu.stats_view = row->index;
+        port_MenuBuild(PAGE_STATS, 0);
+        break;
+    case ROW_STAT_LINE:
+        break;
+    case ROW_STAT_FIGHT:
+        if (port_StatsPageAccept(
+                row->index, g_menu.note, sizeof(g_menu.note))) {
+            /* it plays from the game's next frame */
+            port_MenuClose();
+        }
         break;
     case ROW_NET_ITEM: {
         s32 page_cursor = g_menu.cursor;
@@ -1059,6 +1142,10 @@ static void port_MenuTitle(char *out, u32 room) {
         snprintf(out, room, "Player %d's buttons", (int)(g_menu.pad + 1));
         return;
     }
+    if (g_menu.page == PAGE_STATS) {
+        snprintf(out, room, "%s", port_StatsViewName(g_menu.stats_view));
+        return;
+    }
     snprintf(out, room, "%s",
              g_menu.page == PAGE_MAIN     ? "Options"
              : g_menu.page == PAGE_ONLINE ? "Play online"
@@ -1068,7 +1155,11 @@ static void port_MenuTitle(char *out, u32 room) {
 
 /* The rows' pitch on this page, and how many of them are shown. */
 static s32 port_MenuPitch(void) {
-    return g_menu.page == PAGE_REPLAYS ? LOOK_TWO_LINE_PITCH : LOOK_ROW_PITCH;
+    return g_menu.page == PAGE_REPLAYS ||
+                   (g_menu.page == PAGE_STATS &&
+                    g_menu.stats_view == PORT_STATS_VIEW_HISTORY)
+               ? LOOK_TWO_LINE_PITCH
+               : LOOK_ROW_PITCH;
 }
 
 static s32 port_MenuRowsShown(void) {
@@ -1189,6 +1280,11 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
     if (g_menu.page == PAGE_REPLAYS) {
         port_MenuFollowFilm();
     }
+    if (g_menu.page == PAGE_STATS &&
+        port_StatsGeneration() != g_menu.stats_generation) {
+        /* a fight counted while the page is up */
+        port_MenuBuild(PAGE_STATS, g_menu.cursor);
+    }
     if (g_menu.page == PAGE_UPDATE) {
         PortUpdateView view;
 
@@ -1273,8 +1369,12 @@ void port_MenuDrawLook(PortLook *look, s32 is_own) {
             port_LookText(look, LOOK_VALUE_X, y, PORT_LOOK_SIZE_TEXT + 1,
                           PORT_FACE_TEXT, shown, value_color, PORT_LOOK_RIGHT);
         }
-        if (row->kind == ROW_REPLAY) {
-            port_ReplaysDetail(row->index, label, LABEL_BYTES);
+        if (row->kind == ROW_REPLAY || row->kind == ROW_STAT_FIGHT) {
+            if (row->kind == ROW_REPLAY) {
+                port_ReplaysDetail(row->index, label, LABEL_BYTES);
+            } else {
+                port_StatsPageDetail(row->index, label, LABEL_BYTES);
+            }
             port_LookFit(look, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, label,
                          LOOK_VALUE_X - LOOK_LABEL_X);
             port_LookText(

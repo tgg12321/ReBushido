@@ -391,9 +391,9 @@ def run_case(name, image, server, secret, public, own, new, old_files):
     url = 'http://127.0.0.1:9' if name == 'offline' else None
 
     # the menu: its first page's rows are the six groups (Training the
-    # sixth), Replays, Play online and Updates; on the Updates page the
-    # first row is Check for updates now
-    more = ['--menu-at', '300', '--menu-keys', 'down,down,down,down,down,down,down,down,accept,accept,back,close'] \
+    # sixth), Replays, Stats, Play online and Updates; on the Updates page
+    # the first row is Check for updates now
+    more = ['--menu-at', '300', '--menu-keys', 'down,down,down,down,down,down,down,down,down,accept,accept,back,close'] \
         if name == 'menu' else []
     code = case.run(url, more)
     log = case.logs()
