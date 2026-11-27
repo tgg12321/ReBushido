@@ -52,6 +52,8 @@ typedef struct ReplayObjectDraw {
 } ReplayObjectDraw;
 
 #define REPLAY_DRAW_FREE (-1)
+/* where the object's slot is in rot_x_and_slot */
+#define REPLAY_DRAW_SLOT_SHIFT 12
 
 /* A sound or effect that went off in a recorded frame. */
 typedef struct ReplayEvent {

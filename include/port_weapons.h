@@ -21,11 +21,13 @@
 #include "psxsdk/libgte.h"
 
 /* The version of the file's format this program reads: a file says
- * `format = 1`, or 2 for a file that names a model or motions of its
- * own (`model =`, `motions =`). A later program reads every earlier
- * format. */
-#define PORT_WEAPON_FORMAT 2
+ * `format = 1`, 2 for a file that names a model or motions of its own
+ * (`model =`, `motions =`), or 3 for one that takes another weapon's
+ * sounds or dropped weapon (`sounds =`, `dropped =`). A later program
+ * reads every earlier format. */
+#define PORT_WEAPON_FORMAT 3
 #define PORT_WEAPON_FORMAT_OWN_FILES 2
+#define PORT_WEAPON_FORMAT_SOUNDS 3
 /* the most points a weapon has (the pole arms' three) */
 #define PORT_WEAPON_POINTS_MAX 3
 #define PORT_WEAPON_NAME_SIZE 48
@@ -81,6 +83,15 @@ typedef struct {
      * weapon class is PORT_WEAPON_MOTION_CLASS + motion_number. */
     char motions_key[PORT_WEAPON_KEY_SIZE];
     s32 motion_number;
+    /* `sounds =`: the weapon (enum WeaponId) whose sounds a character
+     * makes with it, the cut, the clang, the lock and the landing of the
+     * dropped weapon (g_resource_weapon_sound_kinds and _alt, the
+     * character's row); `dropped =`: the weapon whose kind of loose
+     * object (g_object_dropped_weapon_kinds, the clan's row) it becomes
+     * when its fighter is cut down, how it flies and bounces.
+     * PORT_WEAPON_UNSET for the base's. */
+    s32 sounds;
+    s32 dropped;
 } PortWeapon;
 
 /* A motion set (include/motion.h, MOTION_SET) whose weapon class is this
@@ -138,6 +149,15 @@ extern s32 port_WeaponModel(s32 index, s32 weapon_id, s32 own);
 extern s32 port_WeaponDefaultStance(s32 index, s32 weapon_id, s32 own);
 extern s32 port_WeaponCpuReach(s32 index, s32 weapon_id, s32 own);
 extern s32 port_WeaponCpuRange(s32 index, s32 weapon_id, s32 own);
+/* The weapon sound kind (resource_SetWeaponSounds) of fighter `index`,
+ * whose character is `character`, with `weapon_id`: the game's (`own`),
+ * or the character's with the weapon a mod's weapon's `sounds =` names;
+ * `alt` for the table of team battles and practice. */
+extern s32 port_WeaponSoundKind(
+    s32 index, s32 weapon_id, s32 character, s32 alt, s32 own);
+/* The kind of loose object (object_DropWeapon) fighter `index`'s weapon
+ * becomes, of the clan `clan`: the game's, or the one of `dropped =`. */
+extern s32 port_WeaponDropped(s32 index, s32 weapon_id, s32 clan, s32 own);
 
 /* ---- a weapon's own files ---- */
 

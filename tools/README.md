@@ -71,6 +71,7 @@ your own copy of the disc.
 | `unpack_all.py` | An inventory of every asset file under `disc/` |
 | `inspect_ndata.py`, `repack_ndata.py` | The NDATA archive (models, stages, weapons, cutscenes) |
 | `inspect_bbm.py`, `inspect_windat.py` | Motion files and the win-pose table |
+| `bbm_join.py` | A move of one motion file joined to another file's motion: `moves` lists a file's moves (what the header calls them and the command that leads to each from standing), `join` copies a motion in, its marks and its frames, and points a move at it, the stream packed again losslessly, `check` packs a file's stream again (the disc's come out byte for byte) (`docs/MODS.md`, "A move joined to another file's motion") |
 | `inspect_stage.py`, `repack_stage.py` | `STAGE*.BIN` and the other container files |
 | `stage_ground.py` | A stage's ground file (NDATA's `S00`..`S37`, `docs/formats/GROUND.md`) read into numbers and written back: `roundtrip` (all 38 byte for byte), `unpack`/`pack` (JSON and TIMs), `info` |
 | `ground_cast.py` | The game's collision cast (`collision.c`) in Python, number for number, on a ground's collision grid |

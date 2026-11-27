@@ -2069,8 +2069,8 @@ decides only clashes and locks.
 | **Stances and motion set** | `g_fighter_stance_kinds` (`fight_data.c:559`) | [character][weapon] | the three stance kinds; with the weapon in the top digit it is the motion set, whose file `g_motion_set_files` (`fight_data.c:594`) names; `g_fighter_default_stances` (629) the one a fight begins in |
 | The moves | `MOTION/*.BBM` ([`formats/BBM.md`](formats/BBM.md)) | motion set | every move, the motion it plays, its frames, what may follow; each motion's head (kind, length, turn, **reach for the CPU**) and its marks: **when the weapon can hit** (`MOVE_MARK_HIT_START`, `_HIT_END`), the second blade's, the off hand's, the sounds of the swing. Loaded by `motion_LoadFighterFiles` (`fighter.c:89`), looked up by `motion_GetMove` (351) |
 | **Models** | `g_fighter_clan_weapon_models` (`fight_data.c:1352`), `g_fighter_practice_weapon_models` (1368) | [weapon][clan], weapon | which of the 58 weapon models (`enum WeaponModel`, `include/weapon.h`) is in the hand; loaded by `resource_RequestWeapon` (`resource_weapon.c:48`) with its scabbard (`g_resource_weapon_linked`, `resource_data.c:318`), drawn on the hand by `weapon_Queue` (206); a mod's `models/Wnn.glb` draws one (PORT.md) |
-| Dropped | `g_object_dropped_weapon_kinds` (`fight_data.c:401`), `g_object_kinds` (789) | [clan][weapon] | the loose object a defeated fighter's weapon becomes, and how it flies |
-| **Sounds** | `g_resource_weapon_sound_kinds`, `_alt` (`fight_data.c:1003`, 1037) | [character][weapon] | which bank of weapon sounds is loaded (the cut, the clang, the lock, the shot); the swings are the motions' frame events |
+| Dropped | `g_object_dropped_weapon_kinds` (`fight_data.c:401`), `g_object_kinds` (789) | [clan][weapon] | the loose object a defeated fighter's weapon becomes, and how it flies: the blades' bounce 0x800, the broadsword's 0x700, the guns' 0x600 of a landing's speed; a mod's weapon's `dropped =` |
+| **Sounds** | `g_resource_weapon_sound_kinds`, `_alt` (`fight_data.c:1003`, 1037) | [character][weapon] | which bank of weapon sounds is loaded (the cut, the clang, the lock, the shot, the dropped weapon's landing); the swings are the motions' frame events; a mod's weapon's `sounds =` |
 | **The CPU** | `g_cpu_weapon_reaches`, `g_cpu_weapon_ranges` (`src/main/cpu_data.c:318`, 319) | weapon | how far the CPU takes an attack of the opponent's to reach, beyond the motion's own reach (`cpu_AttackReach`, `cpu.c:984`), and the distance its follow-ups are tried from; `g_cpu_side_step_stances` (`cpu_data.c:15`), `g_cpu_practice_rows` (435); the CPU's scripts are in the motion files; guns have branches of their own (`weapon_id >= WEAPON_ID_FIRST_GUN`, eleven in `cpu.c`) |
 | Guns | `fighter_TestShot` (`fighter_hit.c:1680`), `FIGHTER_GUN_SHOTS` (`fighter.c`) | | a shot is a segment four `ONE`s long from the muzzle, once a move, with ammunition |
 | **The select screens** | `g_select_weapon_ids`, `g_select_weapon_places` (`src/main/select_data.c:16`, 80), `SelectFile.weapon_pixels` (`include/select.h`) | place | the six blades in the crossed-weapons grid, their pictures and names from the select screen's file; each clan has five of them (no yari for the Narukagami, no naginata for the Shainto, `select.c:1677`); Tsubame and Katze have their guns, chanbara the katana, the team battle one weapon each (`select_team.c`), VS CPU its list (`g_vscpu_weapons`, `fight_data.c:1073`) |
@@ -2102,6 +2102,10 @@ cpu_reach = 300          # what the CPU takes it to reach beyond a move of the
                          # fighter's own file (an even number to 510) ...
 cpu_range = 64           # ... and of the common file, and its follow-ups'
                          # distance (eights, -1024 to 1016)
+sounds = broadsword      # (format 3) the weapon whose sounds the character
+                         # makes with it: a blade's of a blade, a gun's of a gun
+dropped = broadsword     # (format 3) the weapon whose dropped weapon it
+                         # becomes when its fighter is cut down
 ```
 
 Only `format` and `base` must be there; whatever else is left out is the
@@ -2147,6 +2151,53 @@ moves), when its weapon can hit (the marks), the frames themselves, and
 the CPU's scripts. The log says it: `motions: u123 from ..., 252816
 bytes over the disc's sectors 3871 to 3994`.
 
+### A move joined to another file's motion
+
+A move plays a motion of its own file: the motion is a number in the
+file's table, its marks are in the file's marks, and its frames are in
+the file's stream, packed with codes of the file's own
+([`formats/BBM.md`](formats/BBM.md)). So a move cannot name another
+file's motion; **`tools/bbm_join.py`** copies the motion in:
+
+```
+python tools/bbm_join.py moves disc/MOTION/K123.BBM
+python tools/bbm_join.py join disc/MOTION/U123.BBM disc/MOTION/K123.BBM \
+    --move 2100 --from-move 2098 --move 2046 --from-move 2090 -o kanabo.bbm
+```
+
+`moves` lists a file's moves by their place (in halfwords, as the file
+names them), the motion each plays and its frames, the motion's kind and
+length, and what leads to the move: the header's name for it (standing
+in a stance, a row of the per-stance moves) or the command that leads to
+it from standing in a stance. The same command leads to the moves two
+files have for the same thing: in U123.BBM and K123.BBM command `00d5`
+from standing in the first stance leads to the moves at 2100 and 2098,
+the stance's first blow, and `00d6` to 2046 and 2090.
+
+`join` decodes the other file's motion, adds it after the file's
+motions, its marks after the file's marks, its frames after the file's
+(in whole groups of eight, from the one its first frame is in), and
+points the move at it: the move plays the other move's frames of it and
+takes commands to the other move's last frame for them; everything else
+of the move (what follows it, its commands, its flags) and of the file
+(the other moves, the CPU's scripts) stays. The whole stream is packed
+again with the codes that hold both files' frames, and decoded again
+before anything is written: every frame of the file and of the motion is
+the one it was, or the tool stops and writes nothing. (Packed so, the
+disc's own files come back byte for byte: `bbm_join.py check`.)
+
+The joined file is larger than the disc's: a mod uses it as a weapon's
+own motions (`motions = KEY`, below), whose room is the disc's largest
+set's file, not in place of the disc's file of its name, which must not
+grow.
+
+**The kanabo's**: `python3 tools/weapon_kanabo.py --motions disc/MOTION
+--mod DIR` makes, from your disc, the club's own motions into a copy of
+the mod at DIR: U123.BBM, the katana's, with the first stance's two blows
+(`00d5`, `00d6`) the broadsword's of K123.BBM (`motions/kanabo.bbm`), and
+`motions = kanabo` in its weapon's file. Nothing of the disc is in the
+mod the program ships, which keeps the katana's motions.
+
 ### A mod's weapon on the select screens
 
 Every new slot (a weapon file with `replaces = no`) is on the **weapon
@@ -2179,7 +2230,10 @@ weapon models (PORT.md, "The fighters' own models", "The weapons"). The
 fighter is the one whose hand `weapon_Queue` put the weapon in
 (`port_FighterHeldModel`). The console's picture,
 Graphics: Original, draws `models =`'s numbers, the base's if it does not
-say; so does a weapon lying loose after a fight, and two on two. A model
+say; so does two on two. A defeated fighter's weapon lying loose is
+his mod's weapon's model too, as it falls and where it lies, and in the
+replay of the kill (`port_RemasterNoteLooseWeapon`: `object_QueueAll`
+and the replay's draws say whose it is). A model
 that no mod has is said in the log, and the base's is drawn.
 
 **Its own motions.** `motions = KEY` (format 2) names a mod's
@@ -2199,8 +2253,27 @@ reason in the log. The log says the set the base would have had,
 `weapons: the fighter in place 1 fights with kanabo, whose base's motion
 set is 0321`: its file on the disc (`U123.BBM`) is where a weapon's own
 motions start from. Everything else of the weapon is still the base's:
-its sounds, the CPU's scripts (in the motion file: so a weapon's own file
-brings its own), the scabbard, the dropped weapon.
+the CPU's scripts (in the motion file: so a weapon's own file brings its
+own) and the scabbard; its sounds and its dropped weapon are the base's
+unless it says (below).
+
+**Its sounds and its dropped weapon.** `sounds = WEAPON` (format 3): the
+character makes the sounds he makes with that weapon, the cut, the clang,
+the lock and the landing of his dropped weapon, from the game's tables
+(`g_resource_weapon_sound_kinds`, and `_alt` in team battles and
+practice), by his row: a kanabo of Tatsumi's on `sounds = broadsword`
+loads Tatsumi's broadsword bank. A blade's are a blade's and a gun's a
+gun's (the team battles' table has the blades' alone). `dropped = WEAPON`
+(format 3): his weapon falls as that weapon's loose object, of his clan
+(`g_object_dropped_weapon_kinds`): how it bounces, the broadsword's less
+than the katana's. Both are numbers of the game's: `port_WeaponSoundKind`
+(`fight.c`, `story.c`, where `resource_SetWeaponSounds` is told) and
+`port_WeaponDropped` (`fighter.c`, where `object_DropWeapon` is called).
+A weapon's own recorded sounds are not done (below).
+
+**A file of format 3**: `sounds =` and `dropped =` are its, refused in
+an earlier format ("sounds and dropped are format 3's"); a program before
+them refuses a format 3 file with "a later ReBushido is needed".
 
 **A file of format 2**: `model =` and `motions =` are its; a file that
 says them with `format = 1` is refused ("model and motions are format
@@ -2213,7 +2286,9 @@ The program ships one weapon as an example, **`mods/kanabo/`**
 (`src/port/mods/kanabo/`), left out until its `mod.txt` says `enabled =
 yes`: an iron-studded war club on the katana, longer (its tip at 1,100
 to the katana's 950), a little slower (0.95) and heavier in a clash (1.4), with
-the katana's motions. Its model, `models/kanabo.glb`, is made by
+the katana's motions, the broadsword's heavier sounds and the
+broadsword's dropped weapon, which bounces less (`sounds = broadsword`,
+`dropped = broadsword`). Its model, `models/kanabo.glb`, is made by
 `tools/weapon_kanabo.py` from numbers alone: an octagonal shaft
 widening to the cap, rows of iron studs, a corded grip, a collar and a
 pommel ring, its texture drawn by the script; nothing of the disc's or of
@@ -2221,22 +2296,42 @@ any other game's, and no AI-made or bought mesh.
 
 ### What is not done yet
 
-- **A place of its own in the grid**: a mod's weapon is a variant of its
-  base on the base's place, its picture and name the base's; a seventh
-  place needs the select screen's file's pictures and names
-  (`select_data.c`, `SelectFile.weapon_pixels`) and a `weapon_id` of its
-  own everywhere the game indexes by weapon (the tables above, the
-  sounds', the CPU's, the dropped object's).
-- **One move attached to another file's motion**: a move's motion is a
-  number in its own file's table, and its frames are in that file's
-  stream, so a move of another file's is the file's own after a merge:
-  a tool (beside `tools/inspect_bbm.py`) that adds a motion, its marks
-  and its frames to a file and points a move at it. A weapon's own motion
-  file is whole, made from a disc file by such a tool or by hand.
-- **A weapon's sounds and its dropped object** as numbers of the file;
-  the CPU's own weapons in versus the CPU (`g_vscpu_weapons`) and team
-  battle's are the game's.
-- **Its own model in two on two** and on a weapon lying loose.
+- **A place of its own on the weapon scroll** (waits on the owner's
+  look): a mod's weapon is a variant of its base on the base's place,
+  its picture and name the base's. The row is a scroll of six places 64
+  pixels apart (`select.c`, `SELECT_WEAPON_PITCH`, the cursors from x
+  128), its silhouettes and their names painted into the select screen's
+  picture; a seventh, at x 512, is the last room before the scroll's
+  right roller (about 560 of 640), so one more place fits and no more.
+  What a place has is the select file's art, each a table of six: the
+  silhouette and its name on the scroll, the name over the portraits
+  (`SELECT_WEAPON_NAME_CELLS` a place), the large picture of each clan
+  that flies in and crosses (`SelectFile.weapon_pixels`, loaded into
+  `weapon_rects`) and where it crosses (`g_select_weapon_places`). So a
+  place of its own is art in the scroll's brush style (or the scroll
+  redrawn wider, or a second scroll for the mods' weapons under it) and
+  where it goes: the owner's call. The logic is small beside it: the
+  cursor's right past the last place, Cross taking the base with the
+  mod's weapon picked as L1 and R1 take it now (`g_port_weapon_pick`).
+- **A `weapon_id` of its own**: not done, and perhaps not wanted. The
+  fighter's `weapon_id` is read in about 95 places of the game: tables
+  by weapon (every one a mod's weapon changes is already answered through
+  `port_weapons.h`: points, speed, power, models, stance, CPU, sounds,
+  dropped weapon, motions) and tests of its kind (`>= WEAPON_ID_FIRST_GUN`,
+  the pole arms' shaft, the scabbards, the two-sword stance, the motion
+  set's class), each of which a new number would have to be taught to
+  answer as its base. The pair the port keeps, the base's `weapon_id` in
+  the game's state and the weapon picked (`g_port_weapon_pick`), says
+  the same thing without touching the structures the play tests and the
+  emulator's comparisons read (`FightConfig`, `Fighter`).
+- **A weapon's own recorded sounds**: `sounds =` takes one of the
+  game's banks; a bank of the mod's own (a VAB of its own samples, laid
+  out as the game's weapon banks are, read in place of the pair's file,
+  `resource_PortReadWeaponSounds`) is not done.
+- **The CPU's own weapons** in versus the CPU (`g_vscpu_weapons`) and
+  team battle's are the game's: the CPU never fights with a mod's new
+  weapon.
+- **Its own model in two on two**.
 
 ### Netplay
 
@@ -2295,8 +2390,42 @@ away with the reason on the online page.
   mods (weapons, motions, stages, arenas) are not the same as yours").
   The window's own pixels of the weapon row's line and the club in the
   hand: `tmp/mods10/` of the work.
+- **Its sounds and dropped weapon** (format 3; the kanabo picked as
+  above, its file as format 2 had it and as it ships, `sounds =
+  broadsword` and `dropped = broadsword`), both sizes: the log says
+  `kanabo: the broadsword's sounds, dropped as the broadsword is`; the
+  trace is format 2's but for the sound lines, from the first clash
+  (line 1,657, `sound key 3046`: another sample's address), and the
+  fight is the same to its kill (the kanabo's fighter's); the sound kept
+  (`--wav`) differs from 51.9 to 78.4 seconds; each size's trace and
+  sound the other's. The remastered picture draws the club lying loose
+  where the katana lay. Both are in `tmp/modsleft/listen/` of the work.
+- **A move joined to another file's motion**: the kanabo's own motions
+  made by `tools/weapon_kanabo.py --motions` (U123.BBM with K123.BBM's two
+  first blows, 257,640 bytes for 252,816; its stream, packed again by
+  `bbm_join.py check`, the same); the game's own decoder
+  (`tests/motion_decode.c`, with `BB2_DISC` at a folder of the file) and
+  the format's decoder in Python agree on all its 4,190 frames. The
+  kanabo picked with it (both sizes, each size's trace the other's): its
+  fighter plays motion 166, the broadsword's first blow, on the first
+  press (`p1_motion` of a play test's `[state]` at Fighter's
+  `motion_index`, the PlayStation's offset 0x5C), then 167; the fight is
+  another from the load on (26 frames shorter, the file read from the
+  mod). The rollback self-test passes with it picked (94 rounds, 752
+  frames, both sizes). The club swung in the broadsword's blow, in the
+  remastered picture: `tmp/modsleft/listen/` of the work. Online
+  (`tools/port_net.py`'s session, the host's R1, both machines with the
+  kanabo of its own motions, sounds and dropped weapon; both sizes): both
+  say the first fighter picks the kanabo and reads its motions, 73 state
+  hashes the same; each machine's replay plays back with the mod (26
+  hashes as recorded) and is refused without it; a guest with the shipped
+  kanabo (its file and motions not the same) is turned away before the
+  game, "gameplay mods ... are not the same".
+  `tests/rebushido/bbm_join.py`: two made-up files joined, read by the
+  format's decoder; the disc's files packed again byte for byte.
 - `tests/port/weapons.c`: a weapon's file read, every line that can be
-  wrong refused with its reason, the factors, a folder of mods with a
+  wrong refused with its reason (the sounds' and the dropped weapon's
+  among them), the factors, a folder of mods with a
   new slot, one that replaces and one left out, every answer to the
   game with and without them, and the session's hash, worked out again.
   `tests/port/discfiles.c`: a motion file of a made-up disc's MOTION/
@@ -2320,6 +2449,7 @@ away with the reason on the online page.
 | `src/port/vorbis.c`, `src/port/vendor/` | stb_vorbis as it ships, and the empty C library headers it is compiled over |
 | `src/port/xa.c`, `src/port/spu.c`, `src/port/sound.c`, `src/port/cd.c` | the hooks: the drive's volumes on other samples (`port_MixCdAudio`), the chip's `heard`, the call in the mix, the stream playing (`port_GetCdStream`) |
 | `include/port_discfiles.h`, `src/port/discfiles.c` | the disc's directory, a stage's files by key, `--dump-stages`, the mods' files over the disc's sectors (stages and motions); `src/port/disc.c` calls it for every sector it reads |
+| `tools/bbm_join.py`, `tests/rebushido/bbm_join.py` | a move joined to another file's motion: the frames decoded, the motion, its marks and frames copied in, the stream packed again and checked |
 | `include/port_weapons.h`, `src/port/weapons.c` | the weapons' files read and checked, `--weapon`, the answers to the game (`fighter_pose.c`, `fighter.c`, `cpu.c` under `RB_PORT`), the session's hash of the gameplay mods (`port_ModsGameplayHash`, `mods.c`) |
 | `tests/port/weapons.c` | the weapons' files, the folder, the answers and the hash |
 | `tests/port/music.c`, `music.py`, `tests/port/discfiles.c` | the music's keys, loops, files and player; the directory and the stage files |

@@ -222,11 +222,19 @@ the stage").
     its own in the remastered picture and a motion file of its own, the
     pick in the game's state, the session refused where the mods differ,
     and the kanabo shipped as the example, its model made by a script
-    ("A mod's weapon on the select screens"). Left: a weapon's place of
-    its own in the grid with its picture and its own `weapon_id`, a move
-    joined to another file's motion, a weapon's sounds and dropped object;
-    larger arenas and pieces; the weapons' pages ("What is not done
-    yet", "What a stage editor needs next", "What is next").
+    ("A mod's weapon on the select screens"). Then (2026-11-26): **a
+    weapon's sounds and dropped weapon** of another weapon's
+    (`sounds =`, `dropped =`, format 3), its own model on a weapon lying
+    loose, and **a move joined to another file's motion**
+    (`tools/bbm_join.py`, lossless: the disc's streams packed again come
+    back byte for byte), the kanabo given the broadsword's sounds and
+    dropped weapon, and from the player's disc the broadsword's two first
+    blows (`tools/weapon_kanabo.py --motions`). Left: a weapon's place of
+    its own on the weapon scroll (room for one, and its art: the owner's
+    look), whether a `weapon_id` of its own is wanted at all, a weapon's
+    own recorded sounds; larger arenas and pieces; the weapons' pages
+    ("What is not done yet", "What a stage editor needs next", "What is
+    next").
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.

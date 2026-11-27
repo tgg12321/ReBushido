@@ -450,6 +450,20 @@ void replay_PlayFrame(void) {
             rot[0] = draw->rot_x_and_slot;
             rot[1] = draw->rot_y;
             rot[2] = draw->rot_z;
+#if RB_REMASTER_VIEW
+            {
+                /* the picture's: a dropped weapon is still in the pool,
+                 * in the slot the draw was recorded from, with its
+                 * fighter (port_weapons.h) */
+                const LooseObject *obj = &g_object_pool[draw->rot_x_and_slot >>
+                                                        REPLAY_DRAW_SLOT_SHIFT];
+
+                if (OBJECT_IS_WEAPON(obj->kind)) {
+                    port_RemasterNoteLooseWeapon(
+                        g_disp_prim_cursor, obj->owner);
+                }
+            }
+#endif
             weapon_Queue(draw->weapon_model, WEAPON_DRAW_FREE, pos, rot);
         }
     }

@@ -6,6 +6,15 @@ weapons").
 
     python3 tools/weapon_kanabo.py [--out src/port/mods/kanabo/models/kanabo.glb]
                                    [--picture tmp/kanabo/kanabo.png]
+    python3 tools/weapon_kanabo.py --motions disc/MOTION --mod DIR
+
+The second makes the club its own motions from your disc, the example of a
+move joined to another file's motion (docs/MODS.md): the katana's file of
+the first set, U123.BBM, with the first stance's two blows (the moves its
+commands 00d5 and 00d6 lead to from standing) playing the broadsword's
+(K123.BBM's moves of the same commands), as DIR/motions/kanabo.bbm, and
+`motions = kanabo` in DIR/weapons/kanabo.txt. DIR is a copy of the mod;
+nothing of the disc is in the one the program ships.
 
 Everything in it is made here, by arithmetic: the mesh, its normals and the
 small picture it is coloured from. Nothing is read from the disc, and no mesh
@@ -54,6 +63,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
+import bbm_join  # noqa: E402
 import fighter_export  # noqa: E402
 
 OUT = os.path.join(ROOT, 'src', 'port', 'mods', 'kanabo', 'models', 'kanabo.glb')
@@ -414,11 +424,62 @@ def vertices_of(mesh):
     return vertices, triangles
 
 
+# The club's own motions (--motions): the file it is made on, the file its
+# blows are brought from, and the commands from standing in the first stance
+# that lead to them.
+MOTIONS_INTO = 'U123.BBM'
+MOTIONS_FROM = 'K123.BBM'
+MOTIONS_COMMANDS = (0x00D5, 0x00D6)
+MOTIONS_KEY = 'kanabo'
+
+
+def led_to(motion_file, command):
+    """The move of the file's own that `command` leads to from standing in
+    the first stance."""
+    standing = [place for place, said in motion_file.names().items()
+                if said == 'standing in stance 1']
+    for flags, target in motion_file.commands(standing[0]):
+        if flags == command and target & bbm_join.OWN_FILE:
+            return target & ~bbm_join.OWN_FILE
+    raise SystemExit('weapon_kanabo: %s: no command %04x from standing in the first stance'
+                     % (motion_file.name, command))
+
+
+def make_motions(folder, mod):
+    """The club's own motions into the mod at `mod`, from the disc's motion
+    files in `folder`."""
+    into = bbm_join.read_file(os.path.join(folder, MOTIONS_INTO))
+    source = bbm_join.read_file(os.path.join(folder, MOTIONS_FROM))
+    pairs = [(led_to(into, command), led_to(source, command)) for command in MOTIONS_COMMANDS]
+    data = bbm_join.join(into, source, pairs, say=lambda line: print('weapon_kanabo: ' + line))
+    os.makedirs(os.path.join(mod, 'motions'), exist_ok=True)
+    out = os.path.join(mod, 'motions', MOTIONS_KEY + '.bbm')
+    with open(out, 'wb') as f:
+        f.write(data)
+    weapon = os.path.join(mod, 'weapons', 'kanabo.txt')
+    with open(weapon, encoding='utf-8') as f:
+        text = f.read()
+    if not any(line.split('=')[0].strip() == 'motions' for line in text.split('\n')):
+        with open(weapon, 'a', encoding='utf-8', newline='\n') as f:
+            f.write('# its own motions, made from the disc by tools/weapon_kanabo.py --motions:\n'
+                    "# the katana's, but for the first stance's two blows, the broadsword's\n"
+                    'motions = %s\n' % MOTIONS_KEY)
+    print('weapon_kanabo: %s: %d bytes' % (out, len(data)))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--out', default=OUT, help='the .glb written')
     ap.add_argument('--picture', help="also write the club's picture as a PNG here, for review")
+    ap.add_argument('--motions', help="the disc's motion files (disc/MOTION): make the club's own "
+                    'motions into --mod instead of its model')
+    ap.add_argument('--mod', help='the kanabo mod (a copy of src/port/mods/kanabo/) --motions writes into')
     args = ap.parse_args()
+    if args.motions:
+        if not args.mod:
+            ap.error('--motions needs --mod')
+        make_motions(args.motions, args.mod)
+        return 0
     bones, _ = fighter_export.source_tables()
     rgba = picture()
     image = fighter_export.png(SIDE, SIDE, rgba)

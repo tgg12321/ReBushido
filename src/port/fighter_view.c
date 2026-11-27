@@ -231,9 +231,33 @@ void port_RemasterNoteHeldWeapon(const void *node, s32 slot) {
     }
 }
 
+/* The nodes of each fighter's dropped weapon lying loose
+ * (port_RemasterNoteLooseWeapon), likewise, with the frame each was
+ * noted in: a dropped weapon is not drawn in every frame, and a node's
+ * place is another's once it is not, so a note holds for the frame it
+ * was made in and the next alone. */
+static PortAddress g_loose_nodes[MODEL_SLOT_COUNT][HELD_BUFFERS];
+static u32 g_loose_serials[MODEL_SLOT_COUNT][HELD_BUFFERS];
+static s32 g_loose_next[MODEL_SLOT_COUNT];
+
+void port_RemasterNoteLooseWeapon(const void *node, s32 owner) {
+    if (owner >= 0 && owner < MODEL_SLOT_COUNT) {
+        g_loose_nodes[owner][g_loose_next[owner]] = (PortAddress)node;
+        g_loose_serials[owner][g_loose_next[owner]] = g_serial;
+        g_loose_next[owner] = (g_loose_next[owner] + 1) % HELD_BUFFERS;
+    }
+}
+
+/* Whether the node at `at` is the dropped weapon of the fighter in
+ * `slot`, as noted this frame or the last. */
+static s32 port_FighterIsLoose(s32 slot, s32 i, PortAddress at) {
+    return g_loose_nodes[slot][i] == at &&
+           g_serial - g_loose_serials[slot][i] < HELD_BUFFERS;
+}
+
 /* The model of a mod's weapon (port_WeaponHeldModel) where the weapon
- * node is in a fighter's first hand, or NULL (two on two keeps the game's
- * models). */
+ * node is in a fighter's first hand or is his dropped weapon, or NULL
+ * (two on two keeps the game's models). */
 static const char *port_FighterHeldModel(PortAddress at, s32 weapon_model) {
     s32 slot;
     s32 i;
@@ -243,7 +267,8 @@ static const char *port_FighterHeldModel(PortAddress at, s32 weapon_model) {
     }
     for (slot = 0; slot < MODEL_SLOT_COUNT; slot++) {
         for (i = 0; i < HELD_BUFFERS; i++) {
-            if (g_held_nodes[slot][i] == at) {
+            if (g_held_nodes[slot][i] == at ||
+                port_FighterIsLoose(slot, i, at)) {
                 return port_WeaponHeldModel(slot, weapon_model);
             }
         }
