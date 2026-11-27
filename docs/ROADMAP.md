@@ -669,3 +669,52 @@ the stage").
     disputed, a leaver, a forged report refused). Left: deploying the
     lobby (the owner's), real players on real networks, a tool to settle a
     dispute (by hand in SQL now), seasons.
+26. **A training mode** (the owner, 2026-11-26): a fight against a
+    dummy for learning the game, with nothing of the fight changed. An
+    input display (both players' presses, by frame); the hit areas, the
+    kill and wound zones and the weapons' reach drawn over the fighters
+    in the remastered picture; a dummy that stands, guards, or plays back
+    what the player recorded for it (several slots, one picked at random
+    if asked); a moment saved and put back at a press (the rollback's own
+    save and load, `src/port/state.c`) to drill it; slow motion and a step
+    of one frame. A page of its own on the top menu, every option as a
+    setting of `settings_list.h`.
+27. **The CPU's difficulty** (the owner, 2026-11-26): a few levels beside
+    the original's CPU, which stays as it is. The owner: the CPU must not
+    "cheat"; it plays as a real player would, only making better
+    decisions. So a CPU of any level reads only what a player could see
+    (where the fighters are, what they are doing, their wounds), never the
+    other's pad before it acts nor the fight's future; it answers after a
+    human's time to react (a level may shorten it, never to nothing) and
+    presses as a pad could. What a higher level changes is its choices:
+    distance, when to strike and with what, when to guard or back away,
+    reading the other's habits during the match. It plays through the
+    same inputs as a player, so a fight against it replays and runs online
+    as any other. A level may be learned from replays (item 23) of real
+    players; a choice on the select screens and in the settings.
+28. **A resync button** (the owner, 2026-11-26, instead of a desync
+    report): when an online session finds the machines' hashes parted, a
+    press (any player's, or offered on its own) puts the host's state on
+    every machine (`src/port/state.c`'s save, sent whole) and the fight
+    goes on from there, rather than the session ending. The resync is in
+    the replay, so a replay of a resynced fight still plays.
+29. **A replay theatre and photo mode**: a replay played with a free
+    camera, paused, slowed or stepped, from any frame; the picture
+    without the HUD; a still saved at full size, and a clip saved as a
+    video (MP4) or GIF. Also a photo mode in a fight (paused, a free
+    camera, the time of day changed), to show the stages' skies and
+    dressing (items 17, 20).
+30. **Stats** (the owner, 2026-11-26; no achievements): a player's record
+    kept by the program: fights and matches won and lost, by fighter,
+    weapon, stage, mode and opponent (CPU levels, online names); kills
+    by kind and place of the blow, wounds given and taken, the longest
+    run of wins; a match history with each fight's replay. A page of its
+    own; online the ladder (item 25) keeps its own ratings beside it.
+31. **A local tournament**: a bracket of up to eight players or CPUs
+    (item 27's levels) on one machine or in a room (item 22), single or
+    double elimination, under the match rules of item 21, the bracket
+    shown between matches and its result kept in the stats (item 30).
+32. **The sound remastered**, as a setting (the original's sound stays):
+    a reverb of each stage's own (the dojo, the cave, the open), sound
+    placed for headphones (HRTF), and better resampling of the game's
+    samples than the chip's own.
