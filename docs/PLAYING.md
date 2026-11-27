@@ -141,7 +141,7 @@ TOP MENU), with five rows:
 |---|---|
 | **Singleplayer** | a page of its own: **Story**, **Vs. CPU**, **Slash** (once it is won, as in the original) and **Group Battle**, and **Back** |
 | **Versus** | two players, the second on the second pad |
-| **Training** | the game's training, either kind of practice |
+| **Training** | a page of its own: **Training**, a fight against a dummy ("Training", below), the game's own **Classic Training** (either kind of practice), **Training Options** and **Back** |
 | **Online Play** | the online pages, a page of the game's own look: Quick Match, host a room, browse rooms, join by code or by address ("Playing online"); Back on them comes back here |
 | **Options** | the settings menu (below), in place of the game's own options page and in its look |
 
@@ -158,8 +158,8 @@ In a fight the pause menu's rows are **Continue**, **Return to
 Character Select** and **Return to Main Menu**, and the menu after a
 fight's **Rematch** and the same two (the game's own lettering says
 "Return to Sub Menu" and "Return to Top Menu"); the training page and
-the Group Battle page say **Return to Main Menu** too. In Training,
-Return to Character Select goes back to training's own page first, as
+the Group Battle page say **Return to Main Menu** too. In Classic
+Training, Return to Character Select goes back to its own page first, as
 the game's did.
 
 `menu = original` in `rebushido.cfg` (or *Menus* in *The game*) puts
@@ -775,6 +775,70 @@ partner is the CPU's (each picks his own); in a session of **four players** (fou
 PCs, or two on each of two: "Four players online" below) every fighter is
 a player's, players 1 and 3 one team and 2 and 4 the other. In a room of
 several the matches are the room host's, and spectators watch all four.
+
+## Training
+
+**Training** on the main menu is a page of its own: **Training**, a fight
+against a dummy; **Classic Training**, the game's own training (its two
+kinds of practice, as the original has them); **Training Options**, the
+settings menu's *Training* page; and **Back**.
+
+Training is a versus fight with nothing of the fight changed: the same
+moves, wounds and kills. Pick your fighter and weapon, then the dummy's
+(the first pad picks both; Triangle with nothing of the dummy's picked
+takes your own pick back), then the stage. There is no match rule, and
+the fight never ends by itself: two seconds after a kill both fighters
+start again where they stand, as a fresh round, and the wins are
+counted. Leave by the pause menu (Start): **Return to Character Select**
+or **Return to Main Menu**.
+
+The dummy is the second fighter, played only by what training gives the
+second pad, as a player's pad would be. **Dummy** in the settings says
+what it does: **Stands**; **Guards**, pressing the attack button the
+game's CPU answers that kind of attack with a frame before your blow can
+land (as the game has it, a blade met by a blade); or **Plays back** what
+you recorded for it, round and round.
+
+Hold **Select** (Right Shift on the keyboard, Back on a controller) and
+press:
+
+| | |
+|---|---|
+| **Cross** | record the dummy: your pad now plays the dummy's side and is kept in the slot (up to a minute); Cross again stops |
+| **Circle** | play the slot back from its start (once, if the dummy stands or guards) |
+| **L1** | keep this moment |
+| **R1** | put the kept moment back: both fighters, the dummy's playback, everything of the fight, as it was |
+| **L2** | slow motion on and off |
+| **Triangle** | freeze the fight, and run on |
+| **Square** | a step of one frame (it freezes first) |
+
+Nothing you press with Select held reaches your fighter. While the fight
+is frozen or slowed, what you press is kept for its next frame, and
+Start still pauses. The recordings and the kept moment last until the
+program closes; a recording is kept in the slot the settings say.
+
+Over the fight: both pads' presses, newest on top, each with the frames
+it was held, the direction as an arrow and the buttons as their shapes
+(**Input display**); a line at the foot of what training is doing; and
+the **Hit areas**: every point of each body as a disc where a blade
+wounds, with a red core where it kills (the head, the chest, the hips),
+the arms and legs in their own colours, and each weapon's blade from the
+hand to its point, red while it is in its frames of hitting.
+
+The *Training* page of the settings menu (from Training Options, or the
+pause menu's Select):
+
+| Setting | Values | What it does |
+|---|---|---|
+| `training_dummy` | `stand`, `guard`, `playback` | What the dummy does |
+| `training_slot` | `1` to `4` | The slot recorded into and played back |
+| `training_random` | `off`, `on` | Playback plays a random slot of those recorded, a new one each time round |
+| `training_slow` | `2` to `8` | Slow motion shows each frame so many times |
+| `training_inputs` | `on`, `off` | The input display |
+| `training_hit_areas` | `on`, `off` | The hit areas |
+
+No replay is kept of a training fight, and training is not offered
+online.
 
 ## Everything unlocked
 

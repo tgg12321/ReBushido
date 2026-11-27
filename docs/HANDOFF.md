@@ -95,6 +95,12 @@ lessons still holds unless this section says otherwise.
 
 ## Next, what needs no owner
 
+- ROADMAP 26, training (2026-11-26, PORT.md and PLAYING.md, "Training"):
+  done but for a dummy's recording mirrored when the sides swap, a guard
+  that weighs the distance, and the blade's sweep among the hit areas;
+  the owner's eye on `tmp/training/` (the pages, the input display, the
+  hit areas).
+
 - ROADMAP 24's leftovers: four real PCs. (Partners' own voices, mods'
   pages on the second bank, the silent guest and a leave between fights
   are done, 2026-11-25: NETPLAY.md, section 19; MODS.md, "A fighter's
