@@ -181,12 +181,29 @@ lessons still holds unless this section says otherwise.
   to be ready under load had the host's presses meant for the pages after
   the first session land on the lobby's Leave; the host now waits for
   the session's end (`until:message`).
-- **Open, no cause yet**: some Windows online window cases (`win-pages`
-  three times, `rooms-four-win`, `room` and `win-pages-four` once each;
-  the last, 2026-11-27, a guest whose first word to the lobby server on
-  127.0.0.1 went unanswered and gave up) fail only inside a
-  full gate on a loaded machine and pass alone every time (`win-pages`
-  6 of 6, five of them under load; `win-pages-four` 3 of 3); a gate's
+- **The Windows window cases' "lobby server does not answer" was the
+  program's** (fixed 2026-11-27; `win-pages`, `rooms-four-win`, `room`,
+  `win-pages-four`, `win-lobby-refused` in loaded gates): a guest given
+  `--join` opens its window inside its meeting with the lobby (the wait
+  hook's first panel, `port_RelayMeet`), and on a loaded machine that
+  took 13 to 30 s. The meeting's clock starts at 0 there, so its first
+  hello waited for 250 ms of it and went only after the window; then
+  `now - heard_at > 10 s` already held, and unless the server answered
+  that first hello within one 5 ms poll the guest gave up, 30 ms after
+  saying "Reaching" (its hello reached the server just as it left, so
+  the host of four waited for it forever). A player on a busy PC would
+  hit it too. Now the first hello goes at once, the give-up also needs
+  forty hellos unanswered (a pass held up sends none), and a pass held
+  up over a second is logged (`relay: the program was held up N ms`).
+  `tools/port_net_lobby.py` waits 90 s (`CODE_SECONDS`) for a room's
+  code and a window guest's refusal, as a window's host under load can
+  take 30 s to open its window before it reads the code. Found beside
+  it: `win-room`'s Escapes (blanks 3,200 and 3,300) came after its first
+  fight was over (blank 3,193), and the leave raced the match's end; and
+  100 blanks apart they were over the 3 s that make two Escapes a leave
+  (`NETPLAY_LEAVE_MS`) where a loaded machine showed 25 blanks a second.
+  They are at 2,700 and 2,730 now, in the fight.
+- **Open, no cause yet**: a gate's
   `port_net four` once found a port of 127.0.0.1 taken by another run
   ("no socket at"), passing again alone; the provers' stage counts are 66
   primitives a stage fewer than stored baselines even on the baseline's

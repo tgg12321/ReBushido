@@ -112,6 +112,10 @@ HEADLESS = os.path.join(REPO, 'build/port-sdl/windows/rebushido-headless.exe' if
 WINDOW = os.path.join(REPO, 'build/port-sdl/windows/rebushido.exe' if IS_WINDOWS else 'build/port-sdl/linux/rebushido')
 BASE_PORT = 45000
 PORTS_PER_CASE = 10
+# How long a host is waited for to say its room's code: a window's program
+# on a loaded machine can take half a minute to open its window, inside its
+# meeting with the lobby, before it reads the server's answer
+CODE_SECONDS = 90
 # (each system's half its own: the gate runs the Linux and the Windows
 # halves at once, and their cases of one name met in one folder, one
 # half's start emptying it under the other's programs)
@@ -313,7 +317,7 @@ def lobby_session(case, program, host_more, guest_more, path_words, lobby_at=Non
         '--host', '%s:%d' % (host_ip, case.port(1)), '--room', 'Room ' + case.name, '--player', 'Host',
         '--room-password', PASSWORD, '--card1', os.path.join(case.folder, 'card1.mcd'), '--card2',
         os.path.join(case.folder, 'card2.mcd')] + host_more, env)
-    code = case.wait_for('host', r"room's code is (\w+)", 30)
+    code = case.wait_for('host', r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('the host was given no room code')
         return
@@ -385,7 +389,7 @@ def case_list(case):
     host = case.start('host', [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--frames', '600', '--lobby',
                                lobby, '--host', '127.0.0.2:%d' % case.port(1), '--room', 'Listed room', '--player',
                                'Lister', '--room-password', PASSWORD])
-    if case.wait_for('host', r"room's code is (\w+)", 30) is None:
+    if case.wait_for('host', r"room's code is (\w+)", CODE_SECONDS) is None:
         case.fail('no room code')
         return
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -430,7 +434,7 @@ def case_refused(case):
     base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby]
     case.start('host', base + ['--frames', '30000', '--host', '127.0.0.2:%d' % case.port(1), '--room', 'Locked',
                                '--room-password', PASSWORD])
-    code = case.wait_for('host', r"room's code is (\w+)", 30)
+    code = case.wait_for('host', r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('no room code')
         return
@@ -506,7 +510,7 @@ def case_rooms(case):
                           list(more))
 
     host = member('ayame', '--room-open', 'Many', '--room-rule', 'fixed', '--room-matches', '3')
-    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", CODE_SECONDS)
     if code is None:
         case.fail('the room of several was given no code')
         return
@@ -556,7 +560,7 @@ def case_rooms_crew(case):
                           list(more))
 
     procs = [member('ayame', '--room-open', 'Crews', '--room-rule', 'fixed', '--room-matches', '1')]
-    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", CODE_SECONDS)
     if code is None:
         case.fail('the room of several was given no code')
         return
@@ -643,7 +647,7 @@ def case_rooms_duo(case):
                           list(more))
 
     procs = [member('ayame', '--room-open', 'Fours', '--room-rule', 'fixed', '--room-matches', '1')]
-    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", CODE_SECONDS)
     if code is None:
         case.fail('the room of several was given no code')
         return
@@ -710,7 +714,7 @@ def case_rooms_resync(case):
 
     host = member('ayame', '--room-open', 'Parted', '--room-rule', 'fixed', '--room-matches', '1',
                   '--net-part-at', str(ROOM_PART_AT), '--resync-auto', '60')
-    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", CODE_SECONDS)
     if code is None:
         case.fail('the room of several was given no code')
         return
@@ -1124,7 +1128,7 @@ def four_session(case, paths, path_words):
         '--players', '4', '--room', 'Fours ' + case.name, '--player', FOUR_NAMES[0], '--room-password', PASSWORD,
         '--net-seed', '4242', '--card1', os.path.join(case.folder, 'card1.mcd'), '--card2',
         os.path.join(case.folder, 'card2.mcd')])]
-    code = case.wait_for(labels[0], r"room's code is (\w+)", 30)
+    code = case.wait_for(labels[0], r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('the host was given no room code')
         return
@@ -1237,7 +1241,7 @@ def case_four_silent(case):
         '--players', '4', '--room', 'Fours ' + case.name, '--player', FOUR_NAMES[0], '--room-password', PASSWORD,
         '--net-seed', '4242', '--card1', os.path.join(case.folder, 'card1.mcd'), '--card2',
         os.path.join(case.folder, 'card2.mcd')])]
-    code = case.wait_for(labels[0], r"room's code is (\w+)", 30)
+    code = case.wait_for(labels[0], r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('the host was given no room code')
         return
@@ -1397,7 +1401,7 @@ def case_four_between(case):
         '--players', '4', '--match', BETWEEN_MATCH, '--room', 'Fours ' + case.name, '--player', FOUR_NAMES[0],
         '--room-password', PASSWORD, '--net-seed', '4242', '--card1', os.path.join(case.folder, 'card1.mcd'),
         '--card2', os.path.join(case.folder, 'card2.mcd')])]
-    code = case.wait_for(labels[0], r"room's code is (\w+)", 30)
+    code = case.wait_for(labels[0], r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('the host was given no room code')
         return
@@ -1553,7 +1557,7 @@ def rooms_four(case, stock):
 
     procs = [member('ayame', '--room-open', 'Fours', '--room-rule', 'fixed', '--room-size', '4', '--room-matches',
                     '2')]
-    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", CODE_SECONDS)
     if code is None:
         case.fail('the room of several was given no code')
         return
@@ -1800,7 +1804,7 @@ def case_win_rooms(case):
                 % (lobby, port), 'net_role = rooms\nnet_lobby = %s\nnet_player = Browser\n' % lobby]
 
     def host_open():
-        if case.wait_for('side0', r"room's code is (\w+)", 60) is None:
+        if case.wait_for('side0', r"room's code is (\w+)", CODE_SECONDS) is None:
             case.fail('the host\'s room was not opened from the menu')
     menu_pair(case, settings, keys, host_open)
     if 'a session as the guest by way of the lobby' not in case.err('side1'):
@@ -1913,7 +1917,7 @@ def case_win_lobby_refused(case):
               '--lobby', lobby]
     case.start('host', common + ['--log', os.path.join(case.folder, 'host.log'), '--host',
                                  '127.0.0.2:%d' % case.port(1), '--room', 'Shut', '--room-password', PASSWORD], DUMMY)
-    code = case.wait_for('host', r"room's code is (\w+)", 30)
+    code = case.wait_for('host', r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('no room code')
         return
@@ -1922,7 +1926,7 @@ def case_win_lobby_refused(case):
                                 r'not compatible with yours.*the build')):
         case.start(label, common + ['--log', os.path.join(case.folder, label + '.log'), '--join', code.group(1),
                                     '--net-bind', '127.0.0.3:0'] + more, DUMMY)
-        shown = case.wait_for(label, r'netplay: could not play online: (.*)', 40)
+        shown = case.wait_for(label, r'netplay: could not play online: (.*)', CODE_SECONDS)
         if shown is None or not re.search(words, shown.group(1)):
             case.fail('%s: the guest\'s window did not say %r (%s)' % (label, words,
                                                                      shown.group(1) if shown else 'nothing'))
@@ -1979,7 +1983,7 @@ def case_pages(case):
     guest_keys = 'down down accept wait:10 shot accept type:%s shot done until:lobby wait:10 shot accept' % PASSWORD
     host = pages_window(case, 'host', 'net_lobby = %s\nnet_player = Hostess\nnet_room = Pages room\nnet_delay = 2\n'
                         'net_port = %d\n' % (lobby, case.port(1)), host_keys, 0)
-    if case.wait_for('host', r"room's code is (\w+)", 90) is None:
+    if case.wait_for('host', r"room's code is (\w+)", CODE_SECONDS) is None:
         case.fail('the host\'s room was not opened from the pages')
         return
     guest = pages_window(case, 'guest1', 'net_lobby = %s\nnet_player = Browser\n' % lobby, guest_keys, 1)
@@ -2039,7 +2043,7 @@ def case_pages_four(case):
                  'until:waiting wait:20 shot until:lobby wait:20 shot accept')
     host = pages_window(case, 'host', 'net_lobby = %s\nnet_player = Hostess\nnet_room = Fours\nnet_delay = 2\n'
                         'net_port = %d\n' % (lobby, case.port(1)), host_keys, 0)
-    code = case.wait_for('host', r"room's code is (\w+)", 90)
+    code = case.wait_for('host', r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('the host\'s room of four was not opened from the pages')
         return
@@ -2098,7 +2102,7 @@ def case_pages_refused(case):
     lobby = case.server()
     host = case.start('host', [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--host',
                                '127.0.0.2:%d' % case.port(1), '--room', 'Shut'])
-    code = case.wait_for('host', r"room's code is (\w+)", 30)
+    code = case.wait_for('host', r"room's code is (\w+)", CODE_SECONDS)
     if code is None:
         case.fail('no room code')
         return
@@ -2120,9 +2124,11 @@ def case_pages_refused(case):
 
 
 # The room page's host leaves the first match in its fight: two Escapes,
-# at these blanks of the session (its fight is from near blank 2,900 to
-# 4,000).
-ROOM_ESCAPES = '3200,3300'
+# at these blanks of the session (its fight is from blank 2,176 to 3,193,
+# frames 1,378 to 1,887: Escapes after it raced the match's end), the
+# second within the 3 seconds that make it a leave (NETPLAY_LEAVE_MS)
+# even when a loaded machine shows 25 blanks a second.
+ROOM_ESCAPES = '2700,2730'
 
 
 def case_win_room(case):
@@ -2153,7 +2159,7 @@ def case_win_room(case):
     host = window('hostess', 'net_room = Group room\nnet_delay = 2\nnet_port = %d\n' % case.port(1),
                   ['--online-at', '120', '--online-keys', keys, '--escape-at', ROOM_ESCAPES,
                    '--menu-shots', os.path.join(case.folder, 'shots', 'hostess')])
-    code = case.wait_for('hostess', r"room's code is (\w+) \(a room of several", 90)
+    code = case.wait_for('hostess', r"room's code is (\w+) \(a room of several", CODE_SECONDS)
     if code is None:
         case.fail('the room of several was not opened from the pages')
         return
