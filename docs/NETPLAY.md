@@ -2303,6 +2303,33 @@ four players is two on two with every fighter a player's: pad 1 and 3
 the first team, 2 and 4 the second (on two PCs, each PC a team); the
 host's rule, its match and its stage page hold as in a session of two.
 
+*A guest who gives up in the meeting* (2026-11-27). A guest the lobby
+let into a seat, whose way to the host was found, and who then went (his
+program closed or killed, his player giving up, before his first hello
+reached the host) had the host wait for that hello for ever, its other
+guests kept in and the lobby telling a newcomer that the room had all
+its players; and as nothing more was said of the seat, the lobby closed
+the whole room 30 s on as a meeting done (`--direct-timeout`). Now,
+while it waits for a guest the lobby sent, the host says the seat's
+hello again every second (`port_RelayStillHere`, no reset: the lobby
+keeps the room), and if no hello of that guest has come in 45 s
+(`MET_GIVE_UP_MS`) it lets the seat go: its log says `session: the
+player the lobby sent to link N never said hello in 45 seconds; letting
+the seat go and waiting for another`, its status *A player who came to
+the room gave up before joining. Still waiting: ...*, and its next
+hello for the seat is the reset one a leave in the meeting already sent
+(the lobby forgets that guest and the seat is free for the next). This
+is what a leave or a silence in the meeting already did (the seat waits
+for another; nothing is decided for the CPU before the match has begun,
+section 19); the guests already in are kept in meanwhile. 45 s, not
+less: a guest whose way was found directly said so a moment before and
+says hello at once, but one relayed may be a program held up opening its
+window inside its meeting, which took up to 30 s on a loaded machine.
+Nothing new is sent (a hello of the meeting's own kind) and nothing of
+the session changes: protocol 21 and the lobby's version 4 hold, and a
+host of before and a guest of now, or the other way, meet as before.
+The same holds for a host of two at the lobby.
+
 *Leaving.* A guest of four PCs who leaves a fight of four (the window's
 close, F1 twice, the plan's end) or stops answering gives his fighter to
 the CPU, and the others play on (protocol 16, section 19). Otherwise a
@@ -2353,6 +2380,7 @@ ping. The settings menu's Play online page hosts two only.
 | `four-leave` (protocol 15; since 16 the CPU plays on: section 19) | four headless | as `four`, the fourth player's program ending 400 frames into the fight | each of the others told `the other program ended after frame 1,799 (player 4)`, all four ending well; 59 hashes the same on all |
 | `port_net_lobby.py`: `four-punch` | four headless | a locked room of four at a local lobby, three guests by its code and its password, each at its own seat; 60 ms each way and 5% lost | every guest's way a punched hole to the host (the host's three); 183 hashes the same on all four, the last `13BE7CD212C83E90` (that of the session by address: the network decides when an input is known, never what it is); 1,030, 719, 681 and 741 rollbacks; 100 s |
 | `four-relay` | four headless | the same, `--net-paths relay`: each seat's pair passed on by the lobby | each the relay; the same 183 hashes, the same last; 109 s |
+| `four-gives-up`, `four-gives-up-win` (2026-11-27) | five headless | `four-punch`'s room; Bunta and Chie in, then Dai, killed the moment his program says the host is in the room (no hello to the host ever, no goodbye); Eiji asks for the room's code once the host has let the seat go | before the fix the host waited for ever (`3 of 4 players here`), Eiji was told the room had all its players, and the lobby closed the room 30 s on. Now: 45 s after the kill the host let the seat go, met Eiji there (link 3), and the session of four played with him: 143 hashes the same on all four, the last `A6A8B211828A9212` at frame 4,290; 611, 432, 397 and 437 rollbacks; 112 s (142 s in a loaded gate; Windows' headless programs 115 s) |
 | `rooms-four` (protocol 15; match 2 since 16: section 19) | five headless | a room of several, matches of four (`--room-size 4`, a fixed turn): Ayame, Bunta, Chie and Dai play, Sora watches; Dai leaves the second match at its frame 1,900, in the fight | match 1, Ayame and Chie against Bunta and Dai, each at the place the rotation gave: 182 hashes the same on all four, Sora holding 134 of them as she watched (from the fight's start), the second team's win told to the room. Match 2, the order turned (Bunta first, Bunta and Dai against Chie and Ayame): Dai's leave ended it on all, the others told `player 3` left, his team's loss the room's result, 63 hashes the same on all four, Sora 17; all back to their own games and the room; 169 s |
 | `pages-four` | four windows (hidden) | the host window's online pages: Host a room, *Room for: four players, a PC each*, Open; three windows of the command line join by its code; the host's Ready; at versus select the guests' Triangle (player 2's takes all back to the top menu) | the host met all three in turn and said go once all were ready; the session from power on to the select screen, where it ended on all (the host back at its own game, never started again); 17 hashes the same on all four; the Linux window, 19 s |
 | `four-punch-win` | four, Windows' headless program | `four-punch` on Windows | 183 hashes the same on all four, the last `6D260E838DC11965` (the Windows build's own, section 7); 1,049, 767, 710 and 735 rollbacks; 91 s |

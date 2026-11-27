@@ -1143,6 +1143,10 @@ s32 port_RelayMeet(s32 role, s32 again) {
     }
 }
 
+/* The host waits for the first hello of the guest the lobby sent it
+ * (port_net.h): the seat's hello again, with no reset. */
+void port_RelayStillHere(void) { port_SendHello(PORT_SESSION_HOST, 0); }
+
 /* ---- the lobby's list, and this PC's address as the server sees it ---- */
 
 /* A socket of its own for asking the server something, out of a session:

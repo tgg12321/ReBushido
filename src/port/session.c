@@ -115,6 +115,15 @@
 /* Once the two have met, either gives up on the other after this long
  * with nothing heard: the host waits for another guest, the guest ends. */
 #define SILENT_GIVE_UP_MS 15000
+/* A guest the lobby has sent the host (the way between the two found)
+ * whose first hello has not come in this long has given up or gone: the
+ * host lets its seat go at the lobby and waits for another. A guest whose
+ * way was found directly said so a moment before and says hello at
+ * once; one relayed may be a program held up opening its window inside
+ * its meeting, which took up to 30 s on a loaded machine. Meanwhile the
+ * host tells the lobby the seat is still its own this often. */
+#define MET_GIVE_UP_MS 45000
+#define STILL_HERE_EVERY_MS 1000
 /* The disc is told from another by a sum of its sectors: every this
  * many from the first, and the volume's own description. */
 #define DISC_SAMPLE_EVERY 997
@@ -1164,6 +1173,9 @@ static s32 port_HostSession(char *note, u32 note_room) {
     u32 welcomed_at = 0;
     u32 heard_at = 0;
     u32 punched_at = 0;
+    /* when the lobby last sent this link a guest (the way found) */
+    u32 sent_at_lobby = start;
+    u32 still_here_at = start;
     s32 met = 0;
     u32 i;
 
@@ -1216,6 +1228,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
                 if (!port_HostWaitAgain()) {
                     return 0;
                 }
+                sent_at_lobby = port_NetClock();
                 continue;
             }
             if (kind == KIND_HELLO && !met) {
@@ -1230,6 +1243,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
                     if (port_IsRelayOn() && !port_HostWaitAgain()) {
                         return 0;
                     }
+                    sent_at_lobby = port_NetClock();
                     continue;
                 }
                 port_FixNetPeer();
@@ -1257,6 +1271,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
                 if (!port_HostWaitAgain()) {
                     return 0;
                 }
+                sent_at_lobby = port_NetClock();
                 continue;
             }
             if (kind == KIND_HELLO && met) {
@@ -1295,6 +1310,30 @@ static s32 port_HostSession(char *note, u32 note_room) {
             port_NetSendTo(&g_session.punch_to, punch, sizeof(punch));
             punched_at = now;
         }
+        if (!met && port_IsRelayOn() &&
+            now - still_here_at >= STILL_HERE_EVERY_MS) {
+            /* the lobby forgets a meeting whose way is found 30 s after
+             * its last hello: the seat kept while its guest is awaited */
+            port_RelayStillHere();
+            still_here_at = now;
+        }
+        if (!met && port_IsRelayOn() && now - sent_at_lobby > MET_GIVE_UP_MS) {
+            /* the lobby sent a guest, who gave up or went before his first
+             * hello came (NETPLAY.md, section 18, *The meeting*): his seat
+             * is let go (port_RelayMeet's reset), another waited for */
+            port_Log("session: the player the lobby sent to link %d never "
+                     "said hello in %u seconds; letting the seat go and "
+                     "waiting for another\n",
+                     link + 1, MET_GIVE_UP_MS / MS_PER_SECOND);
+            port_SessionText(note, note_room,
+                             "A player who came to the room gave up before "
+                             "joining.");
+            if (!port_HostWaitAgain()) {
+                return 0;
+            }
+            sent_at_lobby = port_NetClock();
+            continue;
+        }
         if (met && now - heard_at > SILENT_GIVE_UP_MS) {
             port_Log("session: the guest stopped answering; waiting for "
                      "another\n");
@@ -1304,6 +1343,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
             if (!port_HostWaitAgain()) {
                 return 0;
             }
+            sent_at_lobby = port_NetClock();
             continue;
         }
         if (met) {

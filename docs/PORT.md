@@ -9502,6 +9502,62 @@ median and 1.65 and 1.79 at the 95th centile against main's 1.55 and 2.07
 and 2.15 run between them; under 1.5 asks the grass itself to be cheaper
 too, which the mist alone can no longer give.
 
+**The grass cheaper, its look kept** (2026-11-27). Four changes to how
+the foliage is drawn in the picture (`port_GlDressingDrawSolid`), none
+to what is drawn:
+
+- *Only the squares in the picture.* The foliage's squares of 1,024
+  units (`DressSpan`, which the lights' maps already drew by) are held to
+  the picture's sides and near plane, their boxes grown by a blade's
+  reach again for a lean, a push or a bloom (`port_DressBoxUnseen`,
+  `port_DressDrawRunSeen`); before, every block's things all went
+  through the vertex shader, those behind the camera too.
+- *The nearest first.* The squares in the picture are drawn in the order
+  of their distance from the camera.
+- *Depth tested before the light.* The foliage's fragments wrote their
+  depth (`gl_FragDepth`, the linear depth of the ground's mesh), which
+  keeps the card from testing it before it shades them, so every blade
+  behind nearer blades was lit for nothing. The vertex shader now puts
+  that linear depth in the position's z, and the near plane where the
+  projection had it in a clip distance (`GL_CLIP_DISTANCE0`); the
+  foliage's program is the solid fragment with `DRESS_RASTER_DEPTH`. The
+  depth is now interpolated across a triangle linearly on the screen
+  rather than in the world: some hundredths of a unit within a blade,
+  which moves where two crossing blades meet by a pixel here and there.
+- *Each corner once.* A tuft was 105 vertices, each worked out whole (its
+  wind, its pushes, its blade); its corners are now numbered once each
+  (49) and drawn by an index list of the same triangles in the same
+  order (`port_DressMakeCorners`, `glDrawElementsInstanced`), the casters'
+  draws too.
+
+The pictures (`port_dressing.py shots --stages 31 --times night`, the
+fight's camera at 2,560 by 1,440, before and after in `tmp/grass/`): 0.3
+to 0.9% of the pixels differ, by a mean of 0.003 levels of 255 over the
+picture, at most 7 to 16 levels at single pixels where blades cross (two
+runs of the same program differ by a level in up to 1% of the pixels,
+in the clouds).
+
+*What it costs* (the bench's `ra1-dressed --dressed-stage 31`, the same
+program built before and after, run in turns, four rounds, on a machine
+with other agents' work on it, 25 to 40% of the processors busy):
+`dress` at the median 1.31 to 1.32 before, 1.18 to 1.20 after; at the
+95th centile 1.78 to 2.03 before, 1.67 to 1.70 after. The foliage itself
+(the dressing with it left out: 0.34) went from about 0.98 to 0.85.
+Still over `DRESS_BUDGET_MS` at the 95th centile on that machine; a quiet
+bench is to say where it stands.
+
+*Measured and not kept.* What the card spends on the grass was taken
+apart by trial programs: lighting each fragment with nothing (0.05 to
+0.2 ms of it), writing none of the slots' and depth's targets (0.16),
+blades of one bend (0.06), blades of a triangle (0.19), three blades a
+tuft (0.35). So it is the blades' triangles and the pixels they cover
+and write, not the light. A blade drawn with fewer bends where it is
+small would hold the look, but on the cemetery no square's tallest blade
+is under 40 pixels at its nearest, so nothing would be drawn less;
+thinning the tufts to five blades from 4,500 units (not 6,000) shows
+in the middle distance (13% of the pixels, the meadow sparser) and was
+left out.
+
 **What is left.** The shipped stages' lamps stand where the grass's shadows
 from them are small in the fight's pictures; a mist lies at one height
 over its ground, without the light of a lamp shafting through it. The

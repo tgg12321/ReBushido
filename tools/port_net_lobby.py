@@ -42,6 +42,10 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
              player's; every hash the same on all four
     four-relay   the same through the lobby's relay alone, each guest's
              seat its own relayed pair
+    four-gives-up  four-punch's room, its third guest (Dai) killed as the
+             lobby lets him in, before the host has met him: the host lets
+             his seat go (45 s on) and meets Eiji there; the session
+             of four with Eiji, every hash the same on all four
     rooms-four   a room of several whose matches are of four (--room-size
              4): Ayame, Bunta, Chie and Dai play, Sora watches; the second
              match, its order turned, left in its fight by Dai, whose
@@ -1279,6 +1283,81 @@ def case_four_silent(case):
             case.fail('%s was written, and nothing of a session is' % card)
 
 
+# How long four-gives-up waits for the host to let the seat go: its 45 s
+# (session.c, MET_GIVE_UP_MS) and room for a loaded machine
+GIVE_UP_SECONDS = 120
+
+
+def case_four_gives_up(case):
+    """A room of four at the lobby, as four-punch's, whose third guest
+    (Dai) is let into the room by the lobby, and so sent to the host's
+    third seat, and then gives up before the host has met him: his program
+    killed as it says the other player is in the room, with no goodbye and
+    no hello ever come to the host. The host must let that seat go (the
+    lobby told to forget him) and take another for it: Eiji, who asks for
+    the room's code once it has (until then the lobby tells a newcomer the
+    room has all its players). The session is then four_session's, Eiji in
+    Dai's place,
+    every hash the same on all four (docs/NETPLAY.md, section 18, *The
+    meeting*)."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        host_plan = port_net.write_four_plan(HEADLESS, 0, None, case.folder)
+        guest_plan = port_net.write_four_plan(HEADLESS, 1, None, case.folder)
+    common = ['--image', playtest.RETAIL_CUE, '--lobby', lobby, '--net-plan-pads', '--trace'] + TROUBLE
+    names = FOUR_NAMES + ['Eiji']
+    labels = [name.lower() for name in names]
+    procs = {labels[0]: case.start(labels[0], [HEADLESS] + common + [
+        '--plan', host_plan, '--out', os.path.join(case.folder, labels[0]), '--host', '127.0.0.2:%d' % case.port(1),
+        '--players', '4', '--room', 'Fours ' + case.name, '--player', names[0], '--room-password', PASSWORD,
+        '--net-seed', '4242', '--card1', os.path.join(case.folder, 'card1.mcd'), '--card2',
+        os.path.join(case.folder, 'card2.mcd')])}
+    code = case.wait_for(labels[0], r"room's code is (\w+)", CODE_SECONDS)
+    if code is None:
+        case.fail('the host was given no room code')
+        return
+
+    def guest(n):
+        procs[labels[n]] = case.start(labels[n], [HEADLESS] + common + [
+            '--plan', guest_plan, '--out', os.path.join(case.folder, labels[n]), '--join', code.group(1),
+            '--net-bind', '127.0.0.%d:%d' % (2 + n, case.port(1 + n)), '--player', names[n],
+            '--room-password', PASSWORD])
+
+    # Bunta and Chie in, one after the other (their seats the second and
+    # the third), then Dai, whose seat is the fourth
+    for n, link in ((1, 1), (2, 2)):
+        guest(n)
+        if case.wait_for(labels[0], r'a guest has come \(link %d,' % link, CODE_SECONDS) is None:
+            case.fail('%s never came to the host (%s)' % (names[n], os.path.join(case.folder, labels[0] + '.err')))
+            return
+    guest(3)
+    if case.wait_for(labels[3], r'relay: .* is in the room; trying', CODE_SECONDS) is None:
+        case.fail('the lobby never let Dai into the room (%s)' % os.path.join(case.folder, labels[3] + '.err'))
+        return
+    procs[labels[3]].kill()
+    procs[labels[3]].wait()
+    gave_up_at = time.time()
+    # (while the host holds his seat for him the lobby tells another that
+    # the room has all its players: Eiji comes once it is let go)
+    dropped = case.wait_for(labels[0], r'session: (.*never said hello.*)', GIVE_UP_SECONDS)
+    if dropped is None:
+        case.fail('the host never let Dai\'s seat go (%.0f s after he gave up)' % (time.time() - gave_up_at))
+        return
+    let_go = time.time() - gave_up_at
+    guest(4)
+    stayed = [labels[n] for n in (0, 1, 2, 4)]
+    codes = wait_session(case, stayed, [procs[label] for label in stayed], SECONDS)
+    if re.search(r'a guest has come \(link 3,', case.err(labels[0])) is None:
+        case.fail('the host never met another guest at Dai\'s seat')
+    four_judge(case, stayed, codes, None)
+    if not case.problems:
+        case.said.insert(0, 'Dai killed as the lobby let him into the room; %.0f s later the host: "%s"; Eiji met '
+                         'in his place and the session played with him' % (let_go, dropped.group(1)))
+    for card in ('card1.mcd', 'card2.mcd'):
+        if os.path.exists(os.path.join(case.folder, card)):
+            case.fail('%s was written, and nothing of a session is' % card)
+
+
 # A match of several fights of four (four-between): the host's rule, and
 # each pad's rounds in each of its first two fights (a plan has 1024
 # presses at most).
@@ -1674,7 +1753,10 @@ WINDOWS_LATER_CASES = [('ranked-win', case_ranked)]
 # Four players, after those (four programs each): through the lobby, a
 # punched hole and the relay; then a room of several's matches of four.
 FOUR_CASES = [('four-punch-win' if IS_WINDOWS else 'four-punch', case_four_punch),
-              ('four-relay-win' if IS_WINDOWS else 'four-relay', case_four_relay)]
+              ('four-relay-win' if IS_WINDOWS else 'four-relay', case_four_relay),
+              # a guest let in by the lobby who gives up before the host
+              # meets him: his seat taken by another
+              ('four-gives-up-win' if IS_WINDOWS else 'four-gives-up', case_four_gives_up)]
 FOUR_LATER_CASES = [('rooms-four-win' if IS_WINDOWS else 'rooms-four', case_rooms_four)]
 # ... and a room's matches of several fights, a leave in one (alone: five
 # programs, as rooms-four)

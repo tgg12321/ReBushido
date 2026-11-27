@@ -53,9 +53,12 @@ typedef ptrdiff_t GLintptr;
 #define GL_FALSE 0
 #define GL_TRUE 1
 #define GL_TRIANGLES 0x0004
+#define GL_CLIP_DISTANCE0 0x3000
 #define GL_FLOAT 0x1406
 #define GL_UNSIGNED_BYTE 0x1401
 #define GL_ARRAY_BUFFER 0x8892
+#define GL_ELEMENT_ARRAY_BUFFER 0x8893
+#define GL_UNSIGNED_SHORT 0x1403
 #define GL_STATIC_DRAW 0x88E4
 #define GL_DYNAMIC_DRAW 0x88E8
 #define GL_VERTEX_SHADER 0x8B31
@@ -141,6 +144,8 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
     GL(void, glDrawArraysInstanced, (GLenum, GLint, GLsizei, GLsizei))         \
+    GL(void, glDrawElementsInstanced,                                          \
+       (GLenum, GLsizei, GLenum, const void *, GLsizei))                       \
     GL(void, glGenTextures, (GLsizei, GLuint *))                               \
     GL(void, glDeleteTextures, (GLsizei, const GLuint *))                      \
     GL(void, glBindTexture, (GLenum, GLuint))                                  \
@@ -196,6 +201,12 @@ PORT_GL_DRESSING_FUNCTIONS
 #define FLOWER_BLADES 3
 #define BUSH_CARDS 36
 #define BLADE_VERTICES(bends) ((bends) * 6 + 3)
+/* ... of which so many are corners of their own (two at each bend's height
+ * and the root's, and the tip), the rest the same corners again: a thing
+ * is drawn by the numbers of its corners (g_dress_corners), so that each
+ * corner is worked out once (a quad's four, a blade's seven of fifteen) */
+#define BLADE_CORNERS(bends) (((bends) + 1) * 2 + 1)
+#define FOLIAGE_KINDS 4
 #define GRASS_VERTICES (GRASS_BLADES * BLADE_VERTICES(2))
 #define REEDS_VERTICES (REEDS_BLADES * BLADE_VERTICES(3))
 #define FLOWER_VERTICES (FLOWER_BLADES * BLADE_VERTICES(2) + 12)
@@ -540,6 +551,9 @@ static struct {
     DressAt water_at;
     DressAt particles_at;
     GLuint thing_buffer;
+    /* each kind of foliage's corners in the order of its triangles
+     * (port_DressMakeCorners) */
+    GLuint corner_buffer;
     GLuint thing_array;
     GLuint mesh_buffer;
     GLuint mesh_array;
@@ -825,6 +839,9 @@ static const char g_dress_foliage_vertex[] =
                                         way */
     "uniform int u_push_count;\n"
     "uniform float u_thin;\n" /* how far off the foliage begins to thin */
+    /* the ground's depth scale (DRESS_FRAGMENT_COMMON's): the picture's
+     * depth of a blade, as the solid fragment wrote it, at its vertices */
+    "uniform float u_depth;\n"
     /* as the sun sees it, into its maps (port_GlDressingDrawFoliageCasters) */
     "uniform int u_cast;\n"
     "uniform mat4 u_sun;\n"
@@ -873,6 +890,7 @@ static const char g_dress_foliage_vertex[] =
     "    float height = a_shape.x;\n"
     "    float width = a_shape.y;\n"
     "    int id = gl_VertexID;\n"
+    "    gl_ClipDistance[0] = 1.0;\n"
     /* fewer of them farther off, and fewer blades to a tuft: what is far
      * is a few pixels, and the most of the vertices */
     "    float far_off = distance(root, u_camera);\n"
@@ -882,7 +900,7 @@ static const char g_dress_foliage_vertex[] =
     "        return;\n"
     "    }\n"
     "    if (u_kind == 0 && id >= (far_off > 1.4 * u_thin ? 3 : far_off > 0.8 * u_thin ? 5 : 7)\n"
-    "                                * 15) {\n"
+    "                                * 7) {\n"
     "        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);\n"
     "        return;\n"
     "    }\n"
@@ -895,8 +913,8 @@ static const char g_dress_foliage_vertex[] =
     "    v_shade = 1.0;\n"
     "    if (u_kind == 1) {\n"
     /* a bush: leaves as cards over half an egg */
-    "        int card = id / 6;\n"
-    "        int corner = id % 6;\n"
+    "        int card = id / 4;\n"
+    "        int corner = id % 4;\n"
     "        uint s = seed + uint(card) * 7919u;\n"
     "        float phi = dress_random(s, 1u) * 6.2831853;\n"
     "        float up = mix(-0.15, 1.0, sqrt(dress_random(s, 2u)));\n"
@@ -914,8 +932,8 @@ static const char g_dress_foliage_vertex[] =
     "        float spin = dress_random(s, 4u) * 6.2831853;\n"
     "        vec3 a1 = cos(spin) * t1 + sin(spin) * t2;\n"
     "        vec3 a2 = -sin(spin) * t1 + cos(spin) * t2;\n"
-    "        const vec2 quad[6] = vec2[6](vec2(-1.0, -1.0), vec2(1.0, -1.0),\n"
-    "            vec2(1.0, 1.0), vec2(-1.0, -1.0), vec2(1.0, 1.0), vec2(-1.0, 1.0));\n"
+    "        const vec2 quad[4] = vec2[4](vec2(-1.0, -1.0), vec2(1.0, -1.0),\n"
+    "                                     vec2(1.0, 1.0), vec2(-1.0, 1.0));\n"
     "        vec2 q = quad[corner];\n"
     "        float size = height * 0.20 * mix(0.8, 1.2, dress_random(s, 5u));\n"
     "        float rise = clamp((root.y - at.y) / height, 0.0, 1.0);\n"
@@ -928,7 +946,7 @@ static const char g_dress_foliage_vertex[] =
     "        v_albedo = a_color.rgb * tone;\n"
     "    } else {\n"
     "        int bends = u_kind == 2 ? 3 : 2;\n"
-    "        int each = bends * 6 + 3;\n"
+    "        int each = (bends + 1) * 2 + 1;\n"
     "        int blades = u_kind == 2 ? 3 : u_kind == 3 ? 3 : 7;\n"
     "        int blade = id / each;\n"
     "        int local = id % each;\n"
@@ -950,10 +968,10 @@ static const char g_dress_foliage_vertex[] =
     /* the flower's bloom: two crossed quads at the tip of its first blade */
     "            vec3 tip_n;\n"
     "            vec3 tip = dress_blade(base, lean, h, bw, across, 1.0, 0.0, tip_n);\n"
-    "            int corner = (id - blades * each) % 6;\n"
-    "            int which = (id - blades * each) / 6;\n"
-    "            const vec2 quad[6] = vec2[6](vec2(-1.0, -1.0), vec2(1.0, -1.0),\n"
-    "                vec2(1.0, 1.0), vec2(-1.0, -1.0), vec2(1.0, 1.0), vec2(-1.0, 1.0));\n"
+    "            int corner = (id - blades * each) % 4;\n"
+    "            int which = (id - blades * each) / 4;\n"
+    "            const vec2 quad[4] = vec2[4](vec2(-1.0, -1.0), vec2(1.0, -1.0),\n"
+    "                                         vec2(1.0, 1.0), vec2(-1.0, 1.0));\n"
     "            vec2 q = quad[corner];\n"
     "            vec3 a1 = which == 0 ? vec3(across.x, 0.0, across.y)\n"
     "                                 : vec3(-across.y, 0.0, across.x);\n"
@@ -963,20 +981,16 @@ static const char g_dress_foliage_vertex[] =
     "            v_card = vec3(q, 2.0);\n"
     "            v_albedo = vec3(-1.0);\n"
     "        } else {\n"
-    "            int tri = local / 3;\n"
-    "            int corner = local % 3;\n"
+    /* a blade's corner: two at each of its bends' heights and its root's,
+     * the left first, then its tip */
     "            float t;\n"
     "            float side;\n"
-    "            if (tri < bends * 2) {\n"
-    "                int step = tri / 2;\n"
-    "                bool second = (tri & 1) == 1;\n"
-    "                int k = second ? (corner == 0 ? 1 : corner == 1 ? 3 : 2)\n"
-    "                               : (corner == 0 ? 0 : corner == 1 ? 2 : 1);\n"
-    "                t = float(step + (k >> 1)) / float(bends + 1);\n"
-    "                side = (k & 1) == 0 ? -1.0 : 1.0;\n"
+    "            if (local < (bends + 1) * 2) {\n"
+    "                t = float(local >> 1) / float(bends + 1);\n"
+    "                side = (local & 1) == 0 ? -1.0 : 1.0;\n"
     "            } else {\n"
-    "                t = corner == 2 ? 1.0 : float(bends) / float(bends + 1);\n"
-    "                side = corner == 0 ? -1.0 : corner == 1 ? 1.0 : 0.0;\n"
+    "                t = 1.0;\n"
+    "                side = 0.0;\n"
     "            }\n"
     "            float w = bw;\n"
     /* a reed's head: brown and wider, below its tip */
@@ -996,7 +1010,16 @@ static const char g_dress_foliage_vertex[] =
     "    v_place = p;\n"
     "    v_normal = n;\n"
     "    gl_Position = dress_project(p, v_depth);\n"
-    "    if (u_cast != 0) { gl_Position = u_sun * vec4(p, 1.0); }\n"
+    /* the depth the fragments are tested and written at: the linear one,
+     * as the ground's (rasterised, so the fragments are tested before they
+     * are shaded); the near plane where the projection's z had it */
+    "    gl_ClipDistance[0] = gl_Position.z + gl_Position.w;\n"
+    "    gl_Position.z = (2.0 * clamp(v_depth / u_depth, 0.0, 1.0) - 1.0)\n"
+    "                  * gl_Position.w;\n"
+    "    if (u_cast != 0) {\n"
+    "        gl_Position = u_sun * vec4(p, 1.0);\n"
+    "        gl_ClipDistance[0] = 1.0;\n"
+    "    }\n"
     "}\n";
 
 /* The meshes: their vertices as they are, in the world. */
@@ -1102,9 +1125,12 @@ static const char g_dress_solid_fragment[] =
     "    vec3 color = dress_shade(albedo * v_shade, base, lit);\n"
     "    color = mix(color, u_fog_color.rgb * 255.0, dress_fog(v_depth));\n"
     "    o_color = vec4(color / 255.0, 1.0);\n"
-    "    gl_FragDepth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
+    "    float depth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
+    "#ifndef DRESS_RASTER_DEPTH\n"
+    "    gl_FragDepth = depth;\n"
+    "#endif\n"
     "    o_slot = float(slot_of(int(clamp(v_depth, 0.0, 65535.0))));\n"
-    "    o_deep = gl_FragDepth * 32768.0;\n"
+    "    o_deep = depth * 32768.0;\n"
     "}\n";
 
 /* The water: a level quad of each of its rectangles. */
@@ -2011,6 +2037,84 @@ static const char g_dress_caster_fragment[] =
 
 /* ---- making the programs ---- */
 
+/* Each kind of foliage's triangles as numbers of its corners (the vertex
+ * shader's gl_VertexID): grass, bush, reeds, flowers, one after another.
+ * A blade's triangles go up it two to a bend, each pair a quad between
+ * two heights, then its tip; a leaf's or a bloom's quad is two. */
+static const s32 g_dress_kind_indices[FOLIAGE_KINDS] = {
+    GRASS_VERTICES, BUSH_VERTICES, REEDS_VERTICES, FLOWER_VERTICES};
+static s32 g_dress_kind_first[FOLIAGE_KINDS];
+
+static s32 port_DressBladeCorners(u16 *out, s32 blades, s32 bends) {
+    s32 n = 0;
+    s32 blade;
+
+    for (blade = 0; blade < blades; blade++) {
+        s32 base = blade * BLADE_CORNERS(bends);
+        s32 step;
+
+        for (step = 0; step < bends; step++) {
+            /* (its left and right at this height and the next) */
+            out[n++] = (u16)(base + step * 2);
+            out[n++] = (u16)(base + step * 2 + 2);
+            out[n++] = (u16)(base + step * 2 + 1);
+            out[n++] = (u16)(base + step * 2 + 1);
+            out[n++] = (u16)(base + step * 2 + 3);
+            out[n++] = (u16)(base + step * 2 + 2);
+        }
+        out[n++] = (u16)(base + bends * 2);
+        out[n++] = (u16)(base + bends * 2 + 1);
+        out[n++] = (u16)(base + bends * 2 + 2);
+    }
+    return n;
+}
+
+static s32 port_DressQuadCorners(u16 *out, s32 first, s32 quads) {
+    s32 n = 0;
+    s32 quad;
+
+    for (quad = 0; quad < quads; quad++) {
+        s32 base = first + quad * 4;
+
+        out[n++] = (u16)base;
+        out[n++] = (u16)(base + 1);
+        out[n++] = (u16)(base + 2);
+        out[n++] = (u16)base;
+        out[n++] = (u16)(base + 2);
+        out[n++] = (u16)(base + 3);
+    }
+    return n;
+}
+
+/* The corners' buffer, into the things' array bound now. */
+static void port_DressMakeCorners(void) {
+    static u16 corners[GRASS_VERTICES + BUSH_VERTICES + REEDS_VERTICES +
+                       FLOWER_VERTICES];
+    s32 n = 0;
+
+    g_dress_kind_first[0] = n;
+    n += port_DressBladeCorners(corners + n, GRASS_BLADES, 2);
+    g_dress_kind_first[1] = n;
+    n += port_DressQuadCorners(corners + n, 0, BUSH_CARDS);
+    g_dress_kind_first[2] = n;
+    n += port_DressBladeCorners(corners + n, REEDS_BLADES, 3);
+    g_dress_kind_first[3] = n;
+    n += port_DressBladeCorners(corners + n, FLOWER_BLADES, 2);
+    n +=
+        port_DressQuadCorners(corners + n, FLOWER_BLADES * BLADE_CORNERS(2), 2);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_dress.corner_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(n * sizeof(u16)),
+                 corners, GL_STATIC_DRAW);
+}
+
+/* `count` things of the foliage's kind `kind` (the vertex shader's u_kind),
+ * from the things' format set now (port_DressThingFormat). */
+static void port_DressDrawThings(s32 kind, s32 count) {
+    glDrawElementsInstanced(
+        GL_TRIANGLES, g_dress_kind_indices[kind], GL_UNSIGNED_SHORT,
+        (const u16 *)NULL + g_dress_kind_first[kind], count);
+}
+
 static void port_DressSay(const char *what, const char *more) {
     snprintf(g_dress.problem, sizeof(g_dress.problem), "%s%s", what,
              more != NULL ? more : "");
@@ -2229,8 +2333,20 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
     }
     PORT_GL_DRESSING_FUNCTIONS
 #undef GL
-    g_dress.foliage =
-        port_DressProgram(g_dress_foliage_vertex, g_dress_solid_fragment);
+    {
+        /* the foliage's fragments are the solid ones that leave the depth
+         * to the vertices (DRESS_RASTER_DEPTH): tested before they are
+         * shaded, a blade hidden behind nearer blades costs no light */
+        static char foliage_fragment[sizeof(g_dress_solid_fragment) + 64];
+        const char *rest = strchr(g_dress_solid_fragment, '\n') + 1;
+        size_t version = (size_t)(rest - g_dress_solid_fragment);
+
+        memcpy(foliage_fragment, g_dress_solid_fragment, version);
+        strcpy(foliage_fragment + version, "#define DRESS_RASTER_DEPTH 1\n");
+        strcat(foliage_fragment, rest);
+        g_dress.foliage =
+            port_DressProgram(g_dress_foliage_vertex, foliage_fragment);
+    }
     g_dress.mesh =
         port_DressProgram(g_dress_mesh_vertex, g_dress_solid_fragment);
     g_dress.water =
@@ -2268,6 +2384,7 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
     port_DressLocate(g_dress.water, &g_dress.water_at);
     port_DressLocate(g_dress.particles, &g_dress.particles_at);
     glGenBuffers(1, &g_dress.thing_buffer);
+    glGenBuffers(1, &g_dress.corner_buffer);
     glGenBuffers(1, &g_dress.mesh_buffer);
     glGenBuffers(1, &g_dress.dust_buffer);
     glGenVertexArrays(1, &g_dress.thing_array);
@@ -2306,6 +2423,7 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         glEnableVertexAttribArray(1);
         glEnableVertexAttribArray(2);
         glBindVertexArray(g_dress.thing_array);
+        port_DressMakeCorners();
         glBindBuffer(GL_ARRAY_BUFFER, g_dress.thing_buffer);
         glVertexAttribDivisor(0, 1);
         glVertexAttribDivisor(1, 1);
@@ -4781,6 +4899,124 @@ static s32 port_DressMeshShown(
     return z > 0.0f && port_DressSlotScaled((s32)z >> 3) >= view->cutoff;
 }
 
+/* Whether a box of the world lies wholly outside the picture through
+ * `view`: every corner beyond one side of it, or nearer than the near
+ * plane, as dress_project puts a place in the picture (its clip x and y
+ * within its w, its z over -w). */
+static s32 port_DressBoxUnseen(
+    const PortGlDressingView *view, const float *lo, const float *hi) {
+    s32 out[5] = {0, 0, 0, 0, 0};
+    s32 c;
+
+    for (c = 0; c < 8; c++) {
+        float d[3];
+        float v[3];
+        float clip[2];
+        s32 r;
+        s32 k;
+
+        d[0] = ((c & 1) ? hi[0] : lo[0]) - view->camera[0];
+        d[1] = ((c & 2) ? hi[1] : lo[1]) - view->camera[1];
+        d[2] = ((c & 4) ? hi[2] : lo[2]) - view->camera[2];
+        for (r = 0; r < 3; r++) {
+            v[r] = 0.0f;
+            for (k = 0; k < 3; k++) {
+                v[r] += view->view[k * 3 + r] * d[k];
+            }
+        }
+        for (k = 0; k < 2; k++) {
+            clip[k] =
+                (2.0f * view->scale[k] * view->h * v[k] +
+                 (2.0f * view->scale[k] * view->screen[k] + 1.0f) * v[2]) /
+                    view->target[k] -
+                v[2];
+        }
+        out[0] += clip[0] < -v[2];
+        out[1] += clip[0] > v[2];
+        out[2] += clip[1] < -v[2];
+        out[3] += clip[1] > v[2];
+        out[4] += v[2] - view->near_plane < -v[2];
+    }
+    for (c = 0; c < 5; c++) {
+        if (out[c] == 8) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* A square of foliage in the picture: where its things begin in the
+ * buffer, how many, and how far its middle is from the camera, squared. */
+typedef struct {
+    float far_off;
+    s32 first;
+    s32 count;
+} DressSeen;
+
+static DressSeen g_dress_seen[SPANS_MOST];
+
+/* The foliage of a run that is in the picture, drawn: its squares
+ * (DressSpan) whose boxes, grown by `grow` more for what a blade's lean, a
+ * push or a bloom may reach past a root's own reach, are not wholly
+ * outside it, the nearest first, so that a blade hidden behind nearer ones
+ * is turned away by the depth before it is shaded. A block none of whose
+ * things is in a square (there were no squares left) is drawn whole. The
+ * things drawn. */
+static s32 port_DressDrawRunSeen(
+    const PortGlDressingView *view, s32 run_at, s32 kind, float grow) {
+    const DressRun *run = &g_dress.runs[run_at];
+    s32 seen = 0;
+    s32 drawn = 0;
+    s32 covered = 0;
+    s32 i;
+
+    for (i = 0; i < g_dress.span_count; i++) {
+        const DressSpan *span = &g_dress.spans[i];
+        float lo[3];
+        float hi[3];
+        float far_off = 0.0f;
+        s32 k;
+        s32 at;
+
+        if (span->run != run_at) {
+            continue;
+        }
+        covered += span->count;
+        for (k = 0; k < 3; k++) {
+            float d = 0.5f * (span->lo[k] + span->hi[k]) - view->camera[k];
+
+            lo[k] = span->lo[k] - grow;
+            hi[k] = span->hi[k] + grow;
+            far_off += d * d;
+        }
+        if (port_DressBoxUnseen(view, lo, hi)) {
+            continue;
+        }
+        /* (put in its place among the nearer and the farther) */
+        for (at = seen; at > 0 && g_dress_seen[at - 1].far_off > far_off;
+             at--) {
+            g_dress_seen[at] = g_dress_seen[at - 1];
+        }
+        g_dress_seen[at].far_off = far_off;
+        g_dress_seen[at].first = span->first;
+        g_dress_seen[at].count = span->count;
+        seen++;
+        drawn += span->count;
+    }
+    if (covered == 0) {
+        port_DressThingFormat(run->first);
+        port_DressDrawThings(kind, run->count);
+        g_dress.draws++;
+        return run->count;
+    }
+    for (i = 0; i < seen; i++) {
+        port_DressThingFormat(g_dress_seen[i].first);
+        port_DressDrawThings(kind, g_dress_seen[i].count);
+        g_dress.draws++;
+    }
+    return drawn;
+}
+
 void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     const PortDressSet *set = port_DressNow();
     s32 i;
@@ -4812,11 +5048,14 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     glUniform1f(g_dress.foliage_at.thin, FOLIAGE_THIN);
     glUniform1f(g_dress.foliage_at.lift, FOLIAGE_SUN_LIFT);
     glUniform1i(g_dress.foliage_at.see_count, 0);
+    /* the near plane, which the foliage's depth leaves to a clip distance */
+    glEnable(GL_CLIP_DISTANCE0);
     for (i = 0; i < g_dress.run_count; i++) {
         const DressRun *run = &g_dress.runs[i];
         const PortDressDef *def = &set->block[run->block];
         s32 kind;
         s32 vertices;
+        s32 drawn;
 
         if (run->is_mesh || run->count == 0 || !port_DressShownNow(def)) {
             continue;
@@ -4841,7 +5080,6 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
         default:
             continue;
         }
-        port_DressThingFormat(run->first);
         glUniform1i(g_dress.foliage_at.kind, kind);
         glUniform1f(
             g_dress.foliage_at.sway, (float)def->sway / PORT_DRESSING_ONE);
@@ -4850,11 +5088,18 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
             def->has_color ? (float)def->color[0] / CHANNEL_MOST : 0.92f,
             def->has_color ? (float)def->color[1] / CHANNEL_MOST : 0.62f,
             def->has_color ? (float)def->color[2] / CHANNEL_MOST : 0.78f);
-        glDrawArraysInstanced(GL_TRIANGLES, 0, vertices, run->count);
-        g_dress.drawn_things += (u32)run->count;
-        g_dress.triangles += (u32)(run->count * vertices / 3);
-        g_dress.draws++;
+        /* (the square's box holds a root's reach; as much again, more
+         * for a wider kind, for a lean, a push or a bloom) */
+        drawn = port_DressDrawRunSeen(
+            view, i, kind,
+            ((float)def->height[1] + TUFT_REACH) *
+                (def->width > PORT_DRESSING_ONE
+                     ? (float)def->width / PORT_DRESSING_ONE
+                     : 1.0f));
+        g_dress.drawn_things += (u32)drawn;
+        g_dress.triangles += (u32)(drawn * vertices / 3);
     }
+    glDisable(GL_CLIP_DISTANCE0);
     /* the meshes */
     glUseProgram(g_dress.mesh);
     port_DressUniforms(&g_dress.mesh_at, view);
@@ -4965,7 +5210,7 @@ u32 port_GlDressingDrawFoliageCasters(const float *matrix, const float *eye) {
         port_DressThingFormat(run->first);
         glUniform1i(at->kind, kind);
         glUniform1f(at->sway, (float)def->sway / PORT_DRESSING_ONE);
-        glDrawArraysInstanced(GL_TRIANGLES, 0, vertices, run->count);
+        port_DressDrawThings(kind, run->count);
         triangles += (u32)(run->count * vertices / 3);
     }
     glBindVertexArray(0);
@@ -5061,7 +5306,12 @@ u32 port_GlDressingDrawLightCasters(const float *matrix, const float *place) {
             glUniform1f(at->sway, (float)def->sway / PORT_DRESSING_ONE);
         }
         port_DressThingFormat(span->first);
-        glDrawArraysInstanced(GL_TRIANGLES, 0, vertices, span->count);
+        port_DressDrawThings(
+            run->kind == PORT_DRESS_BUSH      ? 1
+            : run->kind == PORT_DRESS_REEDS   ? 2
+            : run->kind == PORT_DRESS_FLOWERS ? 3
+                                              : 0,
+            span->count);
         triangles += (u32)(span->count * vertices / 3);
     }
     glBindVertexArray(0);
