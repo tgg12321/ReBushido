@@ -243,6 +243,9 @@ static u32 g_port_movie_reads;
 void PAD_dr(void) {
     if (g_port_pad_word != NULL && g_port_movies_skipped) {
         *g_port_pad_word = (s32) ~(u32)PADRdown;
+        /* (kept by the session's lead-in: a playback of its fights from
+         * power on is given the cross held from this read on, replay.c) */
+        port_ReplayTookMovieRead(g_port_movie_reads, ~(u32)PADRdown);
     } else if (g_port_pad_word != NULL) {
         PortInput now;
         u32 word;

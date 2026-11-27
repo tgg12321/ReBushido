@@ -944,9 +944,13 @@ def check_session_replays(label, program, folder, window, more=()):
             code, said = port_replay.check_replay(program, path, list(more))
             if code != 0:
                 problems.append('session: %s: %s: %s' % (label, path, said))
+        # ... and across builds, from the session's power on (the host's)
+        problems += ['session: %s: %s' % (label, problem)
+                     for problem in port_replay.check_online_lead(program, host, more)]
     if not problems:
         print('port_net: session: %s: %d fights kept as replays on both machines, the same on both%s%s'
-              % (label, len(common), '' if window else ', each played back with every hash the same',
+              % (label, len(common), '' if window else ', each played back with every hash the same, and '
+                 'from the session\'s power on by both sizes, every console hash the same',
                  ', and %d the host played on alone' % len(alone) if alone else ''),
               flush=True)
     return problems
@@ -1271,9 +1275,11 @@ def check_four_replays(label, program, folder, sides):
         code, said = port_replay.check_replay(program, paths[0], [])
         if code != 0:
             problems.append('four: %s: %s: %s' % (label, paths[0], said))
+    problems += ['four: %s: %s' % (label, problem) for problem in port_replay.check_online_lead(program, files[0][0])]
     if not problems:
         print('port_net: four: %s: the fight kept as a replay on all %d machines, the same on all, each played '
-              'back with every hash the same (%s)' % (label, count, files[0][0]), flush=True)
+              'back with every hash the same, and from the session\'s power on by both sizes (%s)'
+              % (label, count, files[0][0]), flush=True)
     return problems
 
 

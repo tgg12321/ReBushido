@@ -10053,9 +10053,28 @@ four:
   footsteps, short and under the rest, 0.18 against 0.14). Every plan of
   `port_duo.py` gives the trace it gave before, byte for byte, on both
   sizes: the game's fight is what it was, only its sound is not.
+- **A thrown thing's sounds** (2026-11-26). The game gives an object's
+  sound (its throw, its landing, its hit, the frog's hop, a dropped
+  weapon's fall, a burst) to a slot's fighter: the object's owner's, or
+  of its kind the first fighter's if it is the kind he started with,
+  else the second's (`OBJECT_SOUNDS_OF`, object.c). An object moves in
+  `object_Update`, after the four steps, and hits in the pairs' meetings,
+  with whoever is in the slot then: a partner's dropped nodachi landed
+  with his first's katana. Now each object of the pool keeps who of the
+  four launched it (`port_DuoObjectLaunched`, from `object_Launch` in his
+  step), and its events are raised with their sounds his
+  (`object_RaiseEvent`, `port_DuoObjectSounds`; `port_DuoSound` then
+  gives his own banks where he has them): his own, or for a sound of the
+  thing's kind that is not the kind he starts with, the one of the four
+  who does start with it (his team mate first), as the game gives such a
+  sound to that fighter's slot. One on one never asks (the duo is off).
+  Proved by `four`'s fight with `--wav` (the run's `sound ask` lines):
+  Tatsumi's dropped nodachi lands from his own weapon bank (vab 11, tone
+  15), where it was the slot's, Kannuki's (vab 2), whose own still is;
+  `port_duo.py four` as before on both sizes. (Its CPUs throw nothing of
+  their own; the throw's path is the same function.)
 
-What stays the slot's: the point light's target, the sounds a thrown
-thing makes. The
+What stays the slot's: the point light's target. The
 remastered picture draws the second bank too: a polygon of it names its
 page and table 1024 lines further down (`PORT_VRAM_BANK_NAMED_Y`,
 remaster.c), the card's mirror of video memory has the bank's lines after
@@ -10796,10 +10815,46 @@ does, while nothing but its inputs and that setup changed the game. It is
 not kept for a run begun with `--fight`, `--partners`, `--arena`,
 `--weapon`, a session or a link cable; from a play test's poke, a change of
 the settings menu's Bug fixes, or a link cable's game on, the fights after
-play only on this build (`port_ReplayLeadBreak`, said in the log), and an
-online fight keeps none (`lead_why` says which). A session begun in the
-program, a spectator's match and a replay's playback put the player's own
-state back after them, and the lead-in waits while they run.
+play only on this build (`port_ReplayLeadBreak`, said in the log). A
+session begun in the program, a spectator's match and a replay's playback
+put the player's own state back after them, and the lead-in waits while
+they run.
+
+*An online fight's* (2026-11-26). A session plays from power on too: the
+state of the game's start put back, the host's cards in both slots, its
+switches held (NETPLAY.md, section 15). So each session keeps a lead-in
+of its own beside the run's (`g_session_lead`, replay.c), begun at its
+power on (netplay's frame 0, by a player, not a spectator, who comes in at
+a fight's start), and an online fight's replay carries it: the session's
+setup and cards, every input from its power on to the fight (all four
+pads, which the CPU's, the session's own presses), the movie's reads, the
+console's hash every 30 inputs. A rollback runs frames again: what the
+lead-in kept from that input on is written again with them, as the
+fight's frames are (its setup's changes, views and hashes too). LEAD says
+it is a session's (its second word, `LEAD_SESSION`, 0 before) and keeps
+after the setup what the game reads of the session that is no input
+(`port_SessionGameNow`): the session's rules (a room's match: the rule
+page is the room's), its pads (2 or 4: with two, a team's second is the
+CPU's), and the seed its first frame puts into the game. A playback from
+power on holds them (`port_HoldSessionGame`: `port_SessionIsOn`,
+`port_SessionIsRoomMatch`, `port_SessionGamePads`, which the rule page,
+the duo and the music's extras ask, answer as in the session) and puts
+the seed in at power on (`port_SessionGameSeed`). Two things differ from
+a run's own: netplay's first step takes the game from power on through
+its first input at once, so there is no hash at input 0; and the state
+holds the session's own variables (the top menu's notes of the session's
+end, `session.c`'s), which the playback's has not, so even the build that
+recorded it holds the console's hashes alone from power on (the state's
+are held from the fight's start as ever, `--replay-check` without
+`--replay-from-boot`). A build of before refuses such a LEAD and plays
+the file only as its own core's (nothing else of the format changed, no
+protocol either). Proved by `tools/port_net.py session` (two players:
+a fight and a rematch, the sample arena, Crew, Stock with wounds, two on
+two with the CPU's partners) and `tools/port_net_lobby.py`'s cases of
+four (`four-between`, `rooms-four-stock`): each fight's replay played
+from its session's power on by the program that recorded it and by the
+other size of pointer, every console hash the one recorded
+(`port_replay.check_online_lead`).
 
 *Two things that made the same game go otherwise*, both found by this:
 the movie player's reads of the pads (the plan skips the opening movie

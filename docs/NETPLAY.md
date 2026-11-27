@@ -2454,6 +2454,10 @@ makes the fighter the CPU's at the frame its players did
 `present` byte; the CPU's pads are its high four bits now
 (`port_ReplayPresent`), so a replay of such a fight plays back the same,
 every hash held (`--replay-check`); one of before has none of them set.
+Since 2026-11-26 an online fight's replay carries its session's run from
+power on, the CPU's pads among its inputs, and plays on a build of
+another core from there (PORT.md, "Across builds: the lead-in", *An
+online fight's*).
 
 **When the session still ends for all.** The host's own player leaving
 (nobody else hears everyone), a leave outside a match's fights (the
@@ -2500,9 +2504,18 @@ on*.
 | `port_net_lobby.py`: `four-silent`, `four-silent-win` (2026-11-25) | four headless at a local lobby, Linux and Windows | `four-punch`'s room; Dai's program killed (SIGKILL, TerminateProcess: no goodbye) four seconds into the fight | the host heard nothing from him for 15 seconds and the CPU played his fighter on, from one frame on all three who stayed (Linux: from frame 2,188, his last hash at 2,160; Windows: 2,200, his last at 2,190); the fight to a team out and the match's end on all three, 95 hashes the same on them (23 after the CPU's frame), Dai's 72 before it the same too; the fight's replay the same on the three and played back with every hash the same; 85 s, on Windows 64 s. Nothing to fix: the silence path held as written |
 | `port_net_lobby.py`: `four-between`, `four-between-win` (2026-11-25) | four headless at a local lobby, Linux and Windows | the same room, the host's `--match stock:2`; the first fight's rounds, then Dai leaves (a goodbye) 30 frames into the card between the fights, the others pressing on in the second | the host gave player 4's pad to the CPU from frame 4,212, in the card (`left between the fights of the match`); the card went on, the second fight began with all four up and his fighter the CPU's at its first step, the match decided at frame 5,009 and the session ended there on the three; 167 hashes the same on them (27 after the CPU's frame), Dai's 140 the same too; both fights' replays the same on the three and played back; 131 s, on Windows 119 s (the same hashes but the build's own: section 7) |
 
-**What is left.** A leave in a room of several's match of several
-fights is the same path (the room's own end, `port_OnlineMatchEnds`, is
-unchanged) but no case runs one; four real PCs.
+| `port_net_lobby.py`: `rooms-four-stock`, `rooms-four-stock-win` (2026-11-26) | five headless at a local lobby, Linux and Windows | `rooms-four`'s room, every member's `--match stock:2` (a match's rule is its host's); each match two fights or more, the card between them; Dai leaves match 2 at its frame 4,440 (`--leave-at 2:4440`), in the card between its first fight and its second (whose start is frame 4,472) | match 1, Stock 2 of four players: two fights, 189 hashes the same on all four, Sora holding 120. Match 2: the host gave player 3's pad to the CPU from frame 4,443 (`left between the fights of the match`), the card went on, the second fight began with his fighter the CPU's at its first step; the match took a third fight and was decided at frame 5,910, the second team's win, told to the room by those who stayed; 197 hashes the same on all four (Dai's before the CPU's frame), Sora holding 128; the five fights' replays the same on the three who played both matches out, each played back, and from its session's power on by both sizes (PORT.md, *An online fight's*); 471 s, on Windows the same, 266 s |
+
+The case was first written with the leave in the middle of match 2's
+first fight, the CPU playing on through the card into the next: it never
+ended, and nothing was wrong with the session. The plan's presses had run
+out, and the two left standing, an idle player and the CPU's fighter with
+both legs cut, 440 apart, stood in their stances for 48,000 frames (the
+CPU's choice, which a player one on one would end by coming in). A leave
+in the card instead leaves the next fight to three who
+press and a CPU who is whole, as `four-between` does.
+
+**What is left.** Four real PCs.
 
 ## 20. Teams of four characters
 

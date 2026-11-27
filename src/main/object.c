@@ -22,6 +22,23 @@ LooseObject g_object_pool[OBJECT_COUNT];
  * the kind that fighter started with, otherwise the second's. */
 #define OBJECT_SOUNDS_OF(kind) (((kind) ^ g_object_fighter_kinds[0]) != 0)
 
+/* An event of an object: in two on two its sounds are its thrower's
+ * (port_duo.h), where the game's are the slot's; `kind` is the kind whose
+ * fighter's sounds the game gives it (OBJECT_SOUNDS_OF), OBJECT_NONE where
+ * they are its owner's. */
+#if RB_PORT
+static void object_RaiseEvent(
+    const LooseObject *obj, s32 kind, s32 fighter_index, s32 event, s32 *pos,
+    s16 *dir) {
+    port_DuoObjectSounds(obj - g_object_pool, kind);
+    fight_RaiseEvent(fighter_index, event, pos, dir);
+    port_DuoObjectSoundsDone();
+}
+#else
+#define object_RaiseEvent(obj, kind, fighter_index, event, pos, dir)           \
+    fight_RaiseEvent(fighter_index, event, pos, dir)
+#endif
+
 #define OBJECT_GRAVITY 13
 /* The stage's floor is a little under where an object's point is. */
 #define OBJECT_GROUND_CLEARANCE 8
@@ -287,6 +304,9 @@ static LooseObject *object_Launch(Fighter *fighter, s32 kind) {
     obj->is_stuck = 0;
     obj->can_hit_fighter = 1;
     obj->owner = fighter->index;
+#if RB_PORT
+    port_DuoObjectLaunched(i, fighter->index);
+#endif
     obj->pos.x = fighter->world_pos.x;
     /* above the fighter's place by its size: 128 for one of full size */
     obj->pos.y = fighter->world_pos.y - fighter->size_scale / 32;
@@ -363,11 +383,11 @@ s32 object_ThrowSubWeapon(Fighter *fighter) {
     fighter->sub_weapon_count--;
     kind = obj->kind;
     if (kind == OBJECT_FROG) {
-        fight_RaiseEvent(
-            OBJECT_SOUNDS_OF(OBJECT_FROG), FIGHT_EVENT_HOP, &obj->pos.x, NULL);
+        object_RaiseEvent(obj, OBJECT_FROG, OBJECT_SOUNDS_OF(OBJECT_FROG),
+                          FIGHT_EVENT_HOP, &obj->pos.x, NULL);
     } else {
-        fight_RaiseEvent(
-            OBJECT_SOUNDS_OF(kind), FIGHT_EVENT_THROW, &obj->pos.x, NULL);
+        object_RaiseEvent(obj, kind, OBJECT_SOUNDS_OF(kind), FIGHT_EVENT_THROW,
+                          &obj->pos.x, NULL);
     }
     return thrown_kind;
 }
@@ -491,8 +511,8 @@ s32 object_PickUp(Fighter *fighter) {
         picked_kind = obj->kind;
         obj->kind = OBJECT_NONE;
         if (picked_kind == OBJECT_FROG) {
-            fight_RaiseEvent(OBJECT_SOUNDS_OF(OBJECT_FROG), FIGHT_EVENT_HOP,
-                             &fighter->world_pos.x, NULL);
+            object_RaiseEvent(obj, OBJECT_FROG, OBJECT_SOUNDS_OF(OBJECT_FROG),
+                              FIGHT_EVENT_HOP, &fighter->world_pos.x, NULL);
         } else {
             fight_RaiseEvent(fighter->index, FIGHT_EVENT_PICK_UP,
                              &fighter->world_pos.x, NULL);
@@ -646,8 +666,9 @@ void object_Update(void) {
         }
         if (heading_then_hit) {
             if (obj->kind == OBJECT_BURSTING) {
-                fight_RaiseEvent(obj->owner, FIGHT_EVENT_BULLET_IMPACT,
-                                 &scr->hit_point.x, normal);
+                object_RaiseEvent(
+                    obj, OBJECT_NONE, obj->owner, FIGHT_EVENT_BULLET_IMPACT,
+                    &scr->hit_point.x, normal);
                 obj->kind = OBJECT_NONE;
                 continue;
             }
@@ -682,19 +703,21 @@ void object_Update(void) {
                 }
                 if (obj->kind == OBJECT_FROG) {
                     if (obj->can_hit_fighter) {
-                        fight_RaiseEvent(OBJECT_SOUNDS_OF(obj->kind),
-                                         FIGHT_EVENT_HOP, &obj->pos.x, NULL);
+                        object_RaiseEvent(
+                            obj, obj->kind, OBJECT_SOUNDS_OF(obj->kind),
+                            FIGHT_EVENT_HOP, &obj->pos.x, NULL);
                     }
                 } else if (obj->kind < OBJECT_WEAPON_FIRST) {
                     if (ground_speed_sq > OBJECT_LANDING_SPEED_SQ) {
-                        fight_RaiseEvent(
-                            OBJECT_SOUNDS_OF(obj->kind),
+                        object_RaiseEvent(
+                            obj, obj->kind, OBJECT_SOUNDS_OF(obj->kind),
                             FIGHT_EVENT_OBJECT_LANDS, &obj->pos.x, NULL);
                     }
                 } else if (OBJECT_IS_WEAPON(obj->kind)) {
                     if (ground_speed_sq > OBJECT_LANDING_SPEED_SQ) {
-                        fight_RaiseEvent(obj->owner, FIGHT_EVENT_WEAPON_LANDS,
-                                         &obj->pos.x, NULL);
+                        object_RaiseEvent(
+                            obj, OBJECT_NONE, obj->owner,
+                            FIGHT_EVENT_WEAPON_LANDS, &obj->pos.x, NULL);
                     }
                 }
             } else if (scr->cast_normal[1] >= OBJECT_WALL_NORMAL_Y &&
@@ -714,8 +737,9 @@ void object_Update(void) {
                                          ANGLE_MASK] /
                         (ONE / OBJECT_HOP_SPEED);
                     obj->rest_state = OBJECT_REST_HOPPING;
-                    fight_RaiseEvent(OBJECT_SOUNDS_OF(obj->kind),
-                                     FIGHT_EVENT_HOP, &obj->pos.x, NULL);
+                    object_RaiseEvent(
+                        obj, obj->kind, OBJECT_SOUNDS_OF(obj->kind),
+                        FIGHT_EVENT_HOP, &obj->pos.x, NULL);
                 }
             }
             obj->can_hit_fighter = 0;
@@ -764,8 +788,8 @@ void object_Update(void) {
                                               ANGLE_MASK] /
                              (ONE / OBJECT_HOP_SPEED);
                 obj->rest_state = OBJECT_REST_HOPPING;
-                fight_RaiseEvent(OBJECT_SOUNDS_OF(obj->kind), FIGHT_EVENT_HOP,
-                                 &obj->pos.x, NULL);
+                object_RaiseEvent(obj, obj->kind, OBJECT_SOUNDS_OF(obj->kind),
+                                  FIGHT_EVENT_HOP, &obj->pos.x, NULL);
             }
         }
         if (obj->drop_state == OBJECT_DROP_SETTLING) {
@@ -960,9 +984,9 @@ void object_HitFighters(void) {
         }
         if (result != 0) {
             /* it went in */
-            fight_RaiseEvent(
-                OBJECT_SOUNDS_OF(obj->kind), FIGHT_EVENT_OBJECT_HITS,
-                &SPAD->body_points[target_index][j].x, NULL);
+            object_RaiseEvent(obj, obj->kind, OBJECT_SOUNDS_OF(obj->kind),
+                              FIGHT_EVENT_OBJECT_HITS,
+                              &SPAD->body_points[target_index][j].x, NULL);
             object_StickInBone(obj, body_point->bone);
             obj->can_hit_fighter = 0;
             move_kind = target->move_kind;
@@ -976,18 +1000,19 @@ void object_HitFighters(void) {
         }
         kind = obj->kind;
         if (kind == OBJECT_BURSTING) {
-            fight_RaiseEvent(
-                target_index ^ 1, FIGHT_EVENT_BULLET_IMPACT,
+            object_RaiseEvent(
+                obj, OBJECT_NONE, target_index ^ 1, FIGHT_EVENT_BULLET_IMPACT,
                 &SPAD->body_points[target_index][j].x, &g_fight_blow_dir_x);
             obj->kind = OBJECT_NONE;
             continue;
         }
         if (kind == OBJECT_FROG) {
-            fight_RaiseEvent(OBJECT_SOUNDS_OF(OBJECT_FROG), FIGHT_EVENT_HOP,
-                             &obj->pos.x, NULL);
+            object_RaiseEvent(obj, OBJECT_FROG, OBJECT_SOUNDS_OF(OBJECT_FROG),
+                              FIGHT_EVENT_HOP, &obj->pos.x, NULL);
         } else if (!clashed) {
-            fight_RaiseEvent(OBJECT_SOUNDS_OF(kind), FIGHT_EVENT_OBJECT_HITS,
-                             &SPAD->body_points[target_index][j].x, NULL);
+            object_RaiseEvent(
+                obj, kind, OBJECT_SOUNDS_OF(kind), FIGHT_EVENT_OBJECT_HITS,
+                &SPAD->body_points[target_index][j].x, NULL);
         }
         object_GlanceOff(scr, obj, j);
         obj->can_hit_fighter = 0;

@@ -136,6 +136,33 @@ def has_lead(path):
     return read_replay(path)[1].get('lead') == '1'
 
 
+def check_online_lead(program, path, extra=()):
+    """An online fight's replay across builds (docs/PORT.md, "Across
+    builds: the lead-in"): it keeps its session's run from power on, which
+    `program` plays from there (--replay-from-boot) to the fight's end with
+    every console hash the one recorded, and so does the other size of
+    `program` where there is one (another build's core, which can play it
+    from power on alone). The problems found, a line each."""
+    problems = []
+    base = os.path.basename(path)
+    if not has_lead(path):
+        return ['%s keeps no lead-in (%s)' % (base, read_replay(path)[1].get('lead_why'))]
+    programs = [(program, ['--replay-from-boot'])]
+    for bits, own in PROGRAMS.items():
+        other = PROGRAMS[32 if bits == 64 else 64]
+        if os.path.abspath(program) == os.path.abspath(os.path.join(REPO, own)) and \
+                os.path.exists(os.path.join(REPO, other)):
+            programs.append((os.path.join(REPO, other), []))
+    for runner, more in programs:
+        from_boot = []
+        code, said = check_replay(runner, path, list(extra) + more, from_boot=from_boot)
+        if code != 0 or not from_boot[0] or 'DESYNC' in said:
+            problems.append('%s: %s%s did not play it from power on to its end (exit %d%s): %s'
+                            % (base, os.path.basename(os.path.dirname(runner)), ' ' + ' '.join(more) if more else '',
+                               code, '' if from_boot[0] else ', not from power on', said))
+    return problems
+
+
 def strip_lead(path, out):
     """A copy of a replay without its lead-in, as a file of before it."""
     with open(path, 'rb') as f:

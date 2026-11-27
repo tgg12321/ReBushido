@@ -581,8 +581,9 @@ the stage").
     to its fight (its setup, cards, every input, the console's hash every
     second), and a build of another core plays the session again from its
     own power on to the fight, every console hash held, stopping where its
-    game went otherwise. Left: an online fight's (from the session's own
-    start), and a run begun with a fight chosen.
+    game went otherwise; an online fight's too (2026-11-26), from its
+    session's own power on, with what the game reads of the session (its
+    rules, pads and seed). Left: a run begun with a fight chosen.
 24. **2v2** (longer term): four fighters in one fight, two teams; a
     button retargets to the other enemy; online with four players
     (rollback of four, the bench's four-fighter case as the budget).
@@ -631,7 +632,12 @@ the stage").
     on Linux and Windows, every hash the same on all; replays of the fight
     of four played back. Each partner sounds as himself (2026-11-25,
     protocol 20): his voice, weapon's and class's banks of sounds in a
-    second bank of the port's sound memory. Left: four real PCs and
+    second bank of the port's sound memory; since 2026-11-26 what he
+    throws or drops sounds as his too, not as whoever is in his slot
+    (PORT.md, "A thrown thing's sounds"), and a room of several whose
+    matches have several fights has its leave (`rooms-four-stock`: a
+    leave in the card between a match's fights, the CPU's from the next
+    fight's start; NETPLAY.md, section 19). Left: four real PCs and
     players; the
     owner's eye on the band, the tags and the pages (`tmp/2v2/`) and on
     fights of four characters (`tmp/2v2-chars/`).

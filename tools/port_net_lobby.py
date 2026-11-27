@@ -58,6 +58,13 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
              nothing waiting on him, the match to its end; each fight's
              replay the same on the three and played back (the last two
              after the rest, -win in the Windows half)
+    rooms-four-stock  rooms-four's room, every match Stock 2: Dai leaves
+             the second match in the card between its fights, the CPU
+             plays his fighter from the next fight's first step to the
+             match's end; every fight of both matches kept as a replay
+             on the three who stayed, the same on all, played back, and
+             played from its session's power on by both sizes (alone,
+             after those; -win in the Windows half)
 
 `windows` (Windows' own Python) adds the window's programs: a session
 headless and with a window (tools/port_net.py's, with a window: in real
@@ -1254,6 +1261,9 @@ def same_replays(case, folders):
             code, said = port_replay.check_replay(HEADLESS, paths[n], [])
             if code != 0:
                 case.fail('%s: %s' % (paths[n], said))
+        # ... and across builds, from its session's power on
+        for problem in port_replay.check_online_lead(HEADLESS, files[0][n]):
+            case.fail(problem)
     return counts[0]
 
 
@@ -1326,6 +1336,69 @@ def case_four_between(case):
 # by one of its players, at this frame of its session (its fight begins
 # near frame 3,000, after the partners' grid and the stage page).
 FOUR_LEAVE_FRAME = 3600
+# A room of several whose matches have several fights (rooms-four-stock):
+# every member's rule (a match's is its host's), and the cards and second
+# fights of the room's plan.
+ROOM_STOCK_MATCH = 'stock:2'
+# Dai leaves the second match at this frame of its session: in the card
+# between its first fight and its second, whose start is frame 4,472 (the
+# first fight's replay begins at 2,075; the room's two matches play alike
+# to there, the same presses at the same places). A leave in the middle
+# of a fight is rooms-four's; one here leaves his fighter of the next to
+# the CPU, the three players pressing on. (One in the first fight, tried
+# first, stood off: the plan's presses run out, and an idle player and a
+# CPU who has lost his legs never close.)
+ROOM_STOCK_LEAVE_FRAME = 4440
+ROOM_STOCK_CHECKPOINTS = '''
+[[checkpoint]]
+name = "card"
+when = "port_match_card == 1"
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY && port_duo_on == 1"
+at_frame = true
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "stay"
+after = 100000000
+shot = false
+'''
+
+
+def write_room_stock_plan(folder):
+    """The plan of every member of rooms-four-stock (every pad's presses,
+    each program its own: --net-plan-pads): a room's match of four as
+    rooms-four's, its first fight's rounds to the card, the second fight's
+    rounds; each match of the room runs it from its start (the plan is the
+    player's own state, put back after a session)."""
+    def rounds(anchor, pad):
+        return ['%s+%df %s%s' % (anchor, 60 + n * 60 + offset, '' if pad == 1 else 'P%d ' % pad, button)
+                for n in range(BETWEEN_ROUNDS) for offset, button in port_net.FOUR_ROUNDS_OF[pad]]
+    presses = port_net.FOUR_SELECT[:4] + port_net.PARTNER_PRESSES_FOUR + port_net.STAGE_AFTER_PARTNERS + \
+        ['fight+20f P3 R2'] + sum((rounds(anchor, pad) for anchor in ('fight', 'fight2') for pad in (1, 2, 3, 4)),
+                                  [])
+    toml = os.path.join(folder, 'room_stock.toml')
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('about = "A room of several\'s matches of four, each of several fights (rooms-four-stock)."\n')
+        f.write('discs = ["port"]\nlimit = 200000000\nseconds = %d\n' % port_net.SECONDS)
+        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
+        f.write(port_net.with_partner(port_net.ROOM_CHECKPOINTS.split('\n[[checkpoint]]\nname = "stay"')[0],
+                                      100000000) + ROOM_STOCK_CHECKPOINTS)
+    playtest.PORT_PROGRAM = HEADLESS
+    playtest.PORT_SYMBOLS = HEADLESS + '.sym'
+    test = playtest.Test(toml)
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), 1)
+    path = toml[:-5] + '_plan.txt'
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
 
 
 def case_rooms_four(case):
@@ -1338,15 +1411,41 @@ def case_rooms_four(case):
     the middle of its fight by Dai, whose fighter the CPU plays on to the
     match's end (docs/NETPLAY.md, section 19). Every hash of a
     match the same on its four players and its spectator."""
+    rooms_four(case, False)
+
+
+def case_rooms_four_stock(case):
+    """rooms-four's room, every match Stock 2 (its host's rule, and every
+    member's): each match of several fights, the card between them. Dai
+    leaves the second match in the card between its first fight and its
+    second (a goodbye); the host gives his pad to the CPU there, and his
+    fighter is the CPU's from the second fight's first step to the match's
+    end, which those who stayed tell the room. Every hash of a match the
+    same on its four players and its spectator, and every fight's replay
+    the same on the three who played both matches to their ends, played
+    back, and played from its session's power on (the lead-in)."""
+    rooms_four(case, True)
+
+
+def rooms_four(case, stock):
+    """rooms-four, and with `stock` rooms-four-stock."""
     lobby = case.server(*ROOM_SERVER)
     with PLAN_LOCK:
-        plan = port_net.write_room_plan(HEADLESS, case.folder, four=True)
+        plan = write_room_stock_plan(case.folder) if stock else \
+            port_net.write_room_plan(HEADLESS, case.folder, four=True)
     base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--net-plan-pads',
             '--net-seed', str(ROOM_SEED), '--plan', plan, '--trace'] + TROUBLE
+    if stock:
+        base += ['--match', ROOM_STOCK_MATCH]
 
     def member(label, *more):
+        more = list(more)
+        if stock and '--room-watcher' not in more:
+            folder = os.path.join(case.folder, label + '-replays')
+            os.makedirs(folder, exist_ok=True)
+            more += ['--replays', folder]
         return case.start(label, base + ['--out', os.path.join(case.folder, label), '--player', label.capitalize()] +
-                          list(more))
+                          more)
 
     procs = [member('ayame', '--room-open', 'Fours', '--room-rule', 'fixed', '--room-size', '4', '--room-matches',
                     '2')]
@@ -1356,7 +1455,8 @@ def case_rooms_four(case):
         return
     code = code.group(1)
     # the rotation's order is the order they come in
-    for label, more in (('bunta', ()), ('chie', ()), ('dai', ('--leave-at', '2:%d' % FOUR_LEAVE_FRAME))):
+    leave = ROOM_STOCK_LEAVE_FRAME if stock else FOUR_LEAVE_FRAME
+    for label, more in (('bunta', ()), ('chie', ()), ('dai', ('--leave-at', '2:%d' % leave))):
         procs.append(member(label, '--room-enter', code, '--room-matches', '2', *more))
         if case.wait_for(label, r'room: in room', 60) is None:
             case.fail('%s never came into the room' % label.capitalize())
@@ -1412,17 +1512,38 @@ def case_rooms_four(case):
     taken = [re.search(r'netplay: player 3 has left the (?:session|match): the CPU plays his fighter from frame '
                        r'(\d+)', text) for text in stayed.values()]
     over = re.search(r'room: match 2 over: (its \w+ player won|nobody won)', stayed['bunta'])
-    if 'this player left the session at frame %d' % FOUR_LEAVE_FRAME not in second or \
+    between = re.search(r'netplay: player 3 left between the fights of the match', stayed['bunta'])
+    if 'this player left the session at frame %d' % leave not in second or (stock and not between) or \
             'its end is the other players\' to tell' not in second or not all(taken) or \
             len(set(t.group(1) for t in taken)) != 1 or not over or \
             any('netplay: the match was decided at frame' not in stayed[label] for label in ('ayame', 'bunta',
                                                                                              'chie')):
-        case.fail('Dai\'s leave in the middle of match 2 was not as it must be (the CPU playing his fighter on)')
+        case.fail('Dai\'s leave %s match 2 was not as it must be (the CPU playing his fighter on)'
+                  % ('between the fights of' if stock else 'in the middle of'))
     else:
-        case.said.append('Dai left match 2 at frame %d, in its fight: the CPU played his fighter from frame %s on, '
+        case.said.append('Dai left match 2 at frame %d, %s: the CPU played his fighter from frame %s on, '
                          'on the three who stayed and Sora; the match played to its end (%s, the room told by '
                          'those who stayed), all back to their own games and the room'
-                         % (FOUR_LEAVE_FRAME, taken[0].group(1), over.group(1)))
+                         % (leave, 'in the card between its fights, his fighter the CPU\'s from the next '
+                            'fight\'s first step' if stock else 'in its fight', taken[0].group(1), over.group(1)))
+    if not stock:
+        return
+    rule = "the host's match rule is stock, 2"
+    for label in ('ayame', 'bunta', 'chie', 'dai'):
+        if case.err(label).count(rule) != 2:
+            case.fail('the two matches were not Stock 2 (%s said %r %d times)' % (label, rule,
+                                                                                case.err(label).count(rule)))
+    # each fight of both matches kept as a replay by the three who played
+    # both to their ends (Dai left the second; Sora watched)
+    folders = [os.path.join(case.folder, label + '-replays') for label in ('ayame', 'bunta', 'chie')]
+    fights = same_replays(case, folders)
+    dai = len([f for f in os.listdir(os.path.join(case.folder, 'dai-replays')) if f.endswith('.rbr')])
+    if fights < 4:
+        case.fail('the two matches had %d fights in all, not two or more each' % fights)
+    elif not case.problems:
+        case.said.append('the two matches of Stock 2 had %d fights in all (Dai kept %d, his leave in the second '
+                         'match\'s card), every one kept as a replay on the three who stayed, the same on '
+                         'all three and played back with every hash the same' % (fights, dai))
 
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
                   ('direct6', case_direct6), ('punchto', case_punchto), ('list', case_list),
@@ -1443,6 +1564,9 @@ WINDOWS_LATER_CASES = [('ranked-win', case_ranked)]
 FOUR_CASES = [('four-punch-win' if IS_WINDOWS else 'four-punch', case_four_punch),
               ('four-relay-win' if IS_WINDOWS else 'four-relay', case_four_relay)]
 FOUR_LATER_CASES = [('rooms-four-win' if IS_WINDOWS else 'rooms-four', case_rooms_four)]
+# ... and a room's matches of several fights, a leave in one (alone: five
+# programs, as rooms-four)
+FOUR_ROOM_CASES = [('rooms-four-stock-win' if IS_WINDOWS else 'rooms-four-stock', case_rooms_four_stock)]
 # ... then the leaves: a guest of four killed in the fight, and one who
 # leaves between the fights of a match
 FOUR_LEAVE_CASES = [('four-silent-win' if IS_WINDOWS else 'four-silent', case_four_silent),
@@ -2103,7 +2227,7 @@ def main():
     else:
         cases = HEADLESS_CASES
     later = LATER_CASES if args.what == 'headless' else WINDOWS_LATER_CASES if args.what == 'windows' else []
-    fours = [FOUR_CASES, FOUR_LATER_CASES, FOUR_LEAVE_CASES] if args.what != 'internet' else []
+    fours = [FOUR_CASES, FOUR_LATER_CASES, FOUR_LEAVE_CASES, FOUR_ROOM_CASES] if args.what != 'internet' else []
     if args.only:
         cases = [c for c in cases if c[0] in args.only]
         later = [c for c in later if c[0] in args.only]

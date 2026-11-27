@@ -178,6 +178,15 @@ typedef struct {
     u8 class_loaded[2]; /* the class whose bank is his own, plus 1; 0 */
     u8 own_sounds[2];
     SoundDef sounds[2][SND_FIGHTER_COUNT];
+    /* A thrown thing's sounds are its thrower's (port_duo.h): who threw
+     * or dropped each object of g_object_pool, plus 1 (0 for no one
+     * known), the kind of thing each of the four starts with (his own
+     * g_object_fighter_kinds, which stays his first's in the slot), and
+     * whose sounds the object's event being raised makes, plus 1 (0 for
+     * the slot's, as ever). */
+    u8 object_by[OBJECT_COUNT];
+    u8 start_kind[PORT_DUO_FIGHTERS];
+    u8 sounding;
 } PortDuo;
 
 /* Where tests/play/state.toml reads the duo (its `port_duo_*`): a member
@@ -671,7 +680,8 @@ static void port_DuoStand(
 static s32 port_DuoPartnerIsCpu(s32 slot) {
     return g_port_duo.teams != PORT_TEAMS_TWO_PADS ||
            g_fight_config.is_cpu[slot] ||
-           (port_IsNetplayOn() && port_NetplayPads() < PORT_DUO_FIGHTERS);
+           (port_SessionGamePads() != 0 &&
+            port_SessionGamePads() < PORT_DUO_FIGHTERS);
 }
 
 /* ---- teams of characters of their own ---- */
@@ -914,7 +924,49 @@ void port_DuoLoadStageClasses(s32 file) {
     }
 }
 
-/* (port_duo.h) A fighter's sound is one of the 40 of his slot's. */
+/* (port_duo.h) An object launched by the one in `slot`: his. */
+void port_DuoObjectLaunched(s32 index, s32 slot) {
+    PortDuo *duo = &g_port_duo;
+
+    if (duo->on && index >= 0 && index < OBJECT_COUNT && slot >= 0 &&
+        slot < 2) {
+        duo->object_by[index] = (u8)(duo->in_slot[slot] + 1);
+    }
+}
+
+/* (port_duo.h) Whose sounds an object's event makes: its thrower's, or,
+ * for a sound of the thing's kind (`kind`) that is not the kind he
+ * starts with, the one's who does start with it, his team mate first, as
+ * the game gives such a sound to the slot of the kind's fighter. */
+void port_DuoObjectSounds(s32 index, s32 kind) {
+    PortDuo *duo = &g_port_duo;
+    s32 by;
+    s32 i;
+
+    duo->sounding = 0;
+    if (!duo->on || index < 0 || index >= OBJECT_COUNT ||
+        duo->object_by[index] == 0) {
+        return;
+    }
+    by = duo->object_by[index] - 1;
+    if (kind != OBJECT_NONE && kind != duo->start_kind[by]) {
+        /* the mate, then the other team's of his rank, then its other */
+        static const u8 others[3] = {2, 1, 3};
+
+        for (i = 0; i < 3; i++) {
+            if (duo->start_kind[by ^ others[i]] == kind) {
+                by ^= others[i];
+                break;
+            }
+        }
+    }
+    duo->sounding = (u8)(by + 1);
+}
+
+void port_DuoObjectSoundsDone(void) { g_port_duo.sounding = 0; }
+
+/* (port_duo.h) A fighter's sound is one of the 40 of his slot's, or of a
+ * thrown thing's thrower's. */
 SoundDef *port_DuoSound(s32 sound, SoundDef *def) {
     PortDuo *duo = &g_port_duo;
     s32 at = sound - SND_FIGHTER_FIRST;
@@ -922,6 +974,16 @@ SoundDef *port_DuoSound(s32 sound, SoundDef *def) {
 
     if (!duo->on || at < 0 || at >= 2 * SND_FIGHTER_COUNT) {
         return def;
+    }
+    if (duo->sounding != 0) {
+        s32 who = duo->sounding - 1;
+
+        slot = PORT_DUO_SLOT(who);
+        if (who >= 2 && duo->own_sounds[slot]) {
+            return &duo->sounds[slot][at % SND_FIGHTER_COUNT];
+        }
+        return &g_snd_sounds[SND_FIGHTER_FIRST + slot * SND_FIGHTER_COUNT +
+                             at % SND_FIGHTER_COUNT];
     }
     slot = at / SND_FIGHTER_COUNT;
     if (duo->in_slot[slot] < 2 || !duo->own_sounds[slot]) {
@@ -1134,7 +1196,10 @@ static void port_DuoSetPartner(
     }
     fighter_Init(
         slot, is_cpu, duo->partner_roster[slot], duo->partner_weapon[slot], 0);
-    /* whose sounds a thrown thing makes stays the slot's */
+    /* the game's rule of whose sounds a thrown thing makes stays the
+     * slot's; the duo knows each one's own (port_DuoObjectSounds) */
+    duo->start_kind[slot] = object_kind;
+    duo->start_kind[who] = g_object_fighter_kinds[slot];
     g_object_fighter_kinds[slot] = object_kind;
     fighter->motion_set = motion_set;
     port_DuoStand(fighter, place, toward);
@@ -1235,6 +1300,10 @@ void port_DuoFightSet(void) {
     duo->decided = FALSE;
     duo->falls = 0;
     duo->models_out = FALSE;
+    duo->sounding = 0;
+    for (i = 0; i < OBJECT_COUNT; i++) {
+        duo->object_by[i] = 0;
+    }
     /* the second bank of video memory, where a partner of his own has his
      * textures: read only in a fight that has one (port_gpu.h) */
     port_SetVramBank(NULL);
