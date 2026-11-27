@@ -73,6 +73,13 @@
 #define HELLO_EVERY_MS 250
 #define PUNCH_EVERY_MS 100
 #define SERVER_GIVE_UP_MS 10000
+/* ... and as many hellos as that time holds gone unanswered: a pass of
+ * the meeting's loop held up (a window that takes seconds to open on a
+ * busy PC, in the wait hook) sends none, so it is not the server's
+ * silence */
+#define SERVER_GIVE_UP_HELLOS (SERVER_GIVE_UP_MS / HELLO_EVERY_MS)
+/* a pass of the meeting's loop held up longer than this is logged */
+#define HELD_UP_MS 1000
 #define POLL_MS 5
 #define LIST_WAIT_MS 1500
 #define STATUS_BYTES 400
@@ -894,8 +901,11 @@ s32 port_RelayMeet(s32 role, s32 again) {
     u8 in[PORT_NET_DATAGRAM_MAX];
     u32 start = port_NetClock();
     u32 heard_at = start;
-    u32 hello_at = 0;
+    /* the first hello at once, however young the clock is */
+    u32 hello_at = start - HELLO_EVERY_MS;
     u32 punch_at = 0;
+    u32 passed_at = start;
+    u32 unanswered = 0;
     /* a host's first hello lets go of any guest the lobby still has in a
      * room of this address: one of a session that has ended in the
      * running program (online.c), whose room the lobby keeps a while */
@@ -946,6 +956,12 @@ s32 port_RelayMeet(s32 role, s32 again) {
         PortNetAddress from;
         s32 got;
 
+        if (now - passed_at > HELD_UP_MS) {
+            port_Log("relay: the program was held up %u ms away from the "
+                     "meeting (not counted as the server's silence)\n",
+                     now - passed_at);
+        }
+        passed_at = now;
         port_RoomTick();
         /* a host of four keeps its guests in while it meets the next */
         port_SessionKeepOthers();
@@ -956,6 +972,7 @@ s32 port_RelayMeet(s32 role, s32 again) {
         if (now - hello_at >= HELLO_EVERY_MS) {
             port_SendHello(role, resetting);
             hello_at = now;
+            unanswered++;
         }
         if (g_meet.state == STATE_PUNCH && now - punch_at >= PUNCH_EVERY_MS) {
             port_SendPunches();
@@ -976,6 +993,7 @@ s32 port_RelayMeet(s32 role, s32 again) {
                     g_relay.rtt = now - hello_at;
                 }
                 heard_at = now;
+                unanswered = 0;
                 port_GetText(g_meet.peer_setup, in + STATE_SETUP, SETUP_BYTES);
                 if (detail >= STATE_NO_ROOM) {
                     port_RelayError(why, sizeof(why), detail);
@@ -1022,7 +1040,7 @@ s32 port_RelayMeet(s32 role, s32 again) {
                     }
                     if (!g_meet.has_challenge) {
                         g_meet.has_challenge = 1;
-                        hello_at = 0; /* the proof at once */
+                        hello_at = now - HELLO_EVERY_MS; /* the proof at once */
                     }
                 } else if (
                     detail == STATE_PUNCH && g_meet.state != STATE_PUNCH) {
@@ -1099,7 +1117,7 @@ s32 port_RelayMeet(s32 role, s32 again) {
                     g_meet.punched6 = 1;
                     g_meet.via6 = from;
                     g_meet.rtt6 = rtt;
-                    hello_at = 0;
+                    hello_at = now - HELLO_EVERY_MS;
                 } else if (!from.is_v6 && !g_meet.punched4) {
                     g_meet.punched4 = 1;
                     g_meet.via4 = from;
@@ -1107,11 +1125,12 @@ s32 port_RelayMeet(s32 role, s32 again) {
                     g_meet.via4_type = detail < g_meet.peer_count
                                            ? g_meet.peer[detail].type
                                            : CANDIDATE_PUBLIC;
-                    hello_at = 0;
+                    hello_at = now - HELLO_EVERY_MS;
                 }
             }
         }
-        if (now - heard_at > SERVER_GIVE_UP_MS) {
+        if (now - heard_at > SERVER_GIVE_UP_MS &&
+            unanswered > SERVER_GIVE_UP_HELLOS) {
             port_RelayText(why, sizeof(why),
                            "The lobby server at %s does not answer. Is "
                            "its address right, and does your network let "
