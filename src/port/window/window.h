@@ -586,6 +586,16 @@ extern s32 port_DuoTagPixels(
  * port_WeaponPickChoose chose: the mod's weapon its cursor shows, where
  * the weapon has any (port_weapons.h; match_page.c). */
 extern void port_WeaponPickChoose(s32 side);
+/* Training's input display over its fight, a column a pad, its line of
+ * what training does and the hit areas (include/port_training.h;
+ * training_page.c): the one port_TrainingCanvasChoose chose (0 and 1 the
+ * pads' columns, 2 the line, 3 the hit areas). */
+#define PORT_TRAINING_CANVASES 4
+#define PORT_TRAINING_CANVAS_STATUS 2
+#define PORT_TRAINING_CANVAS_AREAS 3
+extern void port_TrainingCanvasChoose(s32 which);
+extern s32 port_TrainingPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 extern s32 port_WeaponPickPixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 /* "Single fight", "Stock N", "First to N" or "Crew N" into `out`. */

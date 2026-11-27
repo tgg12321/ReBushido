@@ -8,6 +8,8 @@
 #include "port_replay.h"
 #include "bb2.h"
 
+PortTrainingAreas g_port_training_areas;
+
 static PortTrainingSwitches g_port_training_switches = {
     PORT_TRAINING_STAND, 0, FALSE, PORT_TRAINING_SLOW_LEAST};
 
@@ -116,9 +118,14 @@ static u16 g_port_training_held;
 void port_TrainingNoteHeld(u16 buttons) { g_port_training_held = buttons; }
 
 static void port_TrainingPutBack(void) {
+    u32 held[PORT_INPUT_PADS];
+
+    /* the plan's runs, and the buttons it holds on the pads (pad.c) */
+    port_GetScriptPads(held);
     port_TrainingRunCopy(TRUE);
     port_StateLoad(g_port_training_moment);
     port_TrainingRunCopy(FALSE);
+    port_SetScriptPads(held);
     g_port_training.last = g_port_training_held;
 }
 

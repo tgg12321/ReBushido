@@ -1279,6 +1279,11 @@ void fight_Update(void) {
     fighter_ReadPad(1, &pad);
     fighter_Update(1, &pad);
     fight_UpdateFighterPair();
+#if RB_PORT
+    /* training's hit areas, where this frame's tests had them
+     * (port_training.h) */
+    port_TrainingNoteAreas();
+#endif
     object_Update();
     object_UpdateDirt();
     replay_AdvanceFrame();

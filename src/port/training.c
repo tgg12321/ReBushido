@@ -43,7 +43,12 @@ void port_TrainingChoose(s32 on) {
     training->seed = SEED_START;
 }
 
-void port_TrainingPause(s32 up) { g_port_training.in_pause = (u8)(up != 0); }
+void port_TrainingPause(s32 up) {
+    /* nothing of training's written outside it */
+    if (g_port_training.is_on) {
+        g_port_training.in_pause = (u8)(up != 0);
+    }
+}
 
 /* ---- the presses shown ---- */
 
@@ -254,6 +259,115 @@ void port_TrainingTakeInput(struct PortInput *input) {
     port_TrainingShow(0, own);
     port_TrainingShow(1, theirs);
     training->frames++;
+}
+
+/* ---- the hit areas ---- */
+
+/* The projection, as the renderer projects the frame (duo.c's tags): the
+ * view's rotation from the camera's place, the coprocessor's plane and
+ * offset, the frame squashed to half its height. */
+#define FIXED_SHIFT 12
+#define OFFSET_SHIFT 16
+#define NEAREST_DEPTH 64
+#define SCREEN_LIMIT 0x7000
+
+/* A world point on the game's screen, and a radius about it there: FALSE
+ * behind the camera or far off the screen. */
+static s32 port_TrainingProject(
+    const Vec3 *at, s32 radius, s16 *x, s16 *y, s16 *radius_out) {
+    const MATRIX *view = &g_render_view_matrix;
+    const s32 *eye = g_node_camera_root_ptr->world.t;
+    s32 rel[3];
+    s32 out[3];
+    s32 h = (s32)(port_GteReadControl(PORT_GTE_PLANE) & 0xFFFF);
+    s32 ofx = (s32)port_GteReadControl(PORT_GTE_OFX) >> OFFSET_SHIFT;
+    s32 ofy = (s32)port_GteReadControl(PORT_GTE_OFY) >> OFFSET_SHIFT;
+    s32 sx;
+    s32 sy;
+    s32 i;
+
+    rel[0] = (at->x - eye[0]) >> 2;
+    rel[1] = (at->y - eye[1]) >> 2;
+    rel[2] = (at->z - eye[2]) >> 2;
+    for (i = 0; i < 3; i++) {
+        out[i] = (view->m[i][0] * rel[0] + view->m[i][1] * rel[1] +
+                  view->m[i][2] * rel[2]) >>
+                 (FIXED_SHIFT - 2);
+    }
+    if (out[2] < NEAREST_DEPTH) {
+        return FALSE;
+    }
+    sx = ofx + out[0] * h / out[2];
+    sy = ofy + (out[1] / 2) * h / out[2];
+    if (sx < -SCREEN_LIMIT || sx > SCREEN_LIMIT || sy < -SCREEN_LIMIT ||
+        sy > SCREEN_LIMIT) {
+        return FALSE;
+    }
+    *x = (s16)sx;
+    *y = (s16)sy;
+    if (radius_out != NULL) {
+        *radius_out = (s16)(radius * h / out[2]);
+    }
+    return TRUE;
+}
+
+/* The group of a body point (enum BodyPointId): what the window colours
+ * it by. */
+static u8 port_TrainingAreaGroup(s32 point) {
+    return point == BODY_HEAD     ? 0
+           : point < BODY_OFF_ARM ? 1
+           : point < BODY_LEGS    ? 2
+                                  : 3;
+}
+
+/* The frame's hit areas into what the window reads (port_training.h). */
+void port_TrainingNoteAreas(void) {
+    PortTrainingAreas *areas = &g_port_training_areas;
+    s32 side;
+    s32 i;
+
+    if (!g_port_training.is_on) {
+        areas->on = FALSE;
+        return;
+    }
+    areas->frame = g_disp_frame_count;
+    areas->on = TRUE;
+    for (side = 0; side < 2; side++) {
+        const Fighter *fighter = &g_fighters[side];
+
+        /* the points as fighter_PlacePoints left them for the hit tests
+         * this frame, the scratchpad's (fight.h) */
+        for (i = 0; i < PORT_TRAINING_BODY_POINTS; i++) {
+            const BodyPoint *point = &g_fighter_body_points[side][i];
+            PortTrainingArea *area = &areas->body[side][i];
+            s16 core = 0;
+
+            area->group = port_TrainingAreaGroup(i);
+            area->seen = (u8)port_TrainingProject(
+                &SPAD->body_points[side][i], point->radius, &area->x, &area->y,
+                &area->radius);
+            if (area->seen && point->has_core) {
+                port_TrainingProject(
+                    &SPAD->body_points[side][i], point->core_radius, &area->x,
+                    &area->y, &core);
+            }
+            area->core_radius = core;
+        }
+        areas->blade_points[side] =
+            (u8)(fighter->weapon_id == WEAPON_ID_NAGINATA ||
+                         fighter->weapon_id == WEAPON_ID_YARI
+                     ? PORT_TRAINING_BLADE_POINTS
+                     : PORT_TRAINING_BLADE_POINTS - 1);
+        areas->blade_live[side] =
+            (u8)(fighter->weapon_live_state != WEAPON_LIVE_OFF &&
+                 !fighter->is_defeated);
+        areas->blade_hits[side] = (u8)(fighter->hit_window_open != 0);
+        for (i = 0; i < PORT_TRAINING_BLADE_POINTS; i++) {
+            areas->blade_seen[side][i] = (u8)port_TrainingProject(
+                &SPAD->weapon_points[side][i], 0, &areas->blade[side][i][0],
+                &areas->blade[side][i][1], NULL);
+        }
+    }
 }
 
 /* ---- a kill ---- */

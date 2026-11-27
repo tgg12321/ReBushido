@@ -126,6 +126,43 @@ extern void port_TrainingHoldBegin(void);
 extern s32 port_TrainingHoldGoesOn(void);
 extern s32 port_TrainingHoldEnd(void);
 
+/* After the fighters of a frame of training's fight are tested against
+ * each other (fight.c, fight_Update): their hit areas noted for the
+ * window, as the frame's camera puts them on the screen. */
+extern void port_TrainingNoteAreas(void);
+
+/* The hit areas as the window draws them (training_page.c): each body
+ * point's sphere, and its core where it has one (the head, the chest and
+ * the hips: a blade that reaches the core kills, one that reaches the
+ * sphere wounds), and each weapon's points (its blade, from the hand to
+ * the point), on the game's screen of 640 by 240, as the last frame of
+ * training's fight projected them. Outside the state (training_kept.c):
+ * the picture's. */
+#define PORT_TRAINING_BODY_POINTS 22
+#define PORT_TRAINING_BLADE_POINTS 3
+
+typedef struct {
+    s16 x;
+    s16 y;
+    s16 radius;      /* across: down is half of it, as the screen is */
+    s16 core_radius; /* 0: no core */
+    u8 seen;         /* in front of the camera */
+    u8 group;        /* 0 the head, 1 the chest and hips, 2 an arm, 3 a leg */
+} PortTrainingArea;
+
+typedef struct {
+    u32 frame; /* the game's frame it was noted at (g_disp_frame_count) */
+    u8 on;     /* a fight of training's: drawn */
+    u8 blade_points[2];
+    u8 blade_live[2]; /* the weapon can hit at all */
+    u8 blade_hits[2]; /* ... and is in its frames of hitting */
+    PortTrainingArea body[2][PORT_TRAINING_BODY_POINTS];
+    s16 blade[2][PORT_TRAINING_BLADE_POINTS][2];
+    u8 blade_seen[2][PORT_TRAINING_BLADE_POINTS];
+} PortTrainingAreas;
+
+extern PortTrainingAreas g_port_training_areas;
+
 /* ---- the run's switches and what is kept outside the state
  * (training_kept.c) ---- */
 

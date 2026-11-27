@@ -1024,8 +1024,8 @@ PORT_SETTING(training_dummy,
     .is = "stand, guard or playback",
     .menu = PORT_MENU_TRAINING, .rank = 10, .takes = PORT_TAKES_NOW,
     .label = "Dummy",
-    .help = "Stands, guards as the game's CPU answers an attack, or plays "
-            "back what was recorded for it (Select and Cross)",
+    .help = "Stands, guards as the game's CPU would, or plays back its "
+            "recording",
     .shown = {"Stands", "Guards", "Plays back"})
 
 /* The slot recorded into and played back, of four, each a minute. */

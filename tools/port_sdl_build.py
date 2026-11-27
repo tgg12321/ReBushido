@@ -84,7 +84,7 @@ WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c',
 WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c',
-                 'stage_page.c', 'match_page.c', 'top_page.c', 'page_look.c', 'menu_online.c',
+                 'stage_page.c', 'match_page.c', 'training_page.c', 'top_page.c', 'page_look.c', 'menu_online.c',
                  'menu_replays.c', 'sdl_replay.c', 'sdl_export.c', 'film.c', 'film_jpeg.c', 'film_mf.c',
                  'sampler.c', 'warm.c', 'portmap.c', 'cpu_prefer.c',
                  'prepare.c', 'update.c', 'update_core.c', 'update_apply.c', 'online_pages.c']
