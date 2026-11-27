@@ -826,6 +826,12 @@ def check_session(label, program, args, ports, window, match='stock', extra=None
         if os.path.isdir(replays):
             shutil.rmtree(replays)
         cmd += ['--replays', replays]
+        # ... and its record of fights (docs/PORT.md, "Stats"), held to the
+        # other's below
+        stats = os.path.join(folder, 'side%d-stats.txt' % side)
+        if os.path.exists(stats):
+            os.remove(stats)
+        cmd += ['--stats', stats]
         if side == 0:
             # the host's cards, which it sends the guest: new ones here,
             # which no program writes (both play on copies in memory)
@@ -926,6 +932,44 @@ def check_session(label, program, args, ports, window, match='stock', extra=None
               % (label, len(common), ' but where they parted before the resync (%s)' % parted_words(parted)
                  if parted else '', common[-1], hashes[0][common[-1]]), flush=True)
     problems += check_session_replays(label, program, folder, window, mods, resync)
+    problems += check_session_stats(label, folder)
+    return problems
+
+
+def check_session_stats(label, folder):
+    """The session's fights as both machines' records counted them
+    (tools/port_stats.py): each fight once, online, the host the first
+    side and the guest the second, one's win the other's loss, the same
+    fighters, kills and wounds the other way round (but for the window's
+    host's fight alone after the guest has gone)."""
+    import port_stats
+    records = []
+    for side in (0, 1):
+        path = os.path.join(folder, 'side%d-stats.txt' % side)
+        if not os.path.exists(path):
+            return ['session: %s: side %d kept no record of its fights' % (label, side)]
+        records.append(port_stats.read_record(path)[1])
+    host, guest = records
+    if not guest or len(host) < len(guest):
+        return ['session: %s: the records have %d and %d fights' % (label, len(host), len(guest))]
+    mirror = {'won': 'lost', 'lost': 'won', 'draw': 'draw', 'going': 'going'}
+    problems = []
+    for n, (a, b) in enumerate(zip(host, guest)):
+        def swap(value):
+            first, second = value.split(':')[:2]
+            return '%s:%s' % (second, first)
+        same = (a['online'] == b['online'] and a['online'] in ('online', 'room', 'ranked') and
+                a['side'] == '0' and b['side'] == '1' and mirror[a['result']] == b['result'] and
+                mirror[a['match_result']] == b['match_result'] and a['me'] == b['them'] and
+                a['them'] == b['me'] and a['kills'] == swap(b['kills']) and a['given'] == b['taken'] and
+                a['taken'] == b['given'] and a['wounds_given'] == b['wounds_taken'] and
+                a['frames'] == b['frames'] and a['how'] == b['how'])
+        if not same:
+            problems.append('session: %s: fight %d of the records is not the same fight seen from both sides: '
+                            '%s / %s' % (label, n + 1, a, b))
+    if not problems:
+        print('port_net: session: %s: %d fights in both machines\' records, each once, one\'s win the other\'s '
+              'loss' % (label, len(guest)), flush=True)
     return problems
 
 

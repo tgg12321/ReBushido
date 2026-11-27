@@ -92,6 +92,7 @@
 #include "port_duo.h"
 #include "port_training.h"
 #include "port_cpu.h"
+#include "port_stats.h"
 #endif
 
 #endif /* BB2_H */

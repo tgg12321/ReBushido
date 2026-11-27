@@ -1975,6 +1975,8 @@ static void port_ReplayWrite(void) {
              g_dedupe.ticks / TICKS_PER_MS, g_dedupe.ticks_most / TICKS_PER_MS);
     /* a ranked match's fight: kept for the lobby, if it asks (a dispute) */
     port_RankedReplayWritten(path);
+    /* ... and the player's record's fight (port_stats.h) */
+    port_StatsReplayWritten(path, g_rec.end_count);
     port_ReplayPrune(port_ReplayFileSize(path));
 }
 
@@ -4340,6 +4342,8 @@ void port_SetReplayDiffer(u32 input) { g_differ_asked = input; }
 void port_ReplayBoundary(void) {
     PortGameView view;
 
+    /* the player's record first: it counts nothing of a playback */
+    port_StatsBoundary();
     if (g_play.state == PLAY_PENDING) {
         if (g_port_steps == 0 || g_port_rerun) {
             return;

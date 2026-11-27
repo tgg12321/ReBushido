@@ -53,6 +53,7 @@
 #include "port_fight_music.h"
 #include "port_match.h"
 #include "port_ranked.h"
+#include "port_stats.h"
 #include "port_duo.h"
 #include "port_cpu.h"
 #include "port_top_menu.h"
@@ -65,6 +66,9 @@
 #define SETTINGS_FILE "rebushido.cfg"
 /* the ranked identity, beside the settings (docs/PLAYING.md, "Ranked") */
 #define IDENTITY_FILE "rebushido-identity.key"
+/* the player's record of fights, beside the settings too (docs/PLAYING.md,
+ * "Stats") */
+#define STATS_FILE "rebushido-stats.txt"
 #define SETTINGS_BYTES_MAX 0x10000
 #define IMAGE_SUM_BYTES 0x100000
 #define CUE_BYTES_MAX 2048
@@ -1262,6 +1266,16 @@ int main(int argc, char **argv) {
         snprintf(identity, sizeof(identity), "%.*s%s", (int)(cut - settings),
                  settings, IDENTITY_FILE);
         port_RankedSetIdentity(identity);
+        /* ... and the record of fights, in a player's run: a test's (--plan,
+         * --frames) and a film's keep none unless its --stats, which comes
+         * after, says where */
+        if (!has_end && export_path == NULL) {
+            static char stats[PATH_BYTES_MAX];
+
+            snprintf(stats, sizeof(stats), "%.*s%s", (int)(cut - settings),
+                     settings, STATS_FILE);
+            port_SetStatsFile(stats);
+        }
     }
     /* the updater (update.h): never in a session of online play or a
      * test's run, unless the test names its server; a downloaded update

@@ -252,6 +252,37 @@ extern void port_ReplaysFilmAccept(void);
 /* The settings of a film shown on the page as well, by name. */
 extern const char * const g_port_replays_film_settings[2];
 
+/* ---- the settings menu's Stats page (menu_stats.c) ---- */
+
+/* The page's views: the totals and the lists' rows, then each list. */
+enum {
+    PORT_STATS_VIEW_TOTALS = 0,
+    PORT_STATS_VIEW_FIGHTERS = 1,
+    PORT_STATS_VIEW_WEAPONS = 2,
+    PORT_STATS_VIEW_STAGES = 3,
+    PORT_STATS_VIEW_MODES = 4,
+    PORT_STATS_VIEW_OPPONENTS = 5,
+    PORT_STATS_VIEW_KILLS = 6,
+    PORT_STATS_VIEW_HISTORY = 7,
+    PORT_STATS_VIEWS = 8
+};
+
+/* The record counted again: the lines of a view (the totals' lines, a
+ * list's rows, the history's fights, newest first). */
+extern s32 port_StatsPageItems(s32 view);
+/* A line's label and value (-1: the line that says there is nothing);
+ * and a fight's of the history, its smaller line under them. */
+extern void port_StatsPageDescribe(s32 view, s32 item, char *label,
+                                   u32 label_room, char *value, u32 value_room);
+extern void port_StatsPageDetail(s32 item, char *out, u32 room);
+extern const char *port_StatsPageHelp(s32 view, s32 item);
+/* A view's name (the rows of the totals' page that open the lists, and
+ * the title). */
+extern const char *port_StatsViewName(s32 view);
+/* A fight of the history: its replay played (TRUE, the menu closes), or
+ * FALSE with why in `note`. */
+extern s32 port_StatsPageAccept(s32 item, char *note, u32 room);
+
 /* ---- the settings menu's Play online page (menu_online.c) ---- */
 
 /* The page's rows, each an item of its own (ONLINE_..., menu_online.c),

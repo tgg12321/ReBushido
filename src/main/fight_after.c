@@ -660,6 +660,8 @@ void cutscene_KaishakuUpdate(void) {
         /* the surrenderer's loss, counted into the match (port_match.h) */
         port_MatchFightOver(
             g_fight_mode, g_fight_winner != 0, g_fight_winner == 0);
+        /* ... and into the player's record (port_stats.h) */
+        port_StatsFightDecided(PORT_STATS_HOW_SURRENDER);
 #endif
         /* the cutscene read through the motion files' streams */
         motion_OpenStream(0, g_motion_common_sections.stream);

@@ -87,6 +87,8 @@ outside  src/port/watch.c       a room's match watched: its host's feed to the l
 outside  src/port/session.c     netplay's session: who the other is, the host's cards as sent, the seed
 outside  src/port/png.c         PNG pictures read and written for the mods
 outside  src/port/replay.c      the replays: the fight being recorded, the one being played, the settings
+outside  src/port/stats.c       the player's record: what the step noted, the fight's end waiting to be final
+outside  src/port/stats_store.c  the player's record: the fights read from its file and written to it
 outside  src/port/remaster.c    the remastered picture's side channel: its epoch only goes forward
 outside  src/port/state.c       the snapshot's own bookkeeping, which must survive a load
 outside  src/port/step.c        the host's count of steps and whether a step is run again

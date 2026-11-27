@@ -212,6 +212,10 @@ static inline void fight_AfterDefeat(void) {
     u8 old_start_pair;
     MoveScript *stance_move;
 
+#if RB_PORT
+    /* the fight decided, for the player's record (port_stats.h) */
+    port_StatsFightDecided(PORT_STATS_HOW_KILL);
+#endif
     switch (g_fight_mode) {
     case FIGHT_MODE_STORY:
         if (g_fighters[0].is_defeated) {

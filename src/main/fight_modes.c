@@ -356,6 +356,12 @@ void fight_LeaveBestTimes(void) {
 void fight_RecordTeamMatch(void) {
     u8 points_1, points_2;
 
+#if RB_PORT
+    /* the match, for the player's record (port_stats.h): on the clock
+     * where neither side has its points */
+    port_StatsTeamMatch(g_team_points != g_team_points_to_win &&
+                        g_team_points_p2 != g_team_points_to_win);
+#endif
     points_1 = g_team_points;
     if (points_1 == g_team_points_to_win) {
         g_team_results[g_team_match] = TEAM_RESULT_SIDE_1;

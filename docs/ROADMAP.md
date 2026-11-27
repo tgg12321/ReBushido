@@ -759,6 +759,24 @@ the stage").
     by kind and place of the blow, wounds given and taken, the longest
     run of wins; a match history with each fight's replay. A page of its
     own; online the ladder (item 25) keeps its own ratings beside it.
+    **Done on the port** ([`PORT.md`](PORT.md), "Stats";
+    [`PLAYING.md`](PLAYING.md), "Stats"): every fight and match finished
+    (training, replays, spectators and CPU against CPU not), read where
+    the game decides (the fall, the killing blow's kind and place, the
+    kaishaku, a group battle's match on points or the clock, the match
+    rules' score) through four hooks that only note; counted once at its
+    real end, rollback's reruns and run-ahead's frames ahead forgotten, a
+    session's when final; `rebushido-stats.txt` beside the settings, a
+    line a fight, versioned, written through a temporary file and a
+    rename, a broken one kept aside; the settings menu's Stats page under
+    Replays (the totals, the longest run, by fighter, weapon, stage, mode
+    and opponent, the kills by kind and place, the history whose rows
+    play the replay, the ladder's rating where the program has it).
+    Proved by `tests/port/stats.c` and `tools/port_stats.py` (kills, a
+    surrender, a Stock match, the rollback self-test with run-ahead 2,
+    replays played back) and `tools/port_net.py session` (both machines'
+    records the same fights from each side, through rollbacks). Left:
+    the owner's eye on `tmp/stats/`.
 31. **A local tournament**: a bracket of up to eight players or CPUs
     (item 27's levels) on one machine or in a room (item 22), single or
     double elimination, under the match rules of item 21, the bracket
