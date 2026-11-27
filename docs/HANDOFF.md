@@ -88,7 +88,10 @@ lessons still holds unless this section says otherwise.
    four characters in 2v2 (`tmp/2v2-chars/`); the CPU taking over for a
    guest who leaves between fights; the partners' voices
    (`tmp/2v2-voices/`) and mods' pages (`tmp/2v2-mods/`); the Replays
-   page (`tmp/replays-page/`).
+   page (`tmp/replays-page/`); the kanabo's broadsword sounds against
+   the katana's, its club lying loose, and its broadsword blow
+   (`tmp/modsleft/listen/`); a mod's weapon's own place on the weapon
+   scroll, and its own `weapon_id` (MODS.md, "What is not done yet").
 
 ## Next, what needs no owner
 
@@ -105,6 +108,14 @@ lessons still holds unless this section says otherwise.
   bamboo's culms as meshes); the owner's eye on `tmp/stages17d/`.
 - 18's leftovers: more than 32 arenas, arenas larger than their host's
   room, pieces; dispute tooling; the kanabo's window model.
+- 10's mod weapons (2026-11-26, MODS.md, "A mod's weapon on the select
+  screens", "A move joined to another file's motion"): a weapon's sounds
+  and dropped weapon (format 3), its model lying loose, and
+  `tools/bbm_join.py` done, the kanabo with them. Left with no owner: a
+  weapon's own recorded sounds (a VAB of its own in place of the pair's
+  bank); its model in two on two. With the owner: a place of its own on
+  the weapon scroll (room for one more; its art), and whether a
+  `weapon_id` of its own is wanted (MODS.md, "What is not done yet").
 - The fight's first frame: the driver's first-use work moved into the
   load (PORT.md, "The fight's first frame"), ra2's first blank 25 to 13
   ms, held by the bench's `first_blank`; left of it, the stage's mesh and

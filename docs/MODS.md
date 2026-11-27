@@ -2296,17 +2296,41 @@ any other game's, and no AI-made or bought mesh.
 
 ### What is not done yet
 
-- **A place of its own in the grid**: a mod's weapon is a variant of its
-  base on the base's place, its picture and name the base's; a seventh
-  place needs the select screen's file's pictures and names
-  (`select_data.c`, `SelectFile.weapon_pixels`) and a `weapon_id` of its
-  own everywhere the game indexes by weapon (the tables above, the
-  sounds', the CPU's, the dropped object's).
+- **A place of its own on the weapon scroll** (waits on the owner's
+  look): a mod's weapon is a variant of its base on the base's place,
+  its picture and name the base's. The row is a scroll of six places 64
+  pixels apart (`select.c`, `SELECT_WEAPON_PITCH`, the cursors from x
+  128), its silhouettes and their names painted into the select screen's
+  picture; a seventh, at x 512, is the last room before the scroll's
+  right roller (about 560 of 640), so one more place fits and no more.
+  What a place has is the select file's art, each a table of six: the
+  silhouette and its name on the scroll, the name over the portraits
+  (`SELECT_WEAPON_NAME_CELLS` a place), the large picture of each clan
+  that flies in and crosses (`SelectFile.weapon_pixels`, loaded into
+  `weapon_rects`) and where it crosses (`g_select_weapon_places`). So a
+  place of its own is art in the scroll's brush style (or the scroll
+  redrawn wider, or a second scroll for the mods' weapons under it) and
+  where it goes: the owner's call. The logic is small beside it: the
+  cursor's right past the last place, Cross taking the base with the
+  mod's weapon picked as L1 and R1 take it now (`g_port_weapon_pick`).
+- **A `weapon_id` of its own**: not done, and perhaps not wanted. The
+  fighter's `weapon_id` is read in about 95 places of the game: tables
+  by weapon (every one a mod's weapon changes is already answered through
+  `port_weapons.h`: points, speed, power, models, stance, CPU, sounds,
+  dropped weapon, motions) and tests of its kind (`>= WEAPON_ID_FIRST_GUN`,
+  the pole arms' shaft, the scabbards, the two-sword stance, the motion
+  set's class), each of which a new number would have to be taught to
+  answer as its base. The pair the port keeps, the base's `weapon_id` in
+  the game's state and the weapon picked (`g_port_weapon_pick`), says
+  the same thing without touching the structures the play tests and the
+  emulator's comparisons read (`FightConfig`, `Fighter`).
 - **A weapon's own recorded sounds**: `sounds =` takes one of the
   game's banks; a bank of the mod's own (a VAB of its own samples, laid
   out as the game's weapon banks are, read in place of the pair's file,
-  `resource_PortReadWeaponSounds`) is not done. The CPU's own weapons in
-  versus the CPU (`g_vscpu_weapons`) and team battle's are the game's.
+  `resource_PortReadWeaponSounds`) is not done.
+- **The CPU's own weapons** in versus the CPU (`g_vscpu_weapons`) and
+  team battle's are the game's: the CPU never fights with a mod's new
+  weapon.
 - **Its own model in two on two**.
 
 ### Netplay
