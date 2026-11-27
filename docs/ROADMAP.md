@@ -749,7 +749,7 @@ the stage").
     (training, replays, spectators and CPU against CPU not), read where
     the game decides (the fall, the killing blow's kind and place, the
     kaishaku, a group battle's match on points or the clock, the match
-    rules' score) through five hooks that only note; counted once at its
+    rules' score) through four hooks that only note; counted once at its
     real end, rollback's reruns and run-ahead's frames ahead forgotten, a
     session's when final; `rebushido-stats.txt` beside the settings, a
     line a fight, versioned, written through a temporary file and a

@@ -11365,7 +11365,7 @@ watches the game, and `src/port/stats_store.c`, the file and the
 counting, both outside the state (`config/port_state.txt`); the settings
 menu's page, `src/port/window/menu_stats.c`.
 
-**Where the game decides.** Five hooks under `RB_PORT`, each of which
+**Where the game decides.** Four hooks, in six places under `RB_PORT`, each of which
 only notes, with the input's number it was run at
 (`g_port_input_count`), and changes nothing of the game:
 
