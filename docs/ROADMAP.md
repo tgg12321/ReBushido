@@ -718,12 +718,18 @@ the stage").
     what it saw of the opponent 6 to 9 frames back (never under 5), by a
     pad's buttons, its memory and dice in the game's state (the level in
     the gameplay switches: replays and sessions keep it). Measured CPU
-    against CPU, 96 fights a pair (`tools/port_cpu_bench.py`): against the
-    original 34%, 46%, 61%, 67%; each level beats the one below (CPU.md,
-    "Measuring the levels"); a fight is the same bytes on both sizes and
-    passes the rollback self-test. Left: a choice on the select screens;
-    the port's CPU in fights of four and for a takeover; walking round
-    obstacles (it walks straight and sidles when blocked); dirt, thrown
+    against CPU, 288 fights a pair (`tools/port_cpu_bench.py`, 2026-11-27,
+    the novice's reaction made a beginner's): against the original 39%,
+    47%, 61%, 65%; each level beats the one below outside the noise (67%,
+    59%, 62%; CPU.md, "Measuring the levels"); a fight is the same bytes on both sizes and
+    passes the rollback self-test. The choice on the select screens
+    (2026-11-27): a CPU row on Vs. CPU's rule page, a page of it alone
+    before the story's and Slash's grid, in the game's state. Two on two
+    and the online takeover (2026-11-27): a memory for each of the four
+    fighters, so the port's CPU plays partners, the CPU's team and a
+    leaver's fighter, at the host's level online. Walking round the
+    stage's obstacles by their corners, as the original plans (2026-11-27).
+    Left: circling at an edge; dirt, thrown
     weapons and guns; levels learned from replays of real players; a
     person's test of how it feels to fight.
 28. **A resync button** (the owner, 2026-11-26, instead of a desync

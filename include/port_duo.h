@@ -168,6 +168,9 @@ extern void port_DuoFightSet(void);
 extern void port_DuoPrimBuffers(void);
 /* This fight is two on two: fight_Update hands its frame to the duo's. */
 extern s32 port_DuoIsOn(void);
+/* Who of the four (0 to 3) is in the game's place `slot` now (the port's
+ * CPU keeps a memory for each: port_cpu.h). */
+extern s32 port_DuoInSlot(s32 slot);
 /* The models of the two slots back in their slots, before the arena may
  * move them (model.c, model_Rebase; a load). */
 extern void port_DuoModelsHome(void);

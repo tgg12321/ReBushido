@@ -41,6 +41,13 @@ first team (the first pad's character twice), 2 and 4 the second.
   a nodachi and Utsusemi with a yari, all four the CPU's: four
   characters, four weapons, a fight to one team out, the game's own
   fall, replay and winner's view of the two it rests on.
+- levels: `four`'s four, all the port's CPU (`--cpu adept,master`:
+  the first team's two the adept, the second's the master; docs/CPU.md),
+  each with a memory of his own as the duo passes the four through the
+  game's two places: a fight to one team out, its replay played back
+  alike; and `levels_log` the same fight with --cpu-log, the port's
+  CPU's pads in both places all through (a run with --cpu-log hashes
+  otherwise than one without, so it is not a replay's case).
 - cpu: the same fighters, all four the CPU's (`--fight-cpu --teams
   cpu`): a fight that plays itself to one team out, the game's menu after
   it, both sizes alike.
@@ -404,12 +411,14 @@ FIGHT_ARGS = ['--mods', 'off', '--fight', 'tatara-shrine', 'kannuki', 'mikado']
 FOUR_ARGS = FIGHT_ARGS + ['--partners', 'tatsumi:nodachi', 'utsusemi:yari']
 # the plans recorded as replays, and those rolled back (no `poke`: a
 # plan's write into memory is no input, which neither holds)
-REPLAY_PLANS = ('retarget', 'pads', 'cpu', 'four')
+REPLAY_PLANS = ('retarget', 'pads', 'cpu', 'four', 'levels')
 # the third pad's round: a shorter walk than the first's, and Cross (the
 # second fighter's guard beats a Circle aside from where he comes in)
 P3_ROUND = [(0, 'RIGHT hold 8f'), (25, 'CROSS'), (40, 'CROSS')]
 P2_ROUND = [(0, 'P2 LEFT hold 10f'), (15, 'P2 CIRCLE'), (50, 'P2 CIRCLE')]
-ROLLBACK_PLANS = ('retarget', 'pads', 'stock', 'four')
+ROLLBACK_PLANS = ('retarget', 'pads', 'stock', 'four', 'levels')
+# levels' log of the CPU's pads (each size's run writes it in turn)
+CPU_LOG = os.path.join(REPO, 'build', 'duo', 'levels_log-cpu.txt')
 
 
 def main(argv):
@@ -417,7 +426,7 @@ def main(argv):
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'duo'))
     parser.add_argument('--shots', default=None)
     parser.add_argument('--only', nargs='*', help='the plans to run (retarget, pads, menu, menu_pads, vscpu, cpu, '
-                        'second_wins, draw, stock, four)')
+                        'second_wins, draw, stock, four, levels, levels_log)')
     parser.add_argument('--rollback', action='store_true',
                         help='retarget, pads and stock through tools/port_rollback.py instead')
     args = parser.parse_args(argv[1:])
@@ -455,6 +464,8 @@ def main(argv):
                    ('seconds_in', 2, 'p1_defeated', 1), ('seconds_in', 2, 'p2_defeated', 1)]), 6000),
         ('stock', TOML_STOCK, FIGHT_ARGS + ['--teams', 'cpu', '--match', 'stock:2'], (), 40000),
         ('four', TOML_FOUR, FOUR_ARGS + ['--fight-cpu', '--teams', 'cpu'], (), 30000),
+        ('levels', TOML_FOUR, FOUR_ARGS + ['--fight-cpu', '--teams', 'cpu', '--cpu', 'adept,master'], (), 30000),
+        ('levels_log', TOML_FOUR, FOUR_ARGS + ['--fight-cpu', '--teams', 'cpu', '--cpu', 'adept,master'], (), 30000),
     ]
     if args.rollback:
         code = 0
@@ -484,11 +495,17 @@ def main(argv):
                 shutil.rmtree(replays)
             os.makedirs(replays)
             more = ['--replays', replays]
+        if name == 'levels_log':
+            more += ['--cpu-log', CPU_LOG]
         traces = run_plan(playtest, report, out, name, text % dict(plan_values, limit=limit), extra + more,
                           args.shots, plan_pokes)
         if traces is None:
             return 1
-        if more:
+        if name == 'levels_log':
+            with open(CPU_LOG, encoding='utf-8') as f:
+                kinds = set(line.split()[3] for line in f if line.startswith('f '))
+            report.check(kinds == {'2'}, "levels_log: every pad the port's CPU's (%s)" % sorted(kinds))
+        if name in REPLAY_PLANS:
             port_replay.check_folder(report, name, replays, extra)
     print('port_duo: %d checks failed' % report.failed)
     print('%s: port_duo' % ('FAILED' if report.failed else 'OK'))

@@ -1267,7 +1267,12 @@ FOUR_CASES = {
     'couch': ([[1, 3], [2, 4]], None),
     'four-leave': ([[1], [2], [3], [4]], 3),
     'four-host-leave': ([[1], [2], [3], [4]], 0),
+    # four-leave with the host's cpu setting the master (docs/CPU.md): the
+    # port's CPU plays on for player 4, at the host's level on every PC
+    'four-leave-master': ([[1], [2], [3], [4]], 3),
 }
+# the host's own arguments of a case
+FOUR_HOST_ARGS = {'four-leave-master': ['--cpu', 'master']}
 
 
 def four_cpu_plays_on(case):
@@ -1319,7 +1324,7 @@ def check_four(label, program, args, base, case, extra=None, resync=False):
         cmd += ['--replays', replays]
         if side == 0:
             cmd += ['--host', '%s:%d' % (LOCALHOST, base), '--net-delay', str(args.delay),
-                    '--players', '4' if len(pcs) == 4 else '2x2', '--net-seed', '4242',
+                    '--players', '4' if len(pcs) == 4 else '2x2', '--net-seed', '4242'] + FOUR_HOST_ARGS.get(case, []) + [
                     '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
         else:
             cmd += ['--join', '%s:%d' % (LOCALHOST, base), '--net-bind', '%s:%d' % (LOCALHOST, base + 4 + side)]

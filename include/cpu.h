@@ -415,6 +415,14 @@ extern u32 cpu_IsEasy(void);
  * the opponent is making reaches, by its motion and its weapon. */
 extern void cpu_PortProbeGround(struct Fighter *fighter);
 extern s32 cpu_PortAttackReach(struct Fighter *fighter);
+/* The stage's obstacles, as a player sees them: how far off the nearest
+ * one across the way to (x, z) is (CPU_NO_OBSTACLE if none); the way round
+ * it into Fighter.cpu_route (its corners from node[count - 1] down, the
+ * place itself node[0]); and the pad's directions that walk to a place
+ * (with L1 to run if `is_far`, R1 to climb a ledge in the way). */
+extern s32 cpu_PortFindObstacle(struct Fighter *fighter, s32 x, s32 z);
+extern void cpu_PortPlanDetour(struct Fighter *fighter, s32 x, s32 z);
+extern s32 cpu_PortSteerTo(struct Fighter *fighter, s32 x, s32 z, s32 is_far);
 #endif
 
 #endif /* CPU_H */

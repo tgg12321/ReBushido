@@ -188,16 +188,31 @@ one no player could make.
 `src/port/cpu.c` (header `include/port_cpu.h`), with `src/port/cpu_run.c`
 for the run's own (the seed asked for, the log). The game's CPU stays as it
 is and stays the default; the window's `cpu` setting (or `--cpu`) picks one
-of four levels instead: **Novice, Adept, Veteran, Master**.
+of four levels instead: **Novice, Adept, Veteran, Master**. With
+ReBushido's top menu the select screen asks too, where its opponent is the
+CPU: a **CPU** row on Vs. CPU's rule page, and a page of that row alone
+before the story's and Slash's grid (`src/port/match.c`, the rule page;
+`port_MatchCpuLevel`). The page starts at the setting's level and its
+choice holds for the fights that select screen begins; it is the game's
+state (`PortMatch.page_cpu`, `cpu_taken`), chosen by the pads, so a replay
+and a session (the host's pad) see the same. The original's practice
+partner that only stands there is always the game's.
 
 How it is joined to the game, under `RB_PORT`:
 
-- `cpu_Init` ends by calling `port_CpuInit`: if the run asked for a level
-  for that place (`port_GetCpuLevel`, `src/port/play_switches.c`), the
+- `cpu_Init` ends by calling `port_CpuInit`: if the select screen's page
+  or the run asked for a level for that place (`port_MatchCpuLevel`,
+  `port_GetCpuLevel`, `src/port/play_switches.c`), the
   port's CPU takes the fighter, its memory set up and its dice seeded from
-  the game's `rand()` (and `--cpu-seed`). In a fight of four the game's own
-  plays (not yet the port's: its memory is by place, and the duo swaps
-  four fighters through two places).
+  the game's `rand()` (and `--cpu-seed`). Its memory is each fighter's,
+  not each place's: in a fight of four (`src/port/duo.c`) the duo passes
+  the four fighters through the game's two places, and the port's CPU
+  keeps a `PortCpuMind` for each of the four (`port_DuoInSlot` says who
+  is in a place), so it plays any of them: the CPU's partners, the CPU's
+  team, and a player's fighter it takes over online. A fighter stepped
+  after the one he faces (the second place; of the four, the higher
+  number) looks a frame further back, as the second place does in a fight
+  of two.
 - `fighter_ReadPad` gives such a fighter `port_CpuBuildPad`'s pad in place
   of `cpu_BuildPad`'s.
 - `cpu.c` lends it two of its own: the ground probes (`cpu_PortProbeGround`)
@@ -227,7 +242,11 @@ time it has seen that motion in the match); an opening (an attack seen to
 have missed with frames still to go, a stagger, a reload, getting up: a
 strike, if one of its attacks fits the distance); the distance it likes
 (just past the opponent's reach, by its level's margin and spread, walking
-to it and facing him); now and then a strike of its own. Its attacks are
+to it and facing him; where one of the stage's obstacles lies across the
+way to where it saw him, round it by its corners, the way the game's CPU
+plans: `cpu_PortFindObstacle`, `cpu_PortPlanDetour` and
+`cpu_PortSteerTo`, lent by `src/main/cpu.c`, the obstacles a player
+sees); now and then a strike of its own. Its attacks are
 the motion file's list (the moves a player knows, each with its
 distances), pressed as the list's pad script; from the adept up, picked by
 how each has done in the match. From the veteran up it counts how often
@@ -241,13 +260,34 @@ reader turns them into R1 and the first attack; never Start or Select.
 
 ### The state
 
-Everything it keeps (`g_port_cpu`, two `PortCpuMind`s: level, dice, frames,
+Everything it keeps (`g_port_cpu`, four `PortCpuMind`s, one a fighter: level, dice, frames,
 the ring of what it saw, its script, what it learned) is in a file of the
 state group (`config/port_state.txt`), so a load puts it back and a
 rollback runs it again alike; the level asked for rides in the gameplay
 switches (`port_PlaySwitchBits`, bits 8 to 13), which replays keep in their
-setup and a session holds to the host's. `--cpu-seed`, `--cpu-log` and
-`--cpu-tune` are the run's own, outside the state.
+setup and a session holds to the host's. The game takes the level in when
+a mode begins and when a select screen loads (`PortMatch.cpu_setting`,
+`src/port/match.c`), before the fight loads: a replay that keeps no
+lead-in (a run begun in a fight, say) starts at the boundary before the
+fight's load, where the switches are not its own, and before 2026-11-27
+it set the fight's CPU up from the playing program's setting and went
+otherwise from its first hash.
+
+**Online, a player who leaves** (NETPLAY.md, section 19): his fighter is
+taken over at the level of the **host's `cpu` setting**, the one the
+session's welcome carries among the gameplay switches and every machine
+holds (or, in a session whose Battle type page had the CPU row, the
+host's choice there, which is the game's state); where it is Original,
+the game's own CPU takes him, as before. That level, not the leaver's own setting nor each machine's, so
+that every machine sets up the same CPU at the same frame and the
+rollback and the hashes stay alike; no new word was needed in the
+session. `--cpu-seed`, `--cpu-log` and
+`--cpu-tune` are the run's own, outside the state. But `--cpu-log`
+writes its lines from the game's step, on the game's stack, which is
+console memory and hashed: a run with it hashes otherwise than one
+without, and its replays play back alike only
+with `--cpu-log` too (found 2026-11-27; `tools/port_duo.py`'s `levels`
+records without it, `levels_log` logs).
 
 ## 3. Measuring the levels
 
@@ -259,24 +299,54 @@ its number. `--log` keeps each fight's `--cpu-log`; `--tune` tries numbers
 of a level (`--cpu-tune`). `--check` holds determinism: one fight twice on
 each size of the port, the trace and the log the same byte for byte.
 
-96 fights a pair, 2026-11-26 (a draw is a fight that reached the limit,
-24,000 blanks, with both standing; the rate is of the fights decided):
+288 fights a pair, 2026-11-27 (`--fights 288`; a draw is a fight that
+reached the limit, 24,000 blanks, with both standing; the rate is of the
+fights decided):
 
 | A against B | A won | B won | draws | A's rate |
 |---|---|---|---|---|
-| Novice against the original | 33 | 63 | 0 | 34% |
-| Adept against the original | 43 | 51 | 2 | 46% |
-| Veteran against the original | 58 | 37 | 1 | 61% |
-| Master against the original | 64 | 31 | 1 | 67% |
-| Adept against Novice | 51 | 45 | 0 | 53% |
-| Veteran against Adept | 56 | 37 | 3 | 60% |
-| Master against Veteran | 53 | 33 | 10 | 62% |
-| Master against Novice | 65 | 24 | 7 | 73% |
+| Novice against the original | 111 | 175 | 2 | 39% |
+| Adept against the original | 133 | 150 | 5 | 47% |
+| Veteran against the original | 174 | 112 | 2 | 61% |
+| Master against the original | 184 | 101 | 3 | 65% |
+| Adept against Novice | 190 | 94 | 4 | 67% |
+| Veteran against Adept | 164 | 116 | 8 | 59% |
+| Master against Veteran | 160 | 99 | 29 | 62% |
+| Veteran against Novice | 203 | 84 | 1 | 71% |
+| Master against Adept | 160 | 83 | 45 | 66% |
+| Master against Novice | 209 | 59 | 20 | 78% |
 
-Each level beats the one below it, and the veteran and the master beat
-the game's own CPU (at its versus level, 0x800) while seeing it a
-reaction time late. With 96 fights a rate is good to about five points
-either way: the adept's edge over the novice is the thinnest.
+With some 280 fights decided a rate is good to about six points either
+way (two standard errors): each level beats the one below it by more than
+that (the thinnest, the veteran over the adept, 59%: 53% to 65%), each
+beats every level below it by more the further down it is, and the
+veteran and the master beat the game's own CPU (at its versus level,
+0x800) while seeing it a reaction time late; the original stands between
+the adept and the veteran.
+
+The first measure (96 fights a pair, 2026-11-26) had the adept over the
+novice at 53%, within the noise. What separated them (`--tune`, 192
+fights each, the adept against the novice): the novice's reaction from 9
+to 11 frames (11 to 14 with its jitter, 0.37 to 0.47 s, a beginner's
+time to make out an attack and answer it), 67%; the adept not learning
+which of its attacks land, 55%; the adept keeping inside its attacks'
+reach (`slack` 0), 54%; stepping back from more attacks (`evade` 190),
+55%: none of the adept's choices alone moved it outside the noise, the
+novice's slower eye did. Before, at 96 fights: novice against the
+original 34%, adept 46%, veteran 61%, master 67%; the veteran over the
+adept 60%, the master over the veteran 62%, over the novice 73%.
+
+Walking round the stage's obstacles (below, 2026-11-27) came after that
+table; the same fights again with it (288 a pair, the same seeds): of
+the novice against the original 17 of the first 208 fights went
+otherwise, and the totals came to the same, 39%; the adept over the
+novice 67% (189 to 93, 2 draws; 4 runs lost to the disc's link being
+replaced under them), the veteran over the adept 59% (165 to 117), the
+master over the veteran 61% (159 to 100, 29 draws), the master against
+the original 64% (183 to 101): the order stands, each step outside the
+noise. The bench's stages are open ground, and its CPUs stand near each
+other; the detour is for the stages where a house, a rock or a fence
+comes between them.
 
 How quickly the port's answers, by the same tool (32 fights of the
 master against the original): it begins its guards and steps at quartiles
@@ -309,13 +379,9 @@ quietly.
 
 ## 4. What is left
 
-- A choice on the select screens (the settings menu has it; the training
-  mode's work is on the menus at the time of writing).
-- The port's CPU in fights of four and for an online takeover: its memory
-  is by place, and the duo swaps four fighters through the game's two.
-- Getting about: it walks straight to the distance it likes and sidles
-  when the way is blocked; the original's route round a stage's obstacles
-  and its circling at an edge are not used.
+- Getting about: it walks round the stage's obstacles to him (since
+  2026-11-27), but the original's circling of an opponent at an edge,
+  and its leaps down and climbs up a height on the way, are not used.
 - Dirt, thrown sub-weapons and guns, which it neither uses nor answers
   better than by its guard.
 - Levels learned from replays of real players (item 23's files hold every

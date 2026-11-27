@@ -14,12 +14,42 @@ static u8 g_cpu_mirror_walks[4];
 static u8 g_cpu_mirror_steps[4];
 
 #if RB_PORT
+static s32 cpu_SteerTo(struct Fighter *fighter, s32 route_target_x,
+                       s32 route_target_z, s32 is_far);
+static s32 cpu_FindObstacle(
+    struct Fighter *fighter, NavSet *nav_set, s32 target_x, s32 target_z);
+static void cpu_PlanDetour(
+    struct Fighter *fighter, NavSet *nav_set, s32 target_x, s32 target_z);
+
 /* For the port's CPU (port_cpu.h): what this file feels of the ground and
- * knows of an attack's reach, lent. */
+ * knows of an attack's reach, and how it finds its way round the stage's
+ * obstacles, lent. */
 void cpu_PortProbeGround(struct Fighter *fighter) { cpu_ProbeGround(fighter); }
 
 s32 cpu_PortAttackReach(struct Fighter *fighter) {
     return cpu_AttackReach(fighter);
+}
+
+/* The stage's obstacles (a mod's arena's own, port_arenas.h). */
+static NavSet *cpu_PortNavSet(void) {
+    return (NavSet *)port_ArenaNavSet(
+        g_fight_stage, &g_cpu_stage_obstacles[g_fight_stage]);
+}
+
+s32 cpu_PortFindObstacle(struct Fighter *fighter, s32 x, s32 z) {
+    return cpu_FindObstacle(fighter, cpu_PortNavSet(), x, z);
+}
+
+void cpu_PortPlanDetour(struct Fighter *fighter, s32 x, s32 z) {
+    fighter->cpu_route.node[0].x = x;
+    fighter->cpu_route.node[0].z = z;
+    fighter->cpu_route.node[0].kind = CPU_GOAL_OPPONENT;
+    fighter->cpu_route.count = 1;
+    cpu_PlanDetour(fighter, cpu_PortNavSet(), x, z);
+}
+
+s32 cpu_PortSteerTo(struct Fighter *fighter, s32 x, s32 z, s32 is_far) {
+    return cpu_SteerTo(fighter, x, z, is_far);
 }
 #endif
 

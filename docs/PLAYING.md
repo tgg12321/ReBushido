@@ -255,10 +255,20 @@ stands, when and with what it strikes, which guard it picks, and, from
 the veteran up, what it learns of your habits during the match (strike
 too readily at the edge of its reach and the master will draw you out).
 The game's own Difficulty does not change them. It takes effect from the
-next fight; `cpu = master` in `rebushido.cfg`, or `--cpu master` on the
+next mode chosen or select screen (the game takes it in there, so that
+a replay plays it alike); `cpu = master` in `rebushido.cfg`, or `--cpu master` on the
 command line (`--cpu novice,master` gives the two places their own).
-Online the host's holds, and a replay keeps it. In a fight of two on two
-the game's own CPU plays the partners still. How they were made and
+Online the host's holds, and a replay keeps it. With ReBushido's main
+menu the CPU can also be chosen before the character select: Vs. CPU's
+**Battle type** page has a **CPU** row, and Story and Slash open on an
+**Opponent** page of that row alone (Left and Right the level, Cross on);
+it starts at the setting's and holds for the fights that select screen
+begins, without changing the setting. Group Battle, which has a select
+screen of its own, plays the setting's; the original Training's partner
+that only stands there is always the game's. In two on two the level
+plays the CPU's partners and team as well (the Battle type page has the
+**CPU** row once its Fighters row is Two on two, CPU partners), and
+online the host's level plays on for a player who leaves. How they were made and
 measured: [CPU.md](CPU.md).
 
 **The menu writes `rebushido.cfg`** as it closes, if anything was

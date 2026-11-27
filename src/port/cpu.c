@@ -28,7 +28,9 @@
  * out and punishes.
  *
  * Everything here is the game's state (config/port_state.txt): the
- * memory of each place, its dice, what it saw. */
+ * memory of each fighter, its dice, what it saw. A memory is a fighter's,
+ * not a place's: in two on two (port_duo.h) the four fighters pass through
+ * the game's two places, and each keeps his own. */
 #include "common.h"
 #include "bb2.h"
 
@@ -74,8 +76,11 @@ typedef struct {
 
 static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
     {0},
-    /* novice: slow, unsure of the distance, guesses its guards */
-    {.reaction = 9,
+    /* novice: slow, unsure of the distance, guesses its guards. A
+     * beginner's reaction to an attack he must first make out: 11 to 14
+     * frames, 0.37 to 0.47 s (at 9 the adept beat it 53% of 96 fights;
+     * at 11, 67% of 192: docs/CPU.md, "Measuring the levels") */
+    {.reaction = 11,
      .jitter = 3,
      .read = 96,
      .read_gain = 8,
@@ -169,6 +174,8 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
 #define FRAMES_A_SECOND 30
 /* the place it likes is drawn again this often */
 #define MARGIN_FRAMES 60
+/* this far past where it likes to be it runs */
+#define RUN_DISTANCE 9000
 
 /* An attack of the motion file's list of the kinds that are made at the
  * distances between its two (cpu.h, CPU_ATTACK_KIND: 0 and 7). */
@@ -282,7 +289,19 @@ typedef struct {
     u8 own_live;
 } PortCpuMind;
 
-static PortCpuMind g_port_cpu[2];
+static PortCpuMind g_port_cpu[PORT_DUO_FIGHTERS];
+
+/* Who is in place `fighter_index`: the place itself, or in two on two the
+ * fighter of the four the duo has put there. */
+static s32 port_CpuWho(s32 fighter_index) {
+    return port_DuoIsOn() ? port_DuoInSlot(fighter_index != 0)
+                          : fighter_index != 0;
+}
+
+/* The memory of the fighter in place `fighter_index`. */
+static PortCpuMind *port_CpuMindOf(s32 fighter_index) {
+    return &g_port_cpu[port_CpuWho(fighter_index)];
+}
 
 /* --cpu-tune (port_cpu.h): a level's numbers changed, to try them. */
 s32 port_CpuTune(s32 level, const char *field, s32 value) {
@@ -339,12 +358,15 @@ static s32 port_CpuChance(PortCpuMind *mind, s32 chance, s32 out_of) {
 /* ---- setting up ---- */
 
 void port_CpuInit(s32 fighter_index) {
-    PortCpuMind *mind = &g_port_cpu[fighter_index != 0];
-    s32 level = port_GetCpuLevel(fighter_index);
+    PortCpuMind *mind = port_CpuMindOf(fighter_index);
+    /* the select screen's choice, or the window's cpu setting (in a
+     * session the host's, held: a takeover's too, NETPLAY.md section 19) */
+    s32 level = port_MatchCpuLevel(fighter_index);
     u32 seed;
     s32 i;
 
-    if (port_DuoIsOn()) {
+    /* the practice's partner that only stands there is the game's */
+    if (g_fight_mode == FIGHT_MODE_PRACTICE && !g_fight_practice_round) {
         level = PORT_CPU_ORIGINAL;
     }
     mind->level = level;
@@ -355,7 +377,8 @@ void port_CpuInit(s32 fighter_index) {
      * seed: so a replay of the fight throws them alike */
     seed = (u32)rand() << 16;
     seed ^= (u32)rand();
-    seed ^= (port_CpuAskedSeed() * SEED_SPREAD) ^ ((u32)fighter_index << 30);
+    seed ^= (port_CpuAskedSeed() * SEED_SPREAD) ^
+            ((u32)port_CpuWho(fighter_index) << 30);
     mind->random = seed != 0 ? seed : SEED_NONE;
     mind->frames = 0;
     mind->last_held = 0;
@@ -402,7 +425,7 @@ void port_CpuInit(s32 fighter_index) {
 
 /* The script it plays, as the game's CPU's kinds name them (port_cpu.h). */
 s32 port_CpuScriptKind(s32 fighter_index) {
-    const PortCpuMind *mind = &g_port_cpu[fighter_index != 0];
+    const PortCpuMind *mind = port_CpuMindOf(fighter_index);
 
     switch (mind->script) {
     case SCRIPT_ATTACK:
@@ -420,7 +443,7 @@ s32 port_CpuScriptKind(s32 fighter_index) {
 
 s32 port_CpuPlays(s32 fighter_index) {
     return g_fighters[fighter_index].is_cpu &&
-           g_port_cpu[fighter_index != 0].level != PORT_CPU_ORIGINAL;
+           port_CpuMindOf(fighter_index)->level != PORT_CPU_ORIGINAL;
 }
 
 /* ---- scripts ---- */
@@ -533,13 +556,13 @@ static void port_CpuLook(Fighter *fighter, PortCpuMind *mind) {
     seen->seen = 1;
 }
 
-/* What it saw `ago` frames back, or the oldest it has. The second fighter
- * is played after the first in a frame, and so would see the first's
- * frame before it is drawn: it looks a frame further back, so that both
- * places see alike. */
+/* What it saw `ago` frames back, or the oldest it has. A fighter played
+ * after his opponent in a frame (the second place; in two on two the
+ * higher of the four) would see the opponent's frame before it is drawn:
+ * he looks a frame further back, so that every fighter sees alike. */
 static const PortCpuSeen *port_CpuSeenAgo(
     Fighter *fighter, PortCpuMind *mind, s32 ago) {
-    if (fighter->index != 0) {
+    if (port_CpuWho(fighter->index ^ 1) < port_CpuWho(fighter->index)) {
         ago++;
     }
     if (ago >= SEEN_FRAMES) {
@@ -596,10 +619,53 @@ static s32 port_CpuClear(const Fighter *fighter, s32 probe) {
     return fighter->cpu_probes[probe] == CPU_FOUND_LEVEL;
 }
 
-/* The buttons that walk it out to `want` from `distance`, or round to
- * face the opponent; 0 where it is. */
-static u32 port_CpuWalk(Fighter *fighter, PortCpuMind *mind, s32 distance,
-                        s32 want, s32 tolerance, s32 angle) {
+/* On its way to him (at `x`, `z`, where it saw him): with an obstacle of
+ * the stage across the way, the pad's directions to its corners, the way
+ * round it as the game's CPU plans one (cpu_PortPlanDetour); 0 where the
+ * way is straight. */
+static u32 port_CpuDetour(
+    Fighter *fighter, s32 x, s32 z, s32 distance, s32 far) {
+    CpuRoute *route = &fighter->cpu_route;
+    const CpuWaypoint *next;
+    s32 dx;
+    s32 dz;
+
+    /* looked for each time it decides where to walk (every few frames,
+     * as the game's CPU looks every eighth), and planned again as he moves
+     * from where it has got to */
+    if (cpu_PortFindObstacle(fighter, x, z) < distance) {
+        cpu_PortPlanDetour(fighter, x, z);
+    } else {
+        route->count = 0;
+    }
+    /* node[0] is him: the corners are above it */
+    while (route->count > 1) {
+        next = &route->node[route->count - 1];
+        dx = next->x - fighter->world_pos.x;
+        dz = next->z - fighter->world_pos.z;
+        if (dx * dx + dz * dz >= CPU_WAYPOINT_RADIUS * CPU_WAYPOINT_RADIUS) {
+            return (u32)cpu_PortSteerTo(fighter, next->x, next->z, far);
+        }
+        route->count--;
+    }
+    return 0;
+}
+
+/* The buttons that walk it out to `want` from `distance` (round the
+ * stage's obstacles to him, at `x`, `z`), or round to face the opponent;
+ * 0 where it is. */
+static u32 port_CpuWalk(Fighter *fighter, s32 x, s32 z, s32 distance, s32 want,
+                        s32 tolerance, s32 angle) {
+    if (distance > want + tolerance) {
+        u32 round = port_CpuDetour(
+            fighter, x, z, distance, distance > want + RUN_DISTANCE);
+
+        if (round != 0) {
+            return round;
+        }
+    } else {
+        fighter->cpu_route.count = 0;
+    }
     if (angle > ANGLE_TURN / 16) {
         /* turned from him: a few frames of sidling face it round */
         return FIGHTER_PAD_SIDE_A;
@@ -611,7 +677,7 @@ static u32 port_CpuWalk(Fighter *fighter, PortCpuMind *mind, s32 distance,
                        : FIGHTER_PAD_SIDE_B;
         }
         /* far off, a run */
-        if (distance > want + 9000) {
+        if (distance > want + RUN_DISTANCE) {
             return FIGHTER_PAD_TOWARD | PADL1;
         }
         return FIGHTER_PAD_TOWARD;
@@ -628,7 +694,6 @@ static u32 port_CpuWalk(Fighter *fighter, PortCpuMind *mind, s32 distance,
             return FIGHTER_PAD_SIDE_B;
         }
     }
-    (void)mind;
     return 0;
 }
 
@@ -974,8 +1039,8 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         mind->hold_frames--;
         return mind->hold;
     }
-    mind->hold =
-        port_CpuWalk(fighter, mind, distance, want, level->tolerance, angle);
+    mind->hold = port_CpuWalk(
+        fighter, seen->x, seen->z, distance, want, level->tolerance, angle);
     mind->hold_frames = 4;
     return mind->hold;
 }
@@ -984,7 +1049,7 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
 
 void port_CpuBuildPad(s32 fighter_index, PadState *pad_out) {
     Fighter *fighter = &g_fighters[fighter_index];
-    PortCpuMind *mind = &g_port_cpu[fighter_index != 0];
+    PortCpuMind *mind = port_CpuMindOf(fighter_index);
     PadState pad;
     u32 held = 0;
     s32 i;
