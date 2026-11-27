@@ -1039,7 +1039,7 @@ s32 port_TexturePageFits(const PortTexturePage *page) {
 /* FNV-1a over the page as port_mods.h describes it: the region of the
  * whole page read through port_TextureValue, a texel that is not the
  * stage's own counted as 0. */
-u64 port_TexturePageKey(const u16 *vram, const PortTexturePage *page) {
+static u64 port_TexturePageKeyOf(const u16 *vram, const PortTexturePage *page) {
     PortTextureRegion region;
     u64 key = KEY_START;
     s32 colors = page->bits == PORT_MOD_TEXELS_4   ? COLORS_4
@@ -1085,6 +1085,126 @@ u64 port_TexturePageKey(const u16 *vram, const PortTexturePage *page) {
         key = port_KeyHalf(key, port_TextureClut(vram, &region, (u32)i));
     }
     return key;
+}
+
+/* A page's key is FNV-1a's, a byte at a time, each step waiting on the
+ * last: some 100 microseconds a page, and a fighter's face that changes
+ * (his eyes shut, his mouth open) has the scene look up again every page
+ * it is copied into, 11 to 17 of them, 1.5 to 3 ms of the window's thread
+ * in a frame of the fight (gl_scene.c, port_GlSceneLookUp). So the key of
+ * what was read before is kept: two sums of all the key reads -- the
+ * page's words of video memory, which of its pixels are the owner's, its
+ * colour table and where all of them are -- each of four lanes that do not
+ * wait on one another, find the key worked out before for the same. */
+#define PAGE_KEPT 512
+#define PAGE_LANES 4
+#define PAGE_PRIME_A 0x9E3779B97F4A7C15ULL
+#define PAGE_PRIME_B 0xC2B2AE3D27D4EB4FULL
+#define PAGE_HALF_BITS 16
+#define PAGE_SHIFT 29
+
+typedef struct {
+    u64 sum_a;
+    u64 sum_b;
+    u64 key;
+    u64 is_kept; /* a word as wide as the rest, in either build */
+} PageKept;
+
+static PageKept g_page_kept[PAGE_KEPT];
+
+/* One word into both sums' lane. */
+static void port_PageSumWord(u64 *first, u64 *second, s32 lane, u64 word) {
+    first[lane] = (first[lane] ^ word) * PAGE_PRIME_A;
+    second[lane] =
+        ((second[lane] ^ word) * PAGE_PRIME_B) ^ (second[lane] >> PAGE_SHIFT);
+}
+
+/* The two sums of all port_TexturePageKeyOf reads of `page`; FALSE where
+ * the page does not lie whole within video memory (its key is then
+ * worked out each time). */
+static s32 port_PageSums(
+    const u16 *vram, const PortTexturePage *page, u64 *sum_a, u64 *sum_b) {
+    u64 first[PAGE_LANES];
+    u64 second[PAGE_LANES];
+    s32 width = port_TexturePagePixel(page, PORT_MOD_PAGE_SIDE);
+    s32 colors = page->bits == PORT_MOD_TEXELS_4   ? COLORS_4
+                 : page->bits == PORT_MOD_TEXELS_8 ? COLORS_8
+                                                   : 0;
+    s32 row_at;
+    s32 i;
+
+    if (!port_TexturePageFits(page) || page->clut_x < 0 || page->clut_y < 0 ||
+        page->clut_x + colors > PORT_VRAM_WIDTH ||
+        page->clut_y >= PORT_VRAM_HEIGHT) {
+        return FALSE;
+    }
+    for (i = 0; i < PAGE_LANES; i++) {
+        first[i] = KEY_START + (u64)i;
+        second[i] = KEY_PRIME + (u64)i;
+    }
+    port_PageSumWord(first, second, 0, (u64)(u32)page->bits);
+    port_PageSumWord(first, second, 1, (u64)(u32)page->page_x);
+    port_PageSumWord(first, second, 2, (u64)(u32)page->page_y);
+    port_PageSumWord(first, second, 3,
+                     (u64)(u32)page->clut_x | (u64)(u32)page->clut_y << 32 |
+                         (u64)(page->own != NULL) << 31);
+    for (row_at = 0; row_at < PORT_MOD_PAGE_SIDE; row_at++) {
+        const u16 *row =
+            vram + (page->page_y + row_at) * PORT_VRAM_WIDTH + page->page_x;
+        const u8 *own =
+            page->own == NULL
+                ? NULL
+                : page->own + (page->page_y + row_at) * PORT_VRAM_WIDTH +
+                      page->page_x;
+
+        for (i = 0; i + PAGE_LANES <= width; i += PAGE_LANES) {
+            u64 word = (u64)row[i] | (u64)row[i + 1] << PAGE_HALF_BITS |
+                       (u64)row[i + 2] << (2 * PAGE_HALF_BITS) |
+                       (u64)row[i + 3] << (3 * PAGE_HALF_BITS);
+
+            port_PageSumWord(
+                first, second, (i / PAGE_LANES) % PAGE_LANES, word);
+            if (own != NULL) {
+                port_PageSumWord(
+                    first, second, (i / PAGE_LANES + 1) % PAGE_LANES,
+                    (u64)own[i] | (u64)own[i + 1] << BITS_PER_BYTE |
+                        (u64)own[i + 2] << (2 * BITS_PER_BYTE) |
+                        (u64)own[i + 3] << (3 * BITS_PER_BYTE));
+            }
+        }
+    }
+    for (i = 0; i < colors; i++) {
+        port_PageSumWord(
+            first, second, i % PAGE_LANES,
+            vram[page->clut_y * PORT_VRAM_WIDTH + page->clut_x + i]);
+    }
+    *sum_a = 0;
+    *sum_b = 0;
+    for (i = 0; i < PAGE_LANES; i++) {
+        *sum_a = (*sum_a ^ first[i]) * PAGE_PRIME_B + (u64)i;
+        *sum_b = (*sum_b ^ second[i]) * PAGE_PRIME_A + (u64)i;
+    }
+    return TRUE;
+}
+
+/* The page's key: the one kept for the same sums, or worked out and kept
+ * (port_mods.h). */
+u64 port_TexturePageKey(const u16 *vram, const PortTexturePage *page) {
+    u64 sum_a;
+    u64 sum_b;
+    PageKept *kept;
+
+    if (!port_PageSums(vram, page, &sum_a, &sum_b)) {
+        return port_TexturePageKeyOf(vram, page);
+    }
+    kept = &g_page_kept[(sum_a >> PAGE_HALF_BITS) % PAGE_KEPT];
+    if (!kept->is_kept || kept->sum_a != sum_a || kept->sum_b != sum_b) {
+        kept->sum_a = sum_a;
+        kept->sum_b = sum_b;
+        kept->key = port_TexturePageKeyOf(vram, page);
+        kept->is_kept = TRUE;
+    }
+    return kept->key;
 }
 
 void port_TexturePageKeyName(
