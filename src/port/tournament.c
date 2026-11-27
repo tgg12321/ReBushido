@@ -370,8 +370,6 @@ void port_TournamentBegin(const PortTournamentSetup *setup) {
     tournament->ask_bracket = TRUE;
 }
 
-/* Each side's pad its entrant's, the CPU's none; with two CPUs, any
- * pad's Start on the first. */
 /* The window's asks for this input taken in, each once: a tournament
  * left, one begun, the next match played. */
 static void port_TournamentTakeAsks(PortTournament *tournament) {
@@ -395,6 +393,9 @@ static void port_TournamentTakeAsks(PortTournament *tournament) {
     }
 }
 
+/* The input the game takes (port_tournament.h): the window's asks for it
+ * taken in, then each side's pad its entrant's, the CPU's none; with two
+ * CPUs, any pad's Start on the first. */
 void port_TournamentTakeInput(struct PortInput *input) {
     PortTournament *tournament = &g_port_tournament;
     u16 buttons[PORT_INPUT_PADS];

@@ -198,7 +198,7 @@ s32 port_BracketBuild(
     PortBracket *bracket, s32 count, s32 is_double, const u8 *seeds) {
     BracketRounds winners;
     BracketRounds losers;
-    u8 places[PORT_BRACKET_MOST];
+    u8 places[PORT_BRACKET_MOST] = {0};
     s32 round;
     s32 i;
     u32 byte;
