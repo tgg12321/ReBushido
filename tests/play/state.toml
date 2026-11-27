@@ -140,7 +140,7 @@ port_match_page_teams = "g_port_match+78:u8"  # the rule page's teams: 0 one on 
 port_match_teams = "g_port_match+80:u8"       # the match in play's
 port_match_cpu_row = "g_port_match+92:u8"     # the rule page has the CPU's level (port_cpu.h)
 port_match_page_cpu = "g_port_match+93:u8"    # and its choice: 0 original, 1 novice to 4 master
-port_match_cpu_taken = "g_port_match+95:u8"   # the choice holds for the select screen's fights
+port_match_cpu_taken = "g_port_match+94:u8"   # the choice holds for the select screen's fights
 # -- the native port's training (port_training.h) --
 port_training_on = "g_port_training+0:u8"           # the mode's fights are training's
 port_training_recording = "g_port_training+2:u8"    # the slot being recorded, and one

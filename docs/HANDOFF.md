@@ -103,9 +103,9 @@ lessons still holds unless this section says otherwise.
   port's four levels are in (`cpu` setting; against the original 39%,
   47%, 61%, 65% over 288 fights, each level over the one below 67%,
   59%, 62%); the select screens' choice too
-  (2026-11-27; the owner's eye on `tmp/cpu-select/`). Left: the port's CPU in two on two
-  and for an online takeover (its memory is by place; the duo swaps four
-  fighters through two), walking round obstacles, dirt and thrown
+  (2026-11-27; the owner's eye on `tmp/cpu-select/`), and the port's CPU
+  in two on two and for an online takeover (a memory per fighter; the
+  host's level). Left: walking round obstacles, dirt and thrown
   weapons and guns, levels learned from real players' replays; the
   owner's hands on how each level feels.
 - ROADMAP 24's leftovers: four real PCs. (Partners' own voices, mods'

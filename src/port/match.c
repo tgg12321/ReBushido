@@ -81,17 +81,18 @@ static PortMatch *port_Match(void) {
             (u8)(rule == PORT_MATCH_CREW ? port_MatchCrewSize(count)
                                          : PORT_MATCH_CREW_DEFAULT);
     }
-    if (match->default_cpu != port_GetCpuLevel(1) + 1) {
-        /* the window's cpu setting (both places alike there) */
-        match->default_cpu = (u8)(port_GetCpuLevel(1) + 1);
-        match->page_cpu = (u8)port_GetCpuLevel(1);
-    }
     if (match->default_teams != teams + 1) {
         /* (kept one more than the choice, so that the first ask sets it) */
         match->default_teams = (u8)(teams + 1);
         match->page_teams = (u8)teams;
     }
     return match;
+}
+
+/* The window's cpu setting taken in (PortMatch.cpu_setting). */
+static void port_MatchTakeCpuSetting(PortMatch *match) {
+    match->cpu_setting[0] = (u8)port_GetCpuLevel(0);
+    match->cpu_setting[1] = (u8)port_GetCpuLevel(1);
 }
 
 /* A side's fighter in play into the fight's configuration: the crew's
@@ -233,6 +234,7 @@ void port_MatchBegin(s32 mode) {
     match->to_stages = FALSE;
     match->to_top = FALSE;
     match->mode = (u8)mode;
+    port_MatchTakeCpuSetting(match);
     match->rule =
         port_MatchModeHasRules(mode) ? match->page_rule : (u8)PORT_MATCH_SINGLE;
     match->count = (u8)port_MatchCount(match->page_count);
@@ -821,8 +823,13 @@ void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
              (mode == FIGHT_MODE_VSCPU || mode == FIGHT_MODE_STORY ||
               mode == FIGHT_MODE_CHANBARA));
     if (!to_stages) {
+        /* from the window's cpu setting (both places alike there), here
+         * only: a fight's frames never write it (a replay of a fight, which
+         * holds no setting, plays them alike) */
         match->cpu_taken = FALSE;
+        match->page_cpu = (u8)port_GetCpuLevel(1);
     }
+    port_MatchTakeCpuSetting(match);
     /* a room's rule is the room's, as its host set it: no page */
     match->rule_page =
         (u8)((match->rule_first || (match->cpu_row && port_TopMenuIsOn())) &&
@@ -837,11 +844,14 @@ void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
 
 s32 port_MatchRuleFirst(void) { return g_port_match.rule_first; }
 
-/* The rows the page has (port_match.h): the CPU's where the opponent is
- * the CPU, and in a mode with no rule that row alone. */
+/* The rows the page has (port_match.h): the CPU's where the opponent or
+ * a partner is the CPU, and in a mode with no rule that row alone. */
 s32 port_MatchRuleHasRow(const PortMatch *match, s32 row) {
     if (row == PORT_MATCH_ROW_CPU) {
-        return match->cpu_row;
+        /* and two on two's CPU partners */
+        return match->cpu_row ||
+               (match->rule_first && match->page_rule != PORT_MATCH_CREW &&
+                match->page_teams == PORT_TEAMS_TWO_CPU);
     }
     if (!match->rule_first) {
         /* a mode with no rule: the CPU's row alone */
@@ -931,7 +941,7 @@ s32 port_MatchRulePageStep(s32 pressed, s32 *leave) {
         snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
         match->rule_page = FALSE;
         /* the CPU's level chosen holds for the screen's fights */
-        match->cpu_taken = match->cpu_row;
+        match->cpu_taken = (u8)port_MatchRuleHasRow(match, PORT_MATCH_ROW_CPU);
         if (match->rule_first) {
             port_MatchRuleTaken(match);
         }
@@ -960,7 +970,7 @@ s32 port_MatchCpuLevel(s32 place) {
     if (match->cpu_taken && match->page_cpu <= PORT_CPU_LEVELS) {
         return match->page_cpu;
     }
-    return port_GetCpuLevel(place);
+    return match->cpu_setting[place != 0];
 }
 
 /* ---- Crew: a different character each place, and going back ---- */

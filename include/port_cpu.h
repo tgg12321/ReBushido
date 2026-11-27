@@ -9,7 +9,8 @@
  * presses as a player would, from what a player could see of the fight,
  * after a player's time to react. Everything it keeps is in the game's
  * state, its dice too, so a fight against it replays and rolls back as
- * any other. In a fight of four (port_duo.h) the game's own plays. */
+ * any other. Its memory is each fighter's: in a fight of four (port_duo.h)
+ * it plays any of the four, partners and takeovers alike. */
 
 #include "common.h"
 #include "pad.h"
@@ -25,7 +26,7 @@ enum {
 };
 
 /* From cpu_Init: the fighter `fighter_index` is the CPU's; the port's
- * takes it if its place asked for a level (and the fight is of two). */
+ * takes it if its place asked for a level. */
 extern void port_CpuInit(s32 fighter_index);
 /* TRUE if the port's CPU plays that fighter (fighter_ReadPad). */
 extern s32 port_CpuPlays(s32 fighter_index);

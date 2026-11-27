@@ -2414,6 +2414,10 @@ is `INPUT_CPU` as answering and holding nothing, its `present`
 press. At the step of a fighter whose pad says so, two on two makes him
 the CPU's (`port_DuoTakeOver`, `duo.c`): `is_cpu`, the match's CPU
 level, `cpu_Init` against the one he faces, as a CPU partner is set up.
+Which CPU (docs/CPU.md, section 2): the host's `cpu` setting, which the
+welcome's gameplay switches carry and every machine holds, so the port's
+CPU at the host's level, with a memory of its own for that fighter, or
+the game's own where the host's is Original.
 `is_cpu` and the CPU's own fields are the fighter's, in the state, so a
 rollback puts them back with the rest and the step that comes to the
 frame again makes him the CPU's again; a later fight of the match does

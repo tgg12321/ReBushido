@@ -204,9 +204,15 @@ How it is joined to the game, under `RB_PORT`:
   or the run asked for a level for that place (`port_MatchCpuLevel`,
   `port_GetCpuLevel`, `src/port/play_switches.c`), the
   port's CPU takes the fighter, its memory set up and its dice seeded from
-  the game's `rand()` (and `--cpu-seed`). In a fight of four the game's own
-  plays (not yet the port's: its memory is by place, and the duo swaps
-  four fighters through two places).
+  the game's `rand()` (and `--cpu-seed`). Its memory is each fighter's,
+  not each place's: in a fight of four (`src/port/duo.c`) the duo passes
+  the four fighters through the game's two places, and the port's CPU
+  keeps a `PortCpuMind` for each of the four (`port_DuoInSlot` says who
+  is in a place), so it plays any of them: the CPU's partners, the CPU's
+  team, and a player's fighter it takes over online. A fighter stepped
+  after the one he faces (the second place; of the four, the higher
+  number) looks a frame further back, as the second place does in a fight
+  of two.
 - `fighter_ReadPad` gives such a fighter `port_CpuBuildPad`'s pad in place
   of `cpu_BuildPad`'s.
 - `cpu.c` lends it two of its own: the ground probes (`cpu_PortProbeGround`)
@@ -250,13 +256,34 @@ reader turns them into R1 and the first attack; never Start or Select.
 
 ### The state
 
-Everything it keeps (`g_port_cpu`, two `PortCpuMind`s: level, dice, frames,
+Everything it keeps (`g_port_cpu`, four `PortCpuMind`s, one a fighter: level, dice, frames,
 the ring of what it saw, its script, what it learned) is in a file of the
 state group (`config/port_state.txt`), so a load puts it back and a
 rollback runs it again alike; the level asked for rides in the gameplay
 switches (`port_PlaySwitchBits`, bits 8 to 13), which replays keep in their
-setup and a session holds to the host's. `--cpu-seed`, `--cpu-log` and
-`--cpu-tune` are the run's own, outside the state.
+setup and a session holds to the host's. The game takes the level in when
+a mode begins and when a select screen loads (`PortMatch.cpu_setting`,
+`src/port/match.c`), before the fight loads: a replay that keeps no
+lead-in (a run begun in a fight, say) starts at the boundary before the
+fight's load, where the switches are not its own, and before 2026-11-27
+it set the fight's CPU up from the playing program's setting and went
+otherwise from its first hash.
+
+**Online, a player who leaves** (NETPLAY.md, section 19): his fighter is
+taken over at the level of the **host's `cpu` setting**, the one the
+session's welcome carries among the gameplay switches and every machine
+holds (or, in a session whose Battle type page had the CPU row, the
+host's choice there, which is the game's state); where it is Original,
+the game's own CPU takes him, as before. That level, not the leaver's own setting nor each machine's, so
+that every machine sets up the same CPU at the same frame and the
+rollback and the hashes stay alike; no new word was needed in the
+session. `--cpu-seed`, `--cpu-log` and
+`--cpu-tune` are the run's own, outside the state. But `--cpu-log`
+writes its lines from the game's step, on the game's stack, which is
+console memory and hashed: a run with it hashes otherwise than one
+without, and its replays play back alike only
+with `--cpu-log` too (found 2026-11-27; `tools/port_duo.py`'s `levels`
+records without it, `levels_log` logs).
 
 ## 3. Measuring the levels
 
@@ -336,8 +363,6 @@ quietly.
 
 ## 4. What is left
 
-- The port's CPU in fights of four and for an online takeover: its memory
-  is by place, and the duo swaps four fighters through the game's two.
 - Getting about: it walks straight to the distance it likes and sidles
   when the way is blocked; the original's route round a stage's obstacles
   and its circling at an edge are not used.

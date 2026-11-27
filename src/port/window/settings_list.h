@@ -104,7 +104,8 @@ PORT_SETTING(cpu,
     .menu = PORT_MENU_GAME, .rank = 25, .takes = PORT_TAKES_NOW,
     .label = "CPU",
     .help = "The game's own CPU, or one of ReBushido's levels, which see "
-            "what a player sees and react as quickly; from the next fight",
+            "what a player sees and react as quickly; from the next mode or "
+            "select screen",
     .shown = {"Original", "Novice", "Adept", "Veteran", "Master"})
 
 PORT_SETTING(music,

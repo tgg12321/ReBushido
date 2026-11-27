@@ -212,6 +212,8 @@ static void port_DuoCloseSounds(s32 parts);
 
 s32 port_DuoIsOn(void) { return g_port_duo.on; }
 
+s32 port_DuoInSlot(s32 slot) { return g_port_duo.in_slot[slot != 0]; }
+
 /* The port's two buffers of primitives the game's while two on two is
  * on and the run has the console's; the console's back after
  * (port_duo.h). */

@@ -181,14 +181,18 @@ typedef struct {
     /* The CPU's level (PORT_CPU_..., port_cpu.h), chosen on the rule page
      * where the select screen's opponent is the CPU (versus the CPU, the
      * story, Slash): the page has the row (cpu_row; in a mode with no
-     * rule, the page is that row alone), its choice (page_cpu), what it
-     * was last reset to, one more (default_cpu, from the window's cpu
-     * setting), and whether the page's choice holds for the fights this
-     * select screen begins (cpu_taken) instead of the setting's. */
+     * rule, the page is that row alone), its choice (page_cpu, from the
+     * window's cpu setting as the select screen loads), and whether the
+     * page's choice holds for the fights this select screen begins
+     * (cpu_taken) instead of the setting's. */
     u8 cpu_row;
     u8 page_cpu;
-    u8 default_cpu;
     u8 cpu_taken;
+    /* The window's cpu setting for each place (port_GetCpuLevel, outside
+     * the state) as the game took it in, when a mode began or a select
+     * screen loaded: the fights' CPU is set up as they load, after a
+     * replay's start, which keeps no setting where it keeps no lead-in */
+    u8 cpu_setting[2];
 } PortMatch;
 
 extern PortMatch g_port_match;
@@ -283,7 +287,8 @@ extern s32 port_MatchRuleFirst(void);
 extern s32 port_MatchRuleHasRow(const PortMatch *match, s32 row);
 /* The CPU's level for the CPU's fighter of place `place` (port_cpu.h's
  * PORT_CPU_...): the rule page's choice if this select screen's fights
- * took it, otherwise the window's cpu setting (port_GetCpuLevel). */
+ * took it, otherwise the window's cpu setting (port_GetCpuLevel) as the
+ * game took it in when the mode began or the select screen loaded. */
 extern s32 port_MatchCpuLevel(s32 place);
 /* Stage pages after the crews of a rule-first Crew match are picked:
  * Triangle back to the weapons un-takes the last place. */
