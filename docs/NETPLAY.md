@@ -14,7 +14,8 @@ window programs on one PC (section 13). Then the lobby and its ways
 (section 14), sessions begun in the running program (15), rooms of several
 (16), the ranked ladder (17), two on two online, four players on four
 PCs among them (18), the CPU playing on for one of four who leaves
-(19), and teams of four characters (20). What is left is play between two real PCs,
+(19), teams of four characters (20), and a resync where the machines part (21). What is left
+is play between two real PCs,
 and what section 13 leaves to the owner.
 
 **In short:** the game step is already deterministic and repeatable from its
@@ -995,10 +996,11 @@ hook (`g_port_take_hook`), with both pads present.
 - **Desyncs.** Every 30 frames, once both pads' inputs before it are
   known, the state's hash at that frame (`port_StateHash`, section 7) is
   final. Each program prints it (`netplay: frame F hash H`, on the error
-  output), sends it with its inputs, and stops with `netplay: DESYNC`
-  when the other's hash of a frame is not its own. The two are compared
-  only once both are final: the other's is kept until this program's
-  own is (below, "Under load").
+  output), sends it with its inputs, and stopped with `netplay: DESYNC`
+  when the other's hash of a frame was not its own; since section 21 the
+  session goes on, parted, until a resync puts the host's state on both.
+  The two are compared only once both are final: the other's is kept
+  until this program's own is (below, "Under load").
 - **The end.** A program that ends (its plan's end, or a failure) tells
   the other, and answers for a moment longer; the other runs to the last
   input it was given and ends there.
@@ -1294,7 +1296,8 @@ is told (five datagrams), answered for a moment so that it has every
 input, and **plays on alone** from the last frame it had both pads for:
 its pads are both its own again and the settings menu opens again. A
 program that hears nothing for 15 seconds does the same. The headless
-program ends instead, as before. A desync still ends both.
+program ends instead, as before. A desync ended both; since section 21
+the host's state is put on both (a resync) and the session goes on.
 
 **The settings menu's Play online page** (`src/port/window/menu.c`):
 host or join; the port to wait at, or the host's address and port
@@ -1675,7 +1678,8 @@ played before.
 both players go back to the top menu (the host's rule, below), where
 the other program has gone (its window closed, its plan ended), where
 nothing is heard of it for 15 seconds, or at a desync, which no longer
-ends the program. `port_RunNetplay` returns why
+ends the program (and since section 21 only where a resync cannot be
+made). `port_RunNetplay` returns why
 (`PORT_NETPLAY_END_...`); the other is told and answered for a moment
 (`port_EndNetplay`), as before; then everything of the session is let
 go (`port_StopNet`, `port_ResetNetplay`, `port_ResetSession`,
@@ -2567,3 +2571,165 @@ blank). The state is not 18's, so 18 and 20 do not meet.
 | `port_net.py session`: `duo` | two headless, each size | two players, the CPU's partners: after the stage page the grid again, the first player's partner one place down, the second's his own character again | 131 hashes the same on both (64-bit, the last `898E901344900095` at frame 3,930; 32-bit `C3AAB0DB4E6670FD`), the fight's replay the same on both and played back |
 | `port_net.py four`: `four`, `couch`, `four-leave`, `four-host-leave` | four (or two) headless, each size | the third and fourth pads pick the partners, each one place down: four characters at the fight's start (`port_duo_character_1` to `_4`, held by the test) | 143 hashes the same on all (64-bit, the last `8F736001F9937252` at frame 4,290; 32-bit `94C5E39E7CC96A86`); `four-leave` 147 the same on the three who stayed, the CPU taking player 4's fighter at frame 2,357; the replays the same on all and played back |
 | `port_net_lobby.py`: `rooms-duo`, `four-punch`, `four-relay`, `rooms-four` | headless, a local lobby | a room's rule before its grid: the partners picked before the stage page; `rooms-four`'s leave moved to frame 3,600 (the fight starts near 3,000 now) | all ok; `rooms-four`: match 1 147 hashes the same on all four, Sora 78; match 2 199, Sora 130, the CPU playing Dai's fighter from frame 3,603 |
+
+## 21. A resync
+
+ROADMAP 28 (the owner, 2026-11-26, instead of a desync report): where an
+online session finds the machines' hashes parted, the session no longer
+ends. The host's state is put on every machine, at a press of any
+player's or by itself a moment after, and the fight goes on from there.
+The code: `src/port/netplay.c` ("a resync"), `src/port/replay.c` ("a
+resync"), `watch.c` (a spectator's), `sdl_net.c` (the line) and F5 in
+`sdl_window.c`.
+
+**What happened before.** Every 30 frames each program's final hash goes
+to the others (section 12). One that was not this program's own ended
+the session: the headless program quit with a failure, a session in the
+running program ended with `PORT_NETPLAY_END_DESYNC` (the pages said
+*The two games parted (a desync)*), a spectator stopped watching. Since
+the host holds every guest's hashes to its own and each guest the
+host's, the host finds every parting a guest does.
+
+**Parted.** Now a hash that is not this program's own still prints
+`netplay: DESYNC at frame F` (every test of a session still fails on
+it), and the program is *parted*: it holds no more hashes, and the
+session goes on. The window's line says *The game fell out of step with
+the other player's | F5: resync now | by itself in 3 s* (or *resync
+asked*, once F5 was pressed). F5 is the window's own key; a controller's
+player gets the resync by itself. F5 is heard only while parted.
+
+**When.** The host resyncs at the first of: a press of its own player
+(F5), a press of any guest's (each input datagram says so, `INPUT_ASK`),
+or 180 frames, three seconds, after it found the parting
+(`--resync-auto N`; 0 for only at a press). Recommended and the default
+both by itself and at a press: a parted fight is no fight, each player
+seeing his own (a cut on one screen is a miss on the other); a player
+with a controller has no key to reach for in the middle of a fight; and
+three seconds is long enough to read the line and short enough that
+little is played on a game that will be thrown away. A resync again
+within 1,200 frames (20 s) of the last is not made by itself, only at a
+press, so that a fault that parts the machines again at once does not
+stall the fight every three seconds; the player sees the line and
+chooses.
+
+**The frame.** The host does not resync at the frame it is at: a guest
+can be further on, having run up to 8 frames past the host's last input
+it has on a guess. It says a frame `RESYNC_LEAD` (20) ahead of its own,
+in every input datagram from then (`INPUT_RESYNC_AT`), past every frame a
+guest can have run on the inputs the host sent before it said so (the
+most delay, 8, the most frames run on a guess, 8, and 4 more). Every
+machine runs to that frame's boundary and no further: each has its own
+state and its own plan there (a play test's plan is the run's own, kept
+across the load: config/port_state.txt's `run`). The host waits there
+for every input before the frame and puts right a wrong guess among
+them, so that its state there is final, and makes final its hashes
+before it.
+
+**The state.** `port_ReplayResyncPack` packs the host's state as a
+room's spectator is given a fight's start (section 16): this run's own
+cleared, the runs the disc holds pointed at (the sectors the game read
+last), the rest deflated, in a replay's chunks (`SERV` with the input's
+number, the frame and the state's hash, `PIEC`, `STRT`, `DISC`, `END`).
+A fight's file or a spectators' start being written is finished first
+(the compressor is one stream at a time), and the runs found for the
+fight's start are kept aside meanwhile. In a fight of two the 7.6 MB of
+the state are 0.69 MB (1.05 MB of them the disc's, in about 520 runs);
+in a fight of four, 1.09 MB.
+
+**Over the link** (`KIND_RESYNC`, `KIND_RESYNC_ACK`). The host sends it
+to each guest in chunks of 1 KB, the header's number the chunk's, each
+with the resync's number, its frame, the last frame all held the same
+before it, the state's bytes and the host's build
+(`port_StateBuildSum`). A guest acknowledges every 8 chunks or 20 ms: the
+first chunk it lacks and a bit for each of the 256 after it. The host
+keeps at most 64 chunks unacknowledged on a link, sends one again after
+twice the round trip and 40 ms, and no faster than 3,000 chunks a second
+on a direct way or 150 through the lobby's relay, which passes 240
+datagrams a second of a pair on (`port_RelayIsRelayed`); every 100 ms
+meanwhile each side sends its inputs again, to say it is there. A chunk
+of a resync a guest has had already is acknowledged again (the host may
+not have heard the last). Nothing heard of it for 15 seconds, or a
+state of another build, ends the session on the desync as before
+(`netplay: DESYNC: no resync could be made`).
+
+**Put in.** A guest, the state whole, waits for every input before the
+frame and puts right a wrong guess among them (the fight's replay keeps
+the frames before it as they were, not as they were guessed), then puts
+the state in (`port_ReplayResyncLoad`: this run's own and the hooks
+kept, the host's hash held), and goes on from the frame. Each side's
+hashes are then of the resync's number (`INPUT_EPOCH`): one of the
+state before it, or one not had yet, is not held to another's, and no
+hash before the frame is. The log says `netplay: resync N: every machine
+has the host's state of frame R; its hashes are held again from there
+(the last the same before it, frame A)` on every machine alike.
+
+**A replay of a resynced fight** (`RSYN`, replay.c). Each machine's
+recording of the fight keeps the resync: the fight's frame it was put in
+at, the frame of the last hash all held the same before it, and the
+state put in, the same bytes on every machine. A playback puts it in at
+that frame, as the session did, holds it to the host's hash, and does
+not hold the hashes after the last the same and before the resync: the
+frames where the machines had parted, which no playback can be (a
+machine that parted ran a state its inputs alone do not make). Every
+other hash is held, and the playback reaches the fight's end. A
+resynced fight has no lead-in from power on (the session's run from
+power on is not whole from the resync), so it plays on a build of the
+one that recorded it only; `resyncs N` in its META.
+
+**Spectators.** A spectator holds its own hashes to the host's, as the
+feed gives them. Where the host's state parted from what its inputs make
+(the host's own fault), the spectator parts too: it says so (*Watching:
+the game fell out of step with the players'; waiting for their
+resync*), and asks the lobby for a start later than the hash that
+parted (`port_WatchAskStart`). The host gives the lobby the state of
+every resync it makes as the match's newest start (the feed's `PART_START`
+with the resync's frame), as it gives each fight's: the lobby, unchanged,
+replaces its copy and sends it to the spectator who asks, who puts it in
+at its frame and watches on, every hash held again. A spectator who had
+not parted (a guest's fault) needs nothing. One whose state does not
+come for 30 seconds, or by 5 seconds after the match's end, stops on the
+desync as before. The lobby keeps a start of 1 MB at most: a fight of
+four's resync (1.09 MB measured) is not served, and its parted
+spectators stop as before.
+
+**Ranked.** A ranked match's digest (section 17) is made of each final
+hash; on a resync both machines leave out those after the last the same
+(`port_RankedResynced`), so that the two digests agree.
+
+**Protocol 21** (`SESSION_PROTOCOL`, setup codes `P21-...`): netplay's
+input datagram carries the resyncs its sender has had, a resync asked
+for and the frame of the host's next, and the two kinds are new; 20 and
+21 do not meet. The lobby, its relay and its feed are unchanged (version
+4), and no build of it before is told apart.
+
+**For tests.** `--net-part-at F` makes this program's state another's at
+its frame F: a word of the RAM the game never reads (below the stack's
+top the port gives the game and does not use) has a number added, after
+the frame's state is saved, so that a rollback past it makes it again;
+the hash parts there and nothing of the game does. `--resync-ask-at F`
+asks for a resync at frame F, once parted, as F5 does.
+
+**How it is proved.** At 60 ms each way and 5% lost (the lobby's cases
+as the lobby's are):
+
+| Case | Programs | What runs | Result |
+| --- | --- | --- | --- |
+| `tests/port/netplay.c` | none (the network made in the file) | the host parted at frame 30, a resync by itself said 20 frames on and sent in three chunks, one acknowledgement in two lost; a guest stopping at the host's frame, the chunks in another order and one twice, put in; another build's refused | the resync's frame, number and bytes; no hash of the state before it or of before its frame held, one after it held; the guest's acknowledgements, again for a chunk sent again; the session ending on the desync for another build's |
+| `port_net.py resync`: `resync-guest` | two headless, each size, a session's Stock match | the guest parted at frame 1,450, in the fight; the host resyncs by itself | the desync found at 1,470; the resync at frame 1,687 (64-bit), 690 KB had in 2.5 s; 75 hashes the same on both but frames 1,470 to 1,686, 19 of them after; the fight's replay the same on both (inputs, views, the resync's state) and played back through the resync, every hash held |
+| `resync-host` | the same | the host parted at 1,450; neither resyncs by itself; the guest's player asks at 1,620 | the resync at 1,643 (64-bit), the guest given the host's parted state; 21 hashes the same after it; both replays played back |
+| `resync-four` | four headless, each size | four players on four PCs, the third parted at 2,400 | the resync at 2,642 (64-bit), 1.09 MB had by the three guests in 3.6 s; 55 hashes the same on all four after it; the fight's replay the same on all four and played back |
+| `port_net_lobby.py`: `relay-resync` (`-win` on Windows) | two headless, the lobby's relay | the guest parted at 1,450 | 693 KB at the relay's pace, had in 5.0 s; 26 hashes the same after |
+| `rooms-resync` (`-win`) | three headless, a room of several | Ayame hosts the match and parts at 1,550; Bunta plays; Chie watches from the fight's start | Bunta and Chie part from Ayame; the resync at 1,652 on Bunta, and on Chie by the lobby; Chie runs 12 hashes after it, 17 held to the players' in all |
+| `win-resync` | two Windows windows (dummy drivers) | the guest parted at 1,450, neither resyncs by itself, the guest asks at 1,620 | the resync at 1,643; 28 hashes the same after; the window's replays the same on both |
+
+`port_net.py resync` is part of `make port-net` (`port_net.py all`) and
+so of the gate.
+
+**What is left.** Two real PCs over the internet, and a desync that is
+one (no desync has been found between two machines of one build since
+section 12's "Under load"; the resync is proved on desyncs made on
+purpose). A spectator of a fight of four whose host parts (its state
+over the lobby's 1 MB; a start served as the difference from the fight's
+start, which every spectator has, would fit). A resync's three seconds
+are a guess to try with players. A press on a controller (the guide
+button leaves).

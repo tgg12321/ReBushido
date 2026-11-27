@@ -257,8 +257,9 @@ static const char *port_OnlineEndWords(s32 end) {
     case PORT_NETPLAY_END_SILENT:
         return "The other player stopped answering for 15 seconds.";
     case PORT_NETPLAY_END_DESYNC:
-        return "The two games parted (a desync): the log has the frame. "
-               "Please send it to the project.";
+        return "The two games fell out of step (a desync) and could not "
+               "be resynced: the log has the frame. Please send it to the "
+               "project.";
     case PORT_NETPLAY_END_MATCH:
         return "The match is over.";
     case PORT_NETPLAY_END_QUIT:
@@ -493,8 +494,8 @@ static void port_OnlineText(char *out, u32 room, const char *format, ...) {
 static const char *port_OnlineWatchWords(s32 end) {
     switch (end) {
     case PORT_NETPLAY_END_DESYNC:
-        return "What you watched parted from the players' game (a desync): "
-               "the log has the frame.";
+        return "What you watched fell out of step with the players' game "
+               "(a desync), and no resync came: the log has the frame.";
     case PORT_NETPLAY_END_SILENT:
         return "The match's feed stopped coming for 15 seconds.";
     case PORT_NETPLAY_END_QUIT:

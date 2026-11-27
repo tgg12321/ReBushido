@@ -2604,6 +2604,7 @@ s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
     u32 kept_count;
     u32 kept_saved;
     u32 count = g_port_input_count;
+    u32 began = port_HostTicks();
     u64 hash;
     s32 i;
 
@@ -2671,9 +2672,11 @@ s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
                   g_resync.blob, g_resync.room, count, frame, hash,
                   g_resync.packed, g_resync.deflate.out_at, g_dedupe.matches,
                   g_dedupe.match_count);
+    began = port_HostTicks() - began;
     port_Log("replay: a resync's state, netplay's frame %u: %u bytes (of %u; "
-             "%u of them the disc's, in %u runs)\n",
-             frame, g_resync.size, state, g_dedupe.saved, g_dedupe.match_count);
+             "%u of them the disc's, in %u runs), packed in %u ms\n",
+             frame, g_resync.size, state, g_dedupe.saved, g_dedupe.match_count,
+             began / TICKS_PER_MS);
     port_CopyBytes(
         g_dedupe.matches, g_resync.matches, kept_count * sizeof(ReplayMatch));
     g_dedupe.match_count = kept_count;

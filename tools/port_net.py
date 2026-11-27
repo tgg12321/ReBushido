@@ -2,7 +2,7 @@
 """Two programs of the native port playing each other over UDP on this PC
 (docs/NETPLAY.md, sections 11 and 12), headless:
 
-    python3 tools/port_net.py link|rollback|session|window|inprocess|four
+    python3 tools/port_net.py link|rollback|session|window|inprocess|four|resync
                               [--bits 32|64]
                               [--out FOLDER] [--latency MS] [--loss PERCENT]
                               [--delay N] [--port-base PORT] [--stress N]
@@ -67,6 +67,18 @@ Stock match of two with the rule chosen by the host before the first
 select (PORT.md, "Match rules", "The rule first"): the crews of different
 fighters, the first fight's winner wounded into the second, the Crew
 match's end the top menu, where the session ends on both.
+
+`resync` (docs/NETPLAY.md, section 21): sessions whose machines part on
+purpose (--net-part-at: a word of the RAM nothing reads) and are put
+together again by a resync, the host's state on every machine:
+`resync-guest`, the guest parted and the host resyncing by itself;
+`resync-host`, the host parted, neither resyncing by itself, the guest's
+player asking (--resync-ask-at); `resync-four`, four players on four PCs,
+the third parted. Each passes if every program ends well, the desync is
+found, every program says the same resync, every hash the same on all
+but where they had parted before it and enough after it, and the fights'
+replays the same on all (their inputs, views and the state the resync put
+in) and played back through the resync with every hash held.
 
 Under load (docs/NETPLAY.md, section 12, "Under load"): `--stress N` runs
 the checks N times over and counts the runs that failed and those that
@@ -900,7 +912,8 @@ def check_session(label, program, args, ports, window, match='stock', extra=None
             problems.append('session: %s: %s was written, and nothing of a session is' % (label, card))
     parted = []
     if resync:
-        more, parted = resync_problems('session: %s' % label, folder, 2, hashes)
+        more, parted = resync_problems('session: %s' % label,
+                                       [read(os.path.join(folder, 'side%d.err' % side)) for side in (0, 1)], hashes)
         problems += more
     common = sorted(set(hashes[0]) & set(hashes[1]))
     differ = [frame for frame in common if hashes[0][frame] != hashes[1][frame] and not in_parted(frame, parted)]
@@ -972,9 +985,10 @@ def check_session_replays(label, program, folder, window, more=(), resync=False)
         problems.append('session: %s: no replay keeps the resync' % label)
     if not problems:
         print('port_net: session: %s: %d fights kept as replays on both machines, the same on both%s%s%s'
-              % (label, len(common), '' if window else ', each played back with every hash the same, and '
-                 'from the session\'s power on by both sizes, every console hash the same',
-                 ' (%d resynced, played through the resync, and not from power on)' % resynced if resynced
+              % (label, len(common), '' if window else ', each played back with every hash the same' + (
+                  ', and from the session\'s power on by both sizes, every console hash the same'
+                  if resynced < len(common) else ''),
+                 ' (%d resynced: played through the resync, not from power on)' % resynced if resynced
                  else '', ', and %d the host played on alone' % len(alone) if alone else ''),
               flush=True)
     return problems
@@ -992,9 +1006,9 @@ def parted_words(parted):
     return ', '.join('frames %d to %d' % (agreed + 30, at - 1) for agreed, at in parted)
 
 
-def resync_problems(label, folder, count, hashes):
-    """A session of `count` programs (their logs side0.err up, their hashes
-    `hashes`) that parted on purpose: some found the desync, each says the
+def resync_problems(label, errs, hashes):
+    """A session of programs (their logs `errs`, the host's first, and
+    their hashes `hashes`) that parted on purpose: some found the desync, each says the
     same resync (its number, frame and the last frame all held the same
     before it), the host packed and sent its state and each guest put it
     in, and after it every hash the same on all, a fight's worth of them.
@@ -1002,8 +1016,8 @@ def resync_problems(label, folder, count, hashes):
     problems = []
     said = []
     found = 0
-    for side in range(count):
-        err = read(os.path.join(folder, 'side%d.err' % side))
+    count = len(errs)
+    for side, err in enumerate(errs):
         found += 'netplay: DESYNC at frame' in err
         if 'netplay: DESYNC: no resync' in err:
             problems.append('%s: PC %d found that no resync could be made' % (label, side + 1))
@@ -1336,7 +1350,8 @@ def check_four(label, program, args, base, case, extra=None, resync=False):
         hashes[leaver] = {f: h for f, h in hashes[leaver].items() if f < cpu_from}
     parted = []
     if resync:
-        more, parted = resync_problems('four: %s' % label, folder, len(pcs), hashes)
+        more, parted = resync_problems('four: %s' % label, [read(os.path.join(folder, 'side%d.err' % side))
+                                                             for side in range(len(pcs))], hashes)
         problems += more
     common = sorted(set.intersection(*(set(hashes[side]) for side in stayed)))
     for side in range(1, len(pcs)):
@@ -2124,7 +2139,9 @@ def run_checks(args, base):
             for k, case in enumerate(RESYNC_CASES):
                 if getattr(args, 'case', None) and case not in args.case:
                     continue
-                problems += check_resync('%d-bit' % bits, program, args, base + 30 + 8 * k + 40 * n, case)
+                # (PORTS_USED in all: two ports a session of two, eight the four's,
+                # each size's twelve)
+                problems += check_resync('%d-bit' % bits, program, args, base + 12 * n + (0, 2, 4)[k], case)
             continue
         if args.what == 'four':
             for k, case in enumerate(FOUR_CASES):
@@ -2210,11 +2227,11 @@ PAGES_ABOVE = 500
 
 
 def run_all(args):
-    """link, rollback, session, window, inprocess, four and the lobby's at once, each a program of this
+    """link, rollback, session, window, inprocess, four, resync and the lobby's at once, each a program of this
     file with its own PORTS_USED ports from --port-base on and its own
     folder of --out; what each printed, in that order, and 1 if one
     failed (make port-net)."""
-    whats = ('link', 'rollback', 'session', 'window', 'inprocess', 'four', 'lobby')
+    whats = ('link', 'rollback', 'session', 'window', 'inprocess', 'four', 'resync', 'lobby')
     if not 1024 + LOBBY_BELOW <= args.port_base <= 65535 - PORTS_USED * len(whats):
         print('FAILED: port_net: --port-base: from 1024 to %d for all' % (65535 - PORTS_USED * len(whats)))
         return 1
