@@ -35,6 +35,15 @@
  * its reach with a blow. So two of it never stand off each other for a
  * whole fight.
  *
+ * The master knows its moves and reads him (docs/CPU.md, "The master's
+ * better choices"): a man free to answer is struck only with an attack
+ * whose blade comes quickly (port_CpuBladeFrames), each way in is
+ * weighed by what it came to in the match (port_CpuTacticWeight), and
+ * how he answers it is read (port_CpuReadAnswers). Every level has the
+ * game's means from afar and at an edge (port_CpuFromAfar, port_CpuDodge:
+ * a sub-weapon or dirt thrown, the leap, a gun; a step aside from a thing
+ * thrown; circling off an edge), each as readily as its level would.
+ *
  * Everything here is the game's state (config/port_state.txt): the
  * memory of each fighter, its dice, what it saw. A memory is a fighter's,
  * not a place's: in two on two (port_duo.h) the four fighters pass through
@@ -312,6 +321,8 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
 #define LUNGE_DISTANCE 1500
 /* a level that presses from outside his reach waits this far past it */
 #define OUTSIDE_MARGIN 200
+/* and does so pressing less than this; more, it walks in */
+#define OUTSIDE_PRESSURE_MOST 192
 #define LUNGE_PRESSURE 96
 /* an opening just out of its reach is stepped in on if he has this many
  * frames still to go in it */
@@ -1166,8 +1177,13 @@ static s32 port_CpuAttackFar(
 
 /* The farthest any attack of its stance's list is meant for: as far as it
  * strikes from (the motion's own reach may be further). */
-static s32 port_CpuListReach(
-    const Fighter *fighter, const PortCpuLevel *level) {
+static s32 port_CpuBladeFrames(const Fighter *fighter, const PortCpuMind *mind,
+                               s32 index, const u8 *script);
+
+/* (and of those whose blade comes within `within` frames, if that is not
+ * -1: as far as its quick blows reach) */
+static s32 port_CpuListReach(const Fighter *fighter, const PortCpuMind *mind,
+                             const PortCpuLevel *level, s32 within) {
     u16 *list = fighter->cpu_stance_scripts[fighter->stance];
     s32 most = 0;
     s32 index;
@@ -1177,9 +1193,12 @@ static s32 port_CpuListReach(
     }
     for (index = 0; list[index] != 0; index++) {
         u8 *attack = (u8 *)fighter->cpu_scripts + list[index];
+        u8 *script = port_CpuUsable(fighter, attack);
         s32 far;
 
-        if (port_CpuUsable(fighter, attack) == NULL) {
+        if (script == NULL ||
+            (within >= 0 &&
+             port_CpuBladeFrames(fighter, mind, index, script) > within)) {
             continue;
         }
         far = port_CpuAttackFar(fighter, level, attack);
@@ -1809,13 +1828,19 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
     /* as far as it strikes from: its stance's reach, or its list's
      * farthest attack where that is nearer */
     s32 my_reach = fighter->attack_reach[fighter->stance];
-    s32 list_reach = port_CpuListReach(fighter, level);
+    /* (a level that strikes a man free to answer only with its quick
+     * blows stands where they reach) */
+    s32 list_reach =
+        port_CpuListReach(fighter, mind, level, port_CpuQuick(level));
     s32 standing = fighter->move_kind == MOVE_KIND_STANCE;
     s32 want;
     s32 pressure;
     s32 pressed;
     s32 meeter;
 
+    if (list_reach == 0) {
+        list_reach = port_CpuListReach(fighter, mind, level, -1);
+    }
     if (list_reach < my_reach) {
         my_reach = list_reach;
     }
@@ -2078,7 +2103,11 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
     /* pressing: in, as far as within its own reach */
     pressure = port_CpuPressure(fighter, mind, level, seen);
     pressed = my_reach - PRESS_DEPTH;
-    if (level->outside && pressed < his_reach + OUTSIDE_MARGIN) {
+    /* (outside his reach, but not all out: two masters each outside the
+     * other's, a step down between them or a lunge that has done badly,
+     * stood off each other to the clock) */
+    if (level->outside && pressure < OUTSIDE_PRESSURE_MOST &&
+        pressed < his_reach + OUTSIDE_MARGIN) {
         pressed = his_reach + OUTSIDE_MARGIN;
     }
     if (pressure > 0 && want > pressed) {

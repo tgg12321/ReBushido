@@ -22,7 +22,12 @@ build/port/rebushido kept to compare against).
 `tools/port_cpu_react.py`.
 
 `--check` holds determinism instead: the same fight twice on each size,
-and on both sizes, must print the same trace, byte for byte.
+and on both sizes, must print the same trace, byte for byte. `--same-as
+PROGRAM` plays the fights by this build and by another (a copy kept from
+before a change) and holds every trace and per-frame log to be the same,
+with `--person` each again with a person pressing nothing in the first
+place: `0 0 --fights 4 --same-as OLD --person`, the game's own CPU
+untouched by a change to the port's (docs/CPU.md).
 
 Runs in WSL with the programs `make port` builds and the player's disc
 (--image, REBUSHIDO_RETAIL, or the image at the repository's root). Exit 0, or 1 if
@@ -113,11 +118,13 @@ def plan_for(program, out, limit):
     return plan, names
 
 
-def run_fight(program, plan, order, out, stage, f1, f2, cpus, seed, log):
+def run_fight(program, plan, order, out, stage, f1, f2, cpus, seed, log, person=False):
+    """One fight; `person`: the first fighter a person who presses
+    nothing, not the CPU's."""
     import playtest
     os.makedirs(out, exist_ok=True)
     cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plan, '--no-cards', '--mods', '',
-           '--out', out, '--fight', stage, f1, f2, '--fight-cpu',
+           '--out', out, '--fight', stage, f1, f2] + ([] if person else ['--fight-cpu']) + [
            '--cpu', '%d,%d' % cpus, '--cpu-seed', str(seed)] + [w for t in TUNE for w in ('--cpu-tune', t)]
     if log:
         cmd += ['--cpu-log', os.path.join(out, 'cpu_log.txt')]
@@ -159,6 +166,11 @@ def main():
     parser.add_argument('--tune', action='append', default=[], help='LEVEL:FIELD=VALUE,... (--cpu-tune), to try numbers')
     parser.add_argument('--log', action='store_true', help='keep each fight\'s --cpu-log')
     parser.add_argument('--check', action='store_true', help='hold determinism: the same fight on both sizes, twice')
+    parser.add_argument('--same-as', metavar='PROGRAM',
+                        help='the fights by this program too (another build, kept to compare against): each '
+                        'fight\'s trace and per-frame log must be the same (the game\'s own CPU untouched: 0 0)')
+    parser.add_argument('--person', action='store_true',
+                        help='with --same-as: and each fight again with the first fighter a person who presses nothing')
     args = parser.parse_args()
     TUNE.extend(args.tune)
 
@@ -168,6 +180,8 @@ def main():
         playtest.RETAIL_CUE = args.image
     if args.check:
         return check(args)
+    if args.same_as:
+        return same_as(args)
     program = os.path.abspath(args.program) if args.program else os.path.join(REPO, PROGRAMS[args.bits])
     if not os.path.exists(program):
         print('port_cpu_bench: no %s (make port)' % program)
@@ -216,6 +230,42 @@ def main():
           % (args.a, args.b, args.fights, wins, losses, draws, failed,
              100.0 * wins / decided if decided else 0.0))
     return 1 if failed else 0
+
+
+def same_as(args):
+    """The fights by two programs: every trace and log the same. A log's
+    line is compared by its first eighteen words, the fields an older
+    program writes (newer ones write more after them)."""
+    programs = [os.path.join(REPO, PROGRAMS[args.bits]), os.path.abspath(args.same_as)]
+    plans = []
+    for i, program in enumerate(programs):
+        if not os.path.exists(program):
+            print('port_cpu_bench: no %s' % program)
+            return 1
+        out = os.path.join(args.out, 'same%d' % i)
+        os.makedirs(out, exist_ok=True)
+        plan, _ = plan_for(program, out, args.limit)
+        plans.append((plan, [line.split()[1] for line in open(plan) if line.startswith('var ')]))
+    differ = 0
+    for k in range(args.first, args.first + args.fights):
+        stage, f1, f2, cpus, _ = fight_args(k, args.a, args.b, args.stages, args.fighters,
+                                           args.weapons, args.second_weapons)
+        for person in (False, True) if args.person else (False,):
+            runs = []
+            for i, program in enumerate(programs):
+                out = os.path.join(args.out, 'same%d' % i, 'fight%04d%s' % (k, '-person' if person else ''))
+                code, winner, frames, trace = run_fight(program, plans[i][0], plans[i][1], out, stage, f1, f2,
+                                                        cpus, args.seed + k, True, person)
+                with open(os.path.join(out, 'cpu_log.txt'), encoding='utf-8', errors='replace') as f:
+                    log = [' '.join(line.split()[:18]) for line in f]
+                runs.append((trace, log))
+            same = runs[0] == runs[1]
+            differ += not same
+            print('same-as: fight %d%s %s %s %s: %d log lines: %s'
+                  % (k, ' (a person against it)' if person else '', stage, f1, f2, len(runs[0][1]),
+                     'the same' if same else 'DIFFERENT'), flush=True)
+    print('same-as: %s' % ('OK' if not differ else 'FAILED: %d differ' % differ))
+    return 1 if differ else 0
 
 
 def check(args):
