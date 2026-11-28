@@ -1685,7 +1685,7 @@ where you put the camera.
 | the arrows, or the mouse with its left button held | right stick | turn round the point looked at (while the free camera is on; otherwise Right is a frame on as above) |
 | the mouse with its right button held | | slide the camera sideways and up |
 | Z, X, or the mouse's wheel | the triggers | nearer, farther |
-| N, M, or the mouse's wheel with Ctrl held | | the field of view narrower, wider (20 to 100 degrees; the game's own is 45) |
+| N, M, or the mouse's wheel with Ctrl held | L1 held and the triggers | the field of view narrower, wider (20 to 100 degrees; the game's own is 45) |
 | Shift held | | four times as fast |
 | H | right stick pressed | the HUD hidden or shown (the game's and the window's own: the match strip, training's lines) |
 | T | | the time of day: dawn, day, dusk, night, the stage's own, and back to the fight's |
@@ -1696,11 +1696,18 @@ where you put the camera.
 | 1 to 9, 0 | | a tenth of the way on each, 0 the start |
 | `[`, `]` | | the clip's first frame, its last |
 | G | | a clip of the frames marked (or five seconds from the frame on show) |
-| J (or Insert) | | a key of the camera at the frame on show: the free camera as it is, with its field of view |
-| U (or Delete) | | the key nearest the frame on show cleared; with Shift, every key |
-| O | | the camera on its keys, or let go of them (to fly freely while it plays) |
+| J (or Insert) | L1 held and Cross | a key of the camera at the frame on show: the free camera as it is, with its field of view |
+| U (or Delete) | L1 held and Square (and Circle: every key) | the key nearest the frame on show cleared; with Shift, every key |
+| O | L1 held and Triangle | the camera on its keys, or let go of them (to fly freely while it plays) |
 | the mouse on the seek bar | | a click goes to that frame; dragging along it seeks under the mouse |
 | Tab | | the line of keys hidden or shown |
+
+On a controller, **L1** is the theatre's alone: while it is held the
+triggers turn the field of view instead of the distance, and Cross,
+Square, Circle and Triangle are the camera's keys (above) and not the
+replay's own (pause, from the start, stop, to the first cut); let go of
+L1 and they are the replay's again. In photo mode L1 and the triggers
+turn the field of view too.
 
 The free camera moving a fight that plays shows it from there as it
 goes; paused, it is the frame on show seen from wherever you turn. Going

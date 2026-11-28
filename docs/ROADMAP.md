@@ -809,8 +809,11 @@ the stage").
     round with the horizon level, a zoom even), passed to a clip's run
     (`--theatre-path`); the field of view (N M, Ctrl and the wheel, 20
     to 100 degrees, kept with the keys, in photo mode too). Proved by
-    `port_theatre.py path` and `bar` and `tests/port/window.c`. Left:
-    the owner's eye on `tmp/theatre/` and `tmp/theatre2/`.
+    `port_theatre.py path` and `bar` and `tests/port/window.c`. On a
+    controller too (2026-11-28): L1 held, the triggers the field of view
+    and Cross, Square, Circle and Triangle the camera's keys, none of
+    them the replay's own then (`port_theatre.py pad`). Left: the
+    owner's eye on `tmp/theatre/` and `tmp/theatre2/`.
 30. **Stats** (the owner, 2026-11-26; no achievements): a player's record
     kept by the program: fights and matches won and lost, by fighter,
     weapon, stage, mode and opponent (CPU levels, online names); kills

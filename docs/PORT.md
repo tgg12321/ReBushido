@@ -12072,6 +12072,25 @@ changes; the button's press anywhere else is the camera's, as before.
 The mouse's points are taken into the window's pixels
 (`port_MouseToPixels`) where the window's units are not its pixels.
 
+**On a controller** (2026-11-28): L1 is the theatre's, a modifier the
+replay's own controls never had (`sdl_replay.c`: Cross and Start pause,
+the D-pad and R1 step and change the speed, Square from the start,
+Triangle to the cut, Circle and Back stop; the theatre has the sticks,
+their presses and the triggers). While it is held (`g_theatre.l1`, let
+go also when the theatre ends) the triggers drive the field of view at
+the rate N and M do instead of the distance (`port_TheatreMotion`), and
+Cross, Square, Circle and Triangle are J, U, Shift and U, and O
+(`port_TheatreKeysButton`, in a replay), taken before the replay's
+handler sees them; L1 let go, they are the replay's again. In photo
+mode L1 and the triggers turn the field of view the same. Proved by
+`port_theatre.py pad` (SDL's own events of the buttons and the trigger,
+the words `pad-down:`, `pad-up:`, `pad-axis:`): L1 and the right
+trigger widen the view (45 to 84 degrees) and keep the distance; Cross
+sets a key, Triangle lets go and takes the keys again, Square clears
+it; L1 let go, the trigger is the distance again and keeps the view;
+every button under L1 taken by the theatre and Square without it left
+to the replay's own; the replay held at its frame throughout.
+
 **What it costs.** A look is two steps and three snapshots' worth of
 copies (the pages written since); the card draws one frame a look and
 none for the step unseen. Measured, the first 200 frames of a fight's
