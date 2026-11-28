@@ -1828,9 +1828,10 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
     /* as far as it strikes from: its stance's reach, or its list's
      * farthest attack where that is nearer */
     s32 my_reach = fighter->attack_reach[fighter->stance];
-    /* (a level that strikes a man free to answer only with its quick
-     * blows stands where they reach) */
-    s32 list_reach =
+    s32 list_reach = port_CpuListReach(fighter, mind, level, -1);
+    /* and as far as its quick blows reach, for a level that strikes a man
+     * free to answer only with those: pressing, it goes in to there */
+    s32 quick_reach =
         port_CpuListReach(fighter, mind, level, port_CpuQuick(level));
     s32 standing = fighter->move_kind == MOVE_KIND_STANCE;
     s32 want;
@@ -1838,11 +1839,11 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
     s32 pressed;
     s32 meeter;
 
-    if (list_reach == 0) {
-        list_reach = port_CpuListReach(fighter, mind, level, -1);
-    }
     if (list_reach < my_reach) {
         my_reach = list_reach;
+    }
+    if (quick_reach == 0 || quick_reach > my_reach) {
+        quick_reach = my_reach;
     }
 
     /* -- what it cannot help -- */
@@ -2102,7 +2103,7 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
     }
     /* pressing: in, as far as within its own reach */
     pressure = port_CpuPressure(fighter, mind, level, seen);
-    pressed = my_reach - PRESS_DEPTH;
+    pressed = quick_reach - PRESS_DEPTH;
     /* (outside his reach, but not all out: two masters each outside the
      * other's, a step down between them or a lunge that has done badly,
      * stood off each other to the clock) */
@@ -2140,8 +2141,12 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
              level->aggression * pressure / PRESSURE_ALL) *
                 port_CpuTacticWeight(mind, level, WHY_FIRST) / CHANCE_BYTE,
             CHANCE_FRAME)) {
+        /* (pressing hard, any blow that reaches: one who will not come
+         * to its quick ones is gone at with what it has) */
         if (port_CpuStrikeWithin(
-                fighter, mind, distance, port_CpuQuick(level), WHY_FIRST)) {
+                fighter, mind, distance,
+                pressure >= OUTSIDE_PRESSURE_MOST ? -1 : port_CpuQuick(level),
+                WHY_FIRST)) {
             return 0;
         }
     }
