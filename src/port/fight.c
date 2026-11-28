@@ -12,6 +12,7 @@
  * variables when it starts the fight. */
 #include "common.h"
 #include "bb2.h"
+#include "port_replay.h"
 
 #define NAME_BYTES_MAX 48
 /* the stage of --fight while it is an arena's name not yet looked for */
@@ -219,6 +220,9 @@ s32 port_ChooseFight(const char *stage, const char *first, const char *second) {
         /* a mod's arena, perhaps: port_ArenasStart says, and the fight is
          * on the stage it stands in for (port_QuickFight) */
         g_port_fight.stage = FIGHT_STAGE_ARENA;
+        /* a replay keeps no lead-in of a run with a mod's arena in
+         * play, as with --arena */
+        port_ReplayLeadBreak("a mod's arena (--fight)");
     }
     if (g_port_fight.stage < 0 && g_port_fight.stage != FIGHT_STAGE_ARENA) {
         port_Log("--fight: no stage is called %s; the stages:\n", stage);
@@ -244,6 +248,42 @@ void port_FightTwoPlayers(void) { g_port_fight.is_cpu[1] = FALSE; }
 
 /* Both fighters the CPU's (--fight-cpu): a fight that plays itself. */
 void port_FightBothCpu(void) { g_port_fight.is_cpu[0] = TRUE; }
+
+/* The fight the run was begun with, as it was asked (port_platform.h):
+ * for a replay's lead-in, which keeps it. */
+s32 port_FightAsked(PortFight *fight) {
+    if (g_port_fight_chosen) {
+        *fight = g_port_fight;
+    }
+    return g_port_fight_chosen;
+}
+
+/* A replay's playback from power on: the fight its run was begun with
+ * (NULL: none) held in place of this run's own, which is put back
+ * after. */
+static PortFight g_port_fight_own;
+static s32 g_port_fight_own_chosen;
+static s32 g_port_fight_held;
+
+void port_HoldFight(const PortFight *fight) {
+    if (!g_port_fight_held) {
+        g_port_fight_own = g_port_fight;
+        g_port_fight_own_chosen = g_port_fight_chosen;
+        g_port_fight_held = TRUE;
+    }
+    g_port_fight_chosen = fight != NULL;
+    if (fight != NULL) {
+        g_port_fight = *fight;
+    }
+}
+
+void port_ReleaseFight(void) {
+    if (g_port_fight_held) {
+        g_port_fight = g_port_fight_own;
+        g_port_fight_chosen = g_port_fight_own_chosen;
+        g_port_fight_held = FALSE;
+    }
+}
 
 const PortFight *port_QuickFight(void) {
     if (g_port_fight_chosen && g_port_fight.stage == FIGHT_STAGE_ARENA) {

@@ -73,7 +73,8 @@ colon, a katana if none. The second fighter is the CPU's; `--fight-2p`
 gives it to the second pad. A name the game does not have lists the
 ones it does. The fight starts with the settings the game starts with:
 the memory card is not read on the way. After it, the game's own menu
-comes up and the game goes on as ever.
+comes up and the game goes on as ever. Its fights are kept as replays
+like any others, and play on another build too.
 
 ## The keys
 

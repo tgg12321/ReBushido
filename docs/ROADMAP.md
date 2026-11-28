@@ -583,7 +583,9 @@ the stage").
     own power on to the fight, every console hash held, stopping where its
     game went otherwise; an online fight's too (2026-11-26), from its
     session's own power on, with what the game reads of the session (its
-    rules, pads and seed). Left: a run begun with a fight chosen.
+    rules, pads and seed); a run begun with a fight chosen (`--fight`,
+    2026-11-28), its fight kept with the lead-in and started again from
+    power on (`port_replay.py`'s `fight_chosen`).
 24. **2v2** (longer term): four fighters in one fight, two teams; a
     button retargets to the other enemy; online with four players
     (rollback of four, the bench's four-fighter case as the budget).

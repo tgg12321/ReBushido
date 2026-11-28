@@ -11591,13 +11591,35 @@ console hashes in the 64-bit and the 32-bit programs, every one.
 
 *What a run keeps it for*: a run that began from power on as a plain one
 does, while nothing but its inputs and that setup changed the game. It is
-not kept for a run begun with `--fight`, `--partners`, `--arena`,
+not kept for a run begun with `--arena` (or `--fight` on a mod's arena),
 `--weapon`, a session or a link cable; from a play test's poke, a change of
 the settings menu's Bug fixes, or a link cable's game on, the fights after
 play only on this build (`port_ReplayLeadBreak`, said in the log). A
 session begun in the program, a spectator's match and a replay's playback
 put the player's own state back after them, and the lead-in waits while
 they run.
+
+*A run begun with a fight chosen* (2026-11-28): `--fight` (with
+`--fight-2p`, `--fight-cpu`, `--partners`; in either program) keeps its
+lead-in like any run. The fight asked for is part of what it holds: LEAD's
+second word is `LEAD_FIGHT` (2; 0 a plain run's, 1 a session's) and
+thirteen words of the fight follow the setup (`PortFight`: the mode, the
+stage, each side's fighter, weapon and whether the CPU plays it, the
+partners). Played from power on, the recorded run's fight is held in
+place of the player's own (`port_HoldFight`, `fight.c`; put back as the
+playback ends, `port_ReleaseFight`), so the options page and the boot
+image give way to it and `rb_PortQuickFight` starts it as the run did;
+a plain run's replay is held to no fight, even in a program begun with
+one. Such a run reaches its fight's start before its first input, so its
+fight starts at input 0 (`start_count` 0): the playback's power on runs
+its first step to that boundary before holding anything to the fight's
+start, as it does to input 0's hash. Proved by `tools/port_replay.py`'s
+`fight_chosen`: a run of `--fight tatara-shrine kannuki mikado:nodachi
+--fight-cpu` on both sizes, each file keeping its fight (`LEAD_FIGHT`),
+played by its own program from its start and from power on, and by the
+other size from power on in a program begun without `--fight`, every
+hash held; and port_game's plain fight played from power on by both
+programs begun with `--fight`, every hash held.
 
 *An online fight's* (2026-11-26). A session plays from power on too: the
 state of the game's start put back, the host's cards in both slots, its

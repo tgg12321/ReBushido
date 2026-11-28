@@ -66,6 +66,13 @@ extern void port_FightBothCpu(void);
 /* The fight asked for, which the game's main starts in place of the
  * options page, the boot image and the opening; NULL where none was. */
 extern const PortFight *port_QuickFight(void);
+/* For a replay's lead-in (replay.c): the fight the run was begun with
+ * (FALSE: none), copied as it was asked; and, played from power on, the
+ * recorded run's held in place of this run's (NULL: none), and this
+ * run's own put back. */
+extern s32 port_FightAsked(PortFight *fight);
+extern void port_HoldFight(const PortFight *fight);
+extern void port_ReleaseFight(void);
 
 /* ---- text (src/port/text.c) ---- */
 

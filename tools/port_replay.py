@@ -11,8 +11,9 @@ Each plan is run on both programs `make port` builds with `--replays`
 into a folder of the plan's own: port_game's (power on, versus, a fight to
 the kill, the game's own replay, the menu) and the plans of
 tools/port_stage_select.py, whose fights are won on the stage select's
-kinds of stage, an arena, versus the CPU through two fights, and training.
-Every fight is a file. Then every file is played back headlessly by both
+kinds of stage, an arena, versus the CPU through two fights, and training;
+and fight_chosen's, a run begun with a fight chosen (`--fight ...
+--fight-cpu`), whose lead-in keeps the fight. Every fight is a file. Then every file is played back headlessly by both
 programs with `--replay-check`: the program that recorded it must play it
 from its start to its end with every state hash the one recorded, and
 again from power on (`--replay-from-boot`, its lead-in) with every hash;
@@ -116,7 +117,9 @@ def check_replay(program, path, extra, env=None, from_boot=None):
 # settings would. The gameplay mods (--mods) stay: they are held to be the
 # same, not held.
 SETUP_SWITCHES = {'--stage-select': 0, '--unlock-all': 0, '--fight-music': 1, '--match': 1, '--teams': 1,
-                  '--time-of-day': 1, '--menu': 1}
+                  '--time-of-day': 1, '--menu': 1,
+                  # the fight a run was begun with (LEAD_FIGHT)
+                  '--fight': 3, '--fight-cpu': 0, '--fight-2p': 0, '--partners': 2}
 
 
 def without_setup(extra):
@@ -305,6 +308,54 @@ def check_folder(report, name, replays, extra):
     return len(files)
 
 
+# A run begun with a fight chosen (--fight, the CPU's on both sides): its
+# lead-in keeps the fight (LEAD's second word LEAD_FIGHT) and a playback
+# from power on starts it as the run did.
+FIGHT_CHOSEN = ['--fight', 'tatara-shrine', 'kannuki', 'mikado:nodachi', '--fight-cpu']
+FIGHT_CHOSEN_FRAMES = '4000'
+LEAD_FIGHT = 2
+
+
+def check_fight_chosen(report, out, port_game_replays):
+    """A run begun with --fight, recorded on both sizes and every fight
+    played back as check_folder plays any (from power on by a program
+    begun without --fight too); and port_game's first fight, a plain
+    run's, played from power on by a program begun with --fight, which
+    holds no fight for it."""
+    folder = os.path.join(out, 'fight_chosen')
+    replays = os.path.join(folder, 'replays')
+    if os.path.isdir(folder):
+        shutil.rmtree(folder)
+    os.makedirs(replays)
+    for bits, program in sorted(PROGRAMS.items()):
+        cmd = [os.path.join(REPO, program), '--image', playtest.RETAIL_CUE, '--no-cards'] + FIGHT_CHOSEN + \
+            ['--frames', FIGHT_CHOSEN_FRAMES, '--replays', replays]
+        with open(os.path.join(folder, 'rec%d.err' % bits), 'wb') as e:
+            code = subprocess.run(cmd, cwd=REPO, stdout=subprocess.DEVNULL, stderr=e, stdin=subprocess.DEVNULL,
+                                  timeout=SECONDS).returncode
+        report.check(code == 0, 'fight_chosen: the %d-bit port ran its fights (exit %d)' % (bits, code))
+    files = sorted(os.path.join(replays, f) for f in os.listdir(replays) if f.endswith('.rbr'))
+    for path in files:
+        chunks, meta = read_replay(path)
+        lead = chunks.get('LEAD', b'')
+        report.check(has_lead(path) and len(lead) >= 8 and struct.unpack('<I', lead[4:8])[0] == LEAD_FIGHT,
+                     'fight_chosen: %s keeps its lead-in, with the fight its run was begun with (%s)'
+                     % (os.path.basename(path), meta.get('lead_why', 'whole')))
+    count = check_folder(report, 'fight_chosen', replays, FIGHT_CHOSEN)
+    plain = sorted(f for f in os.listdir(port_game_replays) if f.endswith('.rbr')) \
+        if port_game_replays and os.path.isdir(port_game_replays) else []
+    if plain:
+        path = os.path.join(port_game_replays, plain[0])
+        for bits, program in sorted(PROGRAMS.items()):
+            code, said = check_replay(os.path.join(REPO, program), path, FIGHT_CHOSEN + ['--replay-from-boot'])
+            print('    port_game\'s %s, %d-bit begun with --fight, from power on: exit %d: %s'
+                  % (plain[0], bits, code, said))
+            report.check(code == 0 and 'DESYNC' not in said,
+                         'fight_chosen: port_game\'s %s played from power on by the %d-bit port begun with '
+                         '--fight, every hash the same (its own fight not started)' % (plain[0], bits))
+    return count
+
+
 def check_differ(report, out, replays):
     """port_game's first fight from power on with an input of the run
     changed (--replay-differ: as another game, which went otherwise
@@ -363,10 +414,13 @@ def main(argv):
             return 1
     wanted = lambda name: not args.only or name in args.only  # noqa: E731
     count = 0
+    replays = None
     if wanted('port_game'):
         replays = record_port_game(report, out)
         count += check_folder(report, 'port_game', replays, [])
         check_differ(report, out, replays)
+    if wanted('fight_chosen'):
+        count += check_fight_chosen(report, out, replays)
     mods = port_stage_select.make_mods(out)
     values = {'host': port_stage_select.ARENA_HOST, 'all': port_stage_select.ALL_UNLOCKS,
               'default': port_stage_select.DEFAULT_UNLOCKS, 'rooftop': port_stage_select.ROOFTOP}

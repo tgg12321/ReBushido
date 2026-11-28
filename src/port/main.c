@@ -567,7 +567,6 @@ s32 port_Main(s32 argc, char **argv) {
         } else if (port_TextsEqual(word, "--replay-from-boot")) {
             port_SetReplayFromBoot(1);
         } else if (port_TextsEqual(word, "--fight-cpu")) {
-            port_ReplayLeadBreak("--fight-cpu");
             port_FightBothCpu();
         } else if (port_TextsEqual(word, "--cpu") && has_value) {
             if (!port_CpuParseLevels(argv[++i])) {
@@ -605,10 +604,8 @@ s32 port_Main(s32 argc, char **argv) {
             }
             i++;
         } else if (port_TextsEqual(word, "--fight-2p")) {
-            port_ReplayLeadBreak("--fight-2p");
             port_FightTwoPlayers();
         } else if (port_TextsEqual(word, "--fight")) {
-            port_ReplayLeadBreak("the run began in a fight (--fight)");
             if (i + 3 >= argc) {
                 port_UsageError("--fight takes STAGE FIGHTER FIGHTER", "");
             }
@@ -618,7 +615,6 @@ s32 port_Main(s32 argc, char **argv) {
             }
             i += 3;
         } else if (port_TextsEqual(word, "--partners")) {
-            port_ReplayLeadBreak("--partners");
             if (i + 2 >= argc) {
                 port_UsageError("--partners takes FIGHTER FIGHTER", "");
             }
