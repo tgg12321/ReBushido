@@ -51,6 +51,7 @@
 #include "port_host.h"
 #include "port_net.h"
 #include "port_ranked.h"
+#include "port_remix.h"
 #include "port_replay.h"
 #include "port_room.h"
 #include "bb2.h"
@@ -1303,6 +1304,8 @@ static void port_NetplaySave(u32 frame) {
     s32 slot = (s32)(frame % NETPLAY_SAVES);
 
     port_StateSave(g_np_saves[slot]);
+    /* the sound remastered's mix beside it, for the ears (port_remix.h) */
+    port_RemixKeep((u32)slot);
     g_np_save_frames[slot] = frame;
     g_np_save_blanks[slot] = port_GetBlankCount();
     if (frame % NETPLAY_HASH_EVERY == 0) {
@@ -1422,6 +1425,9 @@ static void port_NetplayRollBack(void) {
         g_port_net_rerun_hook(1, blanks);
     }
     port_StateLoad(g_np_saves[slot]);
+    /* ... and the mix put back with it: the frames run again are mixed
+     * from where it was, its reverb hearing them once */
+    port_RemixPutBack((u32)slot);
     g_np_frame = from;
     g_port_rerun = 1;
     while (g_np_frame < now) {

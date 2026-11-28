@@ -786,10 +786,36 @@ blank with `remastered` and 0.09 ms with headphones, against a blank of
 bench`, the same `-O1`): 0.68 ms more a blank (64-bit; 0.81 ms 32-bit),
 1.0 ms with headphones; the chip alone is 0.34 ms.
 
-**Not done**: the mix's state is not saved with the game's, so a step
-netplay runs again leaves its tail in the reverb once more (a short
-doubling at a rollback, in what the window had queued and not played);
-the tuning by ear.
+**Through a rollback** (2026-11-28). The mix is still not the game's
+state, but where a rollback puts the game's state back the mix's
+running state goes back with it: netplay keeps it beside each frame it
+saves (`port_NetplaySave`, `port_RemixKeep` into the same place of
+`PORT_REMIX_KEEPS`) and puts it back with the frame it runs again from
+(`port_NetplayRollBack`, `port_RemixPutBack`), and the rollback
+self-test likewise. What is kept is everything a sample changes but the
+counts: the room chosen, the sums, the limiter's look ahead and level,
+the voices' copies, the head's rings and the reverb whole (its lines,
+all-passes, pre-delay and filters; about 310 KB a place, in memory the
+system gives on the first keeping, nothing where the setting is off).
+So the frames run again are mixed from where the mix was then, the
+reverb hears each sound once, and what the window takes of the run
+again in place of what it had queued is the corrected course's own;
+before, the reverb heard the frames run again a second time (its tail
+doubled at a rollback). Run ahead was never touched: a frame run ahead
+is not mixed. The cost is a copy of the place at each save, about 0.1 ms
+(the self-test's saves 432 against 315 microseconds, seven runs at
+once). Proved by `tests/port/remix`'s rollback (the chip and the mix
+through 90 blanks, eight of them run again from a save: with the mix
+put back heard as the run with none, to the bit; without, 88,155 samples
+differ) and by `--wav` runs of a fight (`--fight tatara-shrine kannuki
+mikado:nodachi --fight-cpu --frames 3000`) with the self-test rolling
+back every 24 frames (`--rollback-test 8 --rollback-quiet`):
+`remastered` the same WAV, byte for byte, as without rollbacks and as
+main's without (main's with them: 1,850,284 of 4,421,344 samples differ
+from 7.9 s on, by up to 2,236); `original` the same as main's, with
+rollbacks and without.
+
+**Not done**: the tuning by ear.
 ### The picture
 
 The port has the PlayStation's GPU in C (`src/port/raster.c`,

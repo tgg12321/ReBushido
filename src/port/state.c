@@ -14,6 +14,7 @@
 #include "port_host.h"
 #include "port_gpu.h"
 #include "port_paint.h"
+#include "port_remix.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -1351,6 +1352,8 @@ static void port_RollbackSave(void) {
     port_RollbackAllocate();
     start = port_HostTicks();
     port_StateSave(g_port_rollback_snapshot);
+    /* the sound remastered's mix beside it, as netplay keeps it */
+    port_RemixKeep(0);
     port_TimingAdd(&g_port_rollback_saves, port_HostTicks() - start);
     g_port_rollback_phase = ROLLBACK_FIRST;
     g_port_rollback_count = 0;
@@ -1488,6 +1491,7 @@ static void port_RollbackLoad(void) {
     u32 start = port_HostTicks();
 
     port_StateLoad(g_port_rollback_snapshot);
+    port_RemixPutBack(0);
     port_TimingAdd(&g_port_rollback_loads, port_HostTicks() - start);
     g_port_rollback_length = g_port_rollback_count;
     g_port_rollback_phase = ROLLBACK_AGAIN;

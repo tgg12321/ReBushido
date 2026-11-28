@@ -907,7 +907,9 @@ the stage").
     folding back, each room's decay, the head's delays and levels, the
     chip unchanged beside it) and `--wav` runs of six stages and
     `port_sound`'s plan, byte for byte the same as main's with
-    `original`. Left: the owner's ears (`tmp/sound/`), and the rooms'
-    levels and the stage table tuned by them; the reverb heard on a step
-    netplay runs again is not put back with the game's state (a short
-    doubling of its tail at a rollback).
+    `original`. Through a rollback (2026-11-28): the mix's running state
+    (the reverb whole) kept beside each state netplay saves and put back
+    with it, so the reverb hears a frame run again once (a rollback's
+    `--wav` byte for byte the run without). Left: the owner's ears
+    (`tmp/sound/`), and the rooms' levels and the stage table tuned by
+    them.

@@ -43,7 +43,10 @@
  * The reverb's arithmetic rounds a product towards zero, so that its
  * tail dies to nothing and never sits at a last step. Nothing here is
  * the game's state (config/port_state.txt): nothing of the game reads
- * it, and a step run again by netplay is mixed again from here on. */
+ * it. But where a rollback puts the game's state back (netplay, the
+ * self-test), the mix's running state is put back with it
+ * (port_RemixKeep, port_RemixPutBack), so that the steps run again are
+ * mixed from where it was then, and the reverb hears each sound once. */
 #include "common.h"
 #include "port_host.h"
 #include "port_remix.h"
@@ -1115,4 +1118,95 @@ void port_RemixFrame(const s32 *cd, const s32 *chip_wet, const s32 *main_volume,
         g_remix.send[side] = 0;
     }
     g_remix.counts.samples++;
+}
+
+/* ---- kept for a rollback ---- */
+
+/* What a sample changes of the mix, but its counts: the room, the sums,
+ * the limiter, the voices' copies, the head's rings and the reverb. */
+typedef struct {
+    u32 kept; /* the setting was on when it was kept */
+    s32 room;
+    s32 dry[2];
+    s32 send[2];
+    s32 waiting[LOOK_AHEAD][2];
+    s32 needs[LOOK_AHEAD];
+    u32 look_at;
+    s32 least;
+    u32 least_at;
+    s32 level;
+    PortRemixVoice voices[PORT_SPU_VOICES];
+    PortRemixPlace places[PORT_REMIX_SOURCES];
+    PortRemixReverb reverb;
+} PortRemixKept;
+
+/* each in memory the system gives, on its first keeping (a reverb's
+ * lines are a quarter of a megabyte) */
+static PortRemixKept *g_remix_kept[PORT_REMIX_KEEPS];
+
+/* (every part is of whole words) */
+static void port_RemixCopy(void *to, const void *from, u32 bytes) {
+    u32 *out = to;
+    const u32 *in = from;
+    u32 i;
+
+    for (i = 0; i < bytes / sizeof(u32); i++) {
+        out[i] = in[i];
+    }
+}
+
+void port_RemixKeep(u32 place) {
+    PortRemixKept *kept;
+
+    if (place >= PORT_REMIX_KEEPS) {
+        return;
+    }
+    if (!g_remix.is_on) {
+        if (g_remix_kept[place] != NULL) {
+            g_remix_kept[place]->kept = FALSE;
+        }
+        return;
+    }
+    if (g_remix_kept[place] == NULL) {
+        g_remix_kept[place] = port_HostAllocate(sizeof(PortRemixKept));
+        if (g_remix_kept[place] == NULL) {
+            return;
+        }
+    }
+    kept = g_remix_kept[place];
+    kept->kept = TRUE;
+    kept->room = g_remix.room;
+    kept->look_at = g_remix.look_at;
+    kept->least = g_remix.least;
+    kept->least_at = g_remix.least_at;
+    kept->level = g_remix.level;
+    port_RemixCopy(kept->dry, g_remix.dry, sizeof(kept->dry));
+    port_RemixCopy(kept->send, g_remix.send, sizeof(kept->send));
+    port_RemixCopy(kept->waiting, g_remix.waiting, sizeof(kept->waiting));
+    port_RemixCopy(kept->needs, g_remix.needs, sizeof(kept->needs));
+    port_RemixCopy(kept->voices, g_remix.voices, sizeof(kept->voices));
+    port_RemixCopy(kept->places, g_remix.places, sizeof(kept->places));
+    port_RemixCopy(&kept->reverb, g_remix.reverb, sizeof(kept->reverb));
+}
+
+void port_RemixPutBack(u32 place) {
+    const PortRemixKept *kept;
+
+    if (place >= PORT_REMIX_KEEPS || g_remix_kept[place] == NULL ||
+        !g_remix_kept[place]->kept || !g_remix.is_on) {
+        return;
+    }
+    kept = g_remix_kept[place];
+    g_remix.room = kept->room;
+    g_remix.look_at = kept->look_at;
+    g_remix.least = kept->least;
+    g_remix.least_at = kept->least_at;
+    g_remix.level = kept->level;
+    port_RemixCopy(g_remix.dry, kept->dry, sizeof(kept->dry));
+    port_RemixCopy(g_remix.send, kept->send, sizeof(kept->send));
+    port_RemixCopy(g_remix.waiting, kept->waiting, sizeof(kept->waiting));
+    port_RemixCopy(g_remix.needs, kept->needs, sizeof(kept->needs));
+    port_RemixCopy(g_remix.voices, kept->voices, sizeof(kept->voices));
+    port_RemixCopy(g_remix.places, kept->places, sizeof(kept->places));
+    port_RemixCopy(g_remix.reverb, &kept->reverb, sizeof(kept->reverb));
 }
