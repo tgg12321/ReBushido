@@ -456,6 +456,7 @@ enum {
     WHY_DIRT,    /* dirt thrown at him */
     WHY_LEAP,    /* the leaping attack, from afar */
     WHY_SHOT,    /* a gun fired at him */
+    WHY_CIRCLE,  /* (no script) circling round him off an edge */
 };
 
 /* its ways in, weighed: WHY_OPENING to WHY_FIRST */
@@ -761,7 +762,10 @@ s32 port_CpuScriptKind(s32 fighter_index) {
 s32 port_CpuScriptWhy(s32 fighter_index) {
     const PortCpuMind *mind = port_CpuMindOf(fighter_index);
 
-    return mind->script != SCRIPT_NONE ? mind->why : WHY_NONE;
+    if (mind->script != SCRIPT_NONE) {
+        return mind->why;
+    }
+    return mind->circle_frames != 0 ? WHY_CIRCLE : WHY_NONE;
 }
 
 s32 port_CpuPlays(s32 fighter_index) {
