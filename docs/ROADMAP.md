@@ -744,10 +744,29 @@ the stage").
     of 1,152 fights past three minutes (53 of 480 before), the levels
     still in order, the game's own CPU untouched with the setting
     Original.
-    Left: circling at an edge; dirt, thrown
-    weapons and guns; levels learned from replays of real players; a
-    person's test of how it feels to fight; the master over the veteran
-    the thinnest step (55 to 57%).
+    The master's choices and the means from afar (2026-11-28; CPU.md,
+    "The master's better choices", "From afar, and at an edge"): the
+    master knows its attacks' speeds (as it has seen each do, or by its
+    buttons: one that crouches first is slow) and strikes a man free to
+    answer only with a quick one, weighs its ways in by what they came to
+    in the match, and reads how he answers (one who meets it as it comes
+    in is feinted at, one who follows a miss is struck at only when he
+    cannot); every level that learns counts what lands rightly now. Every
+    level throws its sub-weapons, throws dirt, leaps in with the game's
+    jump, fires and reloads a gun, steps aside from a thing thrown, a
+    throw begun or a gun raised, as a player sees them, and from the
+    adept up circles off an edge that crowds it and presses a man with
+    his back to one, by its level (the novice throws and leaps most
+    readily, the master dodges most and rushes an opening out of reach).
+    Measured (`tools/port_cpu_bench.py`, now with `--weapons`,
+    `--same-as`, `--person`, and the log's reason for each script): the
+    order stands, each level over the one below; the master over the
+    veteran 60% of 288 (56% before), over the original 57%; no fight of
+    the port's levels past three minutes; the game's own CPU frame for
+    frame the same.
+    Left: the master over the veteran (60%, short of the 65% asked for)
+    is still the thinnest step; levels learned from replays of real players; a
+    person's test of how it feels to fight.
 28. **A resync button** (the owner, 2026-11-26, instead of a desync
     report): when an online session finds the machines' hashes parted, a
     press (any player's, or offered on its own) puts the host's state on

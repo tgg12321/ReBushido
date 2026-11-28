@@ -135,17 +135,20 @@ static void port_CpuLogLine(const char *format, ...) {
  * frame, the frame its blade begins to hit, which attack button began
  * it, the place, his wounds (legs, arm, body, the off arm), the buttons
  * held, whether he has fallen, and the CPU's pad script (its kind, 1
- * up: enum CpuScriptKind) or 0. */
+ * up: enum CpuScriptKind) or 0, and why the port's CPU began it (cpu.c's
+ * WHY_...) or 0. */
 void port_CpuLogPad(s32 fighter_index, const PadState *pad) {
     Fighter *fighter = &g_fighters[fighter_index];
 
     s32 script = 0;
+    s32 why = 0;
 
     if (g_port_cpu_log_path == NULL) {
         return;
     }
     if (port_CpuPlays(fighter_index)) {
         script = port_CpuScriptKind(fighter_index);
+        why = port_CpuScriptWhy(fighter_index);
     } else if (fighter->is_cpu && fighter->cpu_script != NULL) {
         script = fighter->cpu_script_kind + 1;
     }
@@ -159,7 +162,7 @@ void port_CpuLogPad(s32 fighter_index, const PadState *pad) {
         }
     }
     port_CpuLogLine(
-        "f %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
+        "f %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
         (s32)g_disp_frame_count, fighter_index,
         fighter->is_cpu ? (port_CpuPlays(fighter_index) ? 2 : 1) : 0,
         (s32)fighter->move_kind, (s32)fighter->motion_index,
@@ -167,5 +170,5 @@ void port_CpuLogPad(s32 fighter_index, const PadState *pad) {
         (s32)fighter->attack_kind, fighter->world_pos.x, fighter->world_pos.z,
         (s32)fighter->leg_wounds, (s32)fighter->arm_wounds,
         (s32)fighter->body_wounds, (s32)fighter->off_arm_ok,
-        (s32)(pad->held & 0xFFFF), (s32)fighter->is_defeated, script);
+        (s32)(pad->held & 0xFFFF), (s32)fighter->is_defeated, script, why);
 }
