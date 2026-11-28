@@ -172,9 +172,11 @@ static const char g_port_window_usage[] =
     ".gif (640 across, no sound). It is 1920 by 1080 unless --window WxH\n"
     "says, the picture as --graphics or the settings say (docs/PLAYING.md,\n"
     "\"Replays\"). --export-from F --export-to F: those frames alone (the\n"
-    "replay theatre's clip); --theatre-view F,X,Y,Z,P,Y,R,D,H,T the\n"
+    "replay theatre's clip); --theatre-view F,X,Y,Z,P,Y,R,D,H,T,S the\n"
     "theatre's view: the free camera on, its focus, angles and distance,\n"
-    "the HUD hidden, the time of day (\"The replay theatre\"). For a test,\n"
+    "the HUD hidden, the time of day, the screen's distance (the field of\n"
+    "view); --theatre-path F,X,Y,Z,P,Y,R,D,S;... the camera's keys, which\n"
+    "it follows (\"The replay theatre\"). For a test,\n"
     "--theatre-keys WORDS: the theatre's words (tools/port_theatre.py).\n"
     "\n"
     "Online: the settings menu's Play online page, or --host ADDRESS:PORT\n"
@@ -1197,6 +1199,8 @@ int main(int argc, char **argv) {
             options->theatre_keys = argv[++i];
         } else if (strcmp(word, "--theatre-view") == 0 && has_value) {
             options->theatre_view = argv[++i];
+        } else if (strcmp(word, "--theatre-path") == 0 && has_value) {
+            options->theatre_path = argv[++i];
         } else if (strcmp(word, "--export-from") == 0 && has_value) {
             export_from = (u32)atoi(argv[++i]);
         } else if (strcmp(word, "--export-to") == 0 && has_value) {

@@ -11730,6 +11730,58 @@ a blank at a time, stepping no frame, until F4 or Escape. Then the view
 goes back to the game's, the theatre off, and the step runs from the state
 it was left in.
 
+**The field of view** is the coprocessor's screen distance
+(`SetGeomScreen`'s, `PORT_GTE_PLANE`), a member of the theatre's camera
+(`plane`, 0 for the game's). In a look whose camera is free,
+`port_TheatreScene` writes it into the coprocessor as it replaces the
+camera, before `scene_Begin`, where every reader of the projection takes
+it (the remastered stage's view, the fighters', the training's areas);
+the state is put back after the look, as the rest. Outside a look it
+notes the game's own with the game's camera, so the free camera starts
+with the field of view the game had (45 degrees at the side, 80 in first
+person). The window keeps it from 20 to 100 degrees (N M, Ctrl and the
+wheel): the screen's distance 320 / tan of half the angle, the game's
+640 across.
+
+**The camera's keys** (`src/port/window/theatre_path.c`, arithmetic
+held by `tests/port/window.c`; the keys in `sdl_theatre.c`). A key is
+the free camera at a replay's frame (J); up to 64, by their frames.
+Where the free camera follows them (in a replay, a key or more, not let
+go with O), at each boundary whose frame is another than the one it was
+last put on the path at, the view's camera is the path's at the frame
+on show (`port_TheatreFollow`), before the look and before a test's words
+ask of it; so a move by hand lasts until the frame changes, and a key
+can be set from it. Each number of the camera is a cubic Hermite curve
+through the keys with Catmull-Rom's slopes for keys unevenly spaced (at a
+key, the slope of the line through the keys either side; none at the
+first and the last, so that two keys ease out and in). The focus is
+curved as it is; the yaw and the roll are unwrapped the short way round
+from key to key and curved; the distance by its inverse and the field
+of view by its screen distance, what a thing's size on the screen goes
+as, so that a zoom is even. The pitch, the distance and the field of view
+are kept within the keys' own where the curve would overshoot. Slerp on
+a quaternion was weighed for the turn and left: the camera is an orbit's
+(a pitch held short of straight up and down, a yaw, no roll of its own),
+whose angles have no pole to pass, and a slerp from one key to the next
+would tilt the horizon between them and break the curve's smoothness at
+each key. A clip (G) passes the keys to its run as `--theatre-path`
+(nine numbers a key; the view's words have an eleventh, the screen
+distance), which follows them at the frames it plays, as the theatre did.
+
+**The seek bar** (`port_TheatreDrawBar`, from `port_DrawCounter`): a
+strip of the game's panel across the bottom of the 4:3 area, drawn as
+the window's pages are (`page_look.c`'s box, colours, lettering and the
+cursor's pulse) into a page of the area's size of which only the strip
+is cleared and laid over the picture (`port_LayPixels`). Shown in a
+replay of the theatre's (not a film's run) with the HUD and the line, or
+for 2.5 seconds after the mouse moves, or while it is held. A press of
+the left button on the strip seeks to the frame under it
+(`port_BarFrameAt`: the nearest frame to the pixel, the track's ends
+past them) and a drag along it seeks each time the frame under it
+changes; the button's press anywhere else is the camera's, as before.
+The mouse's points are taken into the window's pixels
+(`port_MouseToPixels`) where the window's units are not its pixels.
+
 **What it costs.** A look is two steps and three snapshots' worth of
 copies (the pages written since); the card draws one frame a look and
 none for the step unseen. Measured, the first 200 frames of a fight's
@@ -11763,10 +11815,23 @@ taken down to the GIF's size); `photo`: a fight of two
 CPUs paused in photo mode (the camera turned, the HUD hidden, four
 times of day, four stills) has at inputs 300, 600 and 900 the state's
 hash of the same fight without it, and photo mode is refused in a
-replay. Every check passed both ways (2026-11-27): the Linux program
+replay; `path`: keys at frames 200 and 260 (the second moved, turned,
+nearer and at 75 degrees, `fov:`), the camera at 230 and 215 the
+curve's (to a unit), the state's hash at 230 a plain seek's, the
+theatre's clip of 200 to 260 decoded with its middle picture far from
+both ends and every picture another than the one before, and a film's
+run given the keys (`--theatre-path`) with the playback's cameras at
+its frames and its first and last pictures within a channel's mean of
+6 of 255 of the keys' stills; `bar`: a press at 30 per cent of the
+track (SDL's events, `click:`) lands on the frame of that pixel, with a
+seek's hash there, a drag to 60 per cent on its frame, a press above
+the strip on none, and the window as shown (`shown:`) is the still but
+in the strip's rows. Every check passed both ways (2026-11-27): the Linux program
 on llvmpipe (the remastered look within 1.51 of 255) and the Windows
-program on the owner's card (1.40). Examples for the eye in
-`tmp/theatre/`. The rollback self-test
+program on the owner's card (1.40); `path` and `bar` too, both ways
+(the film's ends within 3.45 of the keys' stills on llvmpipe, 3.43 on
+the card). Examples for the eye in `tmp/theatre/`, and of the keys and
+the seek bar in `tmp/theatre2/`. The rollback self-test
 (`port-rollback`) runs the core with the theatre's hooks in.
 
 ## Stats

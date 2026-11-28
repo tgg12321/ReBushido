@@ -78,7 +78,8 @@ OUT_DIR = 'build/port-sdl'
 WINDOW_DIR = 'src/port/window/'
 # The window's arithmetic: compiled as the port's own files, and tested on
 # every push (tests/port/window.c).
-WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c', 'settext.c', 'choices.c', 'cpus.c']
+WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c', 'settext.c', 'choices.c', 'cpus.c',
+                'theatre_path.c']
 # What reads the game's variables out for the session's log: the port's own
 # as well, and not in that test, which has no game.
 WINDOW_GAME = ['gamestate.c']

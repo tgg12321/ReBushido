@@ -28,6 +28,7 @@
 #include "port_theatre.h"
 #include "shared.h"
 #include "sdl_window.h"
+#include "theatre_path.h"
 
 /* the inputs the game has taken (port_platform.h, which a file of the
  * host's side cannot include beside the C library) */
@@ -62,6 +63,42 @@ extern s32 port_LinkIsUp(void);
 #define BLANK_MS 16
 /* a clip asked for with no marks: from the frame on show, so long */
 #define CLIP_FRAMES_BUILT_IN 150
+/* the field of view: the game's own 640 across (disp.h's DISP_WIDTH), the
+ * screen's distance 320 / tan(half the angle), from 20 to 100 degrees
+ * (the game's side view is 45, its first person 80); a second held moves
+ * it 30 degrees, a notch of the wheel with Ctrl 2.5 */
+#define SCREEN_HALF 320.0
+#define FOV_LEAST 20.0
+#define FOV_MOST 100.0
+#define FOV_GAME 45.0
+#define FOV_A_SECOND 30.0
+#define FOV_A_NOTCH 2.5
+/* the camera's path as --theatre-path words: a key's nine numbers */
+#define KEY_WORD_BYTES 120
+#define PATH_WORD_BYTES (PORT_PATH_KEYS * KEY_WORD_BYTES)
+/* The seek bar, in the game's 640 by 240 (menu.h, PORT_LOOK_GAME_W): a
+ * strip of the game's panel across the bottom, the time on show at the
+ * left of its track and the replay's length at the right; the track's
+ * line and the part played, the clip's marks and the camera's keys on
+ * it, and the frame on show. Shown with the HUD, and for a while after
+ * the mouse moves; the mouse's press on it seeks, a drag along it too. */
+#define BAR_X PORT_LOOK_PANEL_X
+#define BAR_W PORT_LOOK_PANEL_W
+#define BAR_Y 205
+#define BAR_H 26
+#define TRACK_X (BAR_X + 60)
+#define TRACK_W (BAR_W - 120)
+#define TRACK_Y 217
+#define TRACK_LINE 2
+#define TRACK_TEXT_GAP 7
+#define TEXT_BASE 221
+#define HEAD_W 4
+#define HEAD_UP 6
+#define MARK_UP 5
+#define KEY_W 5
+#define KEY_DOWN 3
+#define KEY_H 4
+#define BAR_MOUSE_MS 2500
 
 enum {
     HELD_FORWARD,
@@ -76,6 +113,8 @@ enum {
     HELD_PITCH_DOWN,
     HELD_NEARER,
     HELD_FARTHER,
+    HELD_NARROWER,
+    HELD_WIDER,
     HELD_COUNT
 };
 
@@ -109,28 +148,45 @@ static struct {
     s32 wait;
     s32 export_sought; /* a clip's run went to its first frame */
     s32 plain;         /* a test's replay with no look (`plain`) */
+    /* the camera's path: its keys, whether the free camera follows them,
+     * and the frame it was last put on it at, plus one */
+    PortPath path;
+    s32 path_on;
+    u32 path_frame;
+    /* the seek bar: held by the mouse, the frame the drag last sought
+     * (plus one), where the mouse is and when it last moved */
+    s32 bar_held;
+    u32 bar_sought;
+    s32 mouse_x;
+    s32 mouse_y;
+    u32 mouse_at;
+    PortLook bar;
 } g_theatre;
 
 /* ---- the view as words (--theatre-view; a clip's run) ---- */
 
 /* free, the focus's three, the angles' three, the distance, the HUD hidden,
- * the time: ten numbers with commas */
+ * the time, and the screen's distance (the field of view; 0 the game's):
+ * eleven numbers with commas, the last of which may be left out */
 static void port_TheatreViewWords(
     const PortTheatreView *view, char *out, u32 room) {
     snprintf(
-        out, room, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", view->free,
+        out, room, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", view->free,
         view->camera.focus[0], view->camera.focus[1], view->camera.focus[2],
         view->camera.angles[0], view->camera.angles[1], view->camera.angles[2],
-        view->camera.distance, view->hide_hud, view->time);
+        view->camera.distance, view->hide_hud, view->time, view->camera.plane);
 }
 
 static s32 port_TheatreReadView(const char *words, PortTheatreView *view) {
-    int n[10];
+    int n[11];
+    s32 count =
+        sscanf(words, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &n[0], &n[1], &n[2],
+               &n[3], &n[4], &n[5], &n[6], &n[7], &n[8], &n[9], &n[10]);
 
-    if (sscanf(words, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &n[0], &n[1], &n[2],
-               &n[3], &n[4], &n[5], &n[6], &n[7], &n[8], &n[9]) != 10) {
+    if (count < 10) {
         return FALSE;
     }
+    view->camera.plane = count == 11 && n[10] > 0 ? n[10] : 0;
     view->free = n[0] != 0;
     view->camera.focus[0] = n[1];
     view->camera.focus[1] = n[2];
@@ -141,6 +197,63 @@ static s32 port_TheatreReadView(const char *words, PortTheatreView *view) {
     view->camera.distance = n[7];
     view->hide_hud = n[8] != 0;
     view->time = n[9] >= -1 && n[9] < PORT_TIME_COUNT ? n[9] : -1;
+    return TRUE;
+}
+
+/* The camera's path (--theatre-path; a clip's run): each key's frame,
+ * focus, angles, distance and screen's distance, nine numbers with
+ * commas, the keys between semicolons. */
+static void port_TheatrePathWords(const PortPath *path, char *out, u32 room) {
+    u32 used = 0;
+    s32 i;
+
+    out[0] = 0;
+    for (i = 0; i < path->count && used < room; i++) {
+        const PortPathKey *key = &path->keys[i];
+        s32 n = snprintf(
+            out + used, room - used, "%s%u,%d,%d,%d,%d,%d,%d,%d,%d",
+            i > 0 ? ";" : "", key->frame, key->camera.focus[0],
+            key->camera.focus[1], key->camera.focus[2], key->camera.angles[0],
+            key->camera.angles[1], key->camera.angles[2], key->camera.distance,
+            key->camera.plane);
+
+        if (n < 0) {
+            break;
+        }
+        used += (u32)n;
+    }
+}
+
+static s32 port_TheatreReadPath(const char *words, PortPath *path) {
+    const char *at = words;
+
+    path->count = 0;
+    while (*at != 0) {
+        PortTheatreCamera camera;
+        unsigned frame;
+        int n[8];
+
+        if (sscanf(at, "%u,%d,%d,%d,%d,%d,%d,%d,%d", &frame, &n[0], &n[1],
+                   &n[2], &n[3], &n[4], &n[5], &n[6], &n[7]) != 9) {
+            return FALSE;
+        }
+        camera.focus[0] = n[0];
+        camera.focus[1] = n[1];
+        camera.focus[2] = n[2];
+        camera.angles[0] = (s16)n[3];
+        camera.angles[1] = (s16)n[4];
+        camera.angles[2] = (s16)n[5];
+        camera.distance = n[6];
+        camera.plane = n[7];
+        if (port_PathSet(path, frame, &camera) < 0) {
+            return FALSE;
+        }
+        at = strchr(at, ';');
+        if (at == NULL) {
+            break;
+        }
+        at++;
+    }
     return TRUE;
 }
 
@@ -159,6 +272,15 @@ void port_StartTheatre(void) {
         port_Say("--theatre-view: not ten numbers: %s",
                  g_port_window_options.theatre_view);
         port_Quit(PORT_EXIT_FAILED);
+    }
+    if (g_port_window_options.theatre_path != NULL) {
+        if (!port_TheatreReadPath(
+                g_port_window_options.theatre_path, &g_theatre.path)) {
+            port_Say("--theatre-path: not keys of nine numbers: %s",
+                     g_port_window_options.theatre_path);
+            port_Quit(PORT_EXIT_FAILED);
+        }
+        g_theatre.path_on = g_theatre.path.count > 0;
     }
     port_TheatreSetView(&g_theatre.view);
     g_theatre.words = g_port_window_options.theatre_keys;
@@ -198,6 +320,9 @@ static void port_TheatreApply(void) {
     g_theatre.changed = TRUE;
 }
 
+static s32 port_TheatrePlane(double fov);
+static s32 port_TheatreFollows(void);
+
 /* The free camera on, from the game's own where it was off. */
 static void port_TheatreFree(void) {
     PortTheatreCamera game;
@@ -211,11 +336,35 @@ static void port_TheatreFree(void) {
     if (g_theatre.view.camera.distance < DISTANCE_LEAST) {
         g_theatre.view.camera.distance = DISTANCE_LEAST;
     }
+    if (g_theatre.view.camera.plane <= 0) {
+        /* the game's field of view, where it was never seen */
+        g_theatre.view.camera.plane = port_TheatrePlane(FOV_GAME);
+    }
     g_theatre.view.free = TRUE;
     port_TheatreApply();
 }
 
 static double port_Radians(s32 angle) { return angle * 2.0 * PI / TURN; }
+
+/* The field of view of a screen's distance, in degrees (the game's side
+ * view's where it is not known), and the screen's distance of one. */
+static double port_TheatreFov(s32 plane) {
+    return plane > 0 ? 2.0 * SDL_atan(SCREEN_HALF / plane) * 180.0 / PI
+                     : FOV_GAME;
+}
+
+static s32 port_TheatrePlane(double fov) {
+    fov = fov < FOV_LEAST ? FOV_LEAST : fov > FOV_MOST ? FOV_MOST : fov;
+    return (s32)(SCREEN_HALF / SDL_tan(fov * PI / 360.0) + 0.5);
+}
+
+/* The free camera's field of view widened by `degrees` (narrowed where
+ * fewer than none), within FOV_LEAST and FOV_MOST. */
+static void port_TheatreWiden(double degrees) {
+    PortTheatreCamera *camera = &g_theatre.view.camera;
+
+    camera->plane = port_TheatrePlane(port_TheatreFov(camera->plane) + degrees);
+}
 
 /* The camera moved `forward` and `right` along the ground the way it
  * looks, and `up`, in world units (y is down: up is less y). As
@@ -268,6 +417,7 @@ static void port_TheatreMotion(void) {
     double yaw;
     double pitch;
     double zoom;
+    double wider;
     const s32 *held = g_theatre.held;
 
     if (g_theatre.ticked_at == 0 || now - g_theatre.ticked_at > TICK_MOST_MS) {
@@ -285,8 +435,9 @@ static void port_TheatreMotion(void) {
             port_Stick(g_theatre.stick[3]);
     zoom = held[HELD_FARTHER] - held[HELD_NEARER] +
            (g_theatre.triggers[1] - g_theatre.triggers[0]) / STICK_FULL;
+    wider = held[HELD_WIDER] - held[HELD_NARROWER];
     if (forward == 0 && right == 0 && up == 0 && yaw == 0 && pitch == 0 &&
-        zoom == 0) {
+        zoom == 0 && wider == 0) {
         return;
     }
     port_TheatreFree();
@@ -302,6 +453,9 @@ static void port_TheatreMotion(void) {
     port_TheatreTurn(yaw * ORBIT_A_SECOND * speed * seconds,
                      pitch * ORBIT_A_SECOND * speed * seconds);
     port_TheatreZoom(SDL_exp(zoom * ZOOM_A_SECOND * speed * seconds));
+    if (wider != 0) {
+        port_TheatreWiden(wider * FOV_A_SECOND * speed * seconds);
+    }
     port_TheatreApply();
 }
 
@@ -378,6 +532,15 @@ static void port_TheatreClip(u32 from, u32 to, s32 is_gif) {
     clip.from = from < to ? from : to;
     clip.to = from < to ? to : from;
     clip.view = view;
+    clip.path = NULL;
+    if (port_TheatreFollows()) {
+        /* the camera's keys with it: the clip's run follows them */
+        static char g_path_words[PATH_WORD_BYTES];
+
+        port_TheatrePathWords(
+            &g_theatre.path, g_path_words, sizeof(g_path_words));
+        clip.path = g_path_words;
+    }
     clip.is_gif = is_gif;
     if (!port_ExportClip(path, name, &clip, why, sizeof(why))) {
         port_TheatreSays("no clip: %s", why);
@@ -451,6 +614,304 @@ static void port_TheatrePhoto(void) {
     port_TheatreFree();
 }
 
+/* ---- the camera's path ---- */
+
+/* Whether the free camera follows its path: in a replay, with a key or
+ * more, and not let go of it (O). */
+static s32 port_TheatreFollows(void) {
+    return g_theatre.replay && g_theatre.path_on && g_theatre.view.free &&
+           g_theatre.path.count > 0;
+}
+
+/* The free camera put on its path at the frame on show, where it follows
+ * one and was not put there at this frame already: a move of the player's
+ * stays until the frame changes, so that a key can be set from it. */
+static void port_TheatreFollow(void) {
+    PortReplayStatus status;
+    PortTheatreCamera camera;
+
+    if (!port_TheatreFollows()) {
+        return;
+    }
+    port_GetReplayStatus(&status);
+    if (g_theatre.path_frame == status.frame + 1) {
+        return;
+    }
+    g_theatre.path_frame = status.frame + 1;
+    if (port_PathAt(&g_theatre.path, status.frame, &camera)) {
+        g_theatre.view.camera = camera;
+        port_TheatreApply();
+    }
+}
+
+/* A key of the free camera as it is at the frame on show (J, Insert). */
+static void port_TheatreKey(void) {
+    PortReplayStatus status;
+    char words[WORD_BYTES];
+
+    port_GetReplayStatus(&status);
+    port_TheatreFree();
+    if (port_PathSet(&g_theatre.path, status.frame, &g_theatre.view.camera) <
+        0) {
+        snprintf(words, sizeof(words), "no key: the path has %d already",
+                 PORT_PATH_KEYS);
+        port_TheatreSays("%s", words);
+        return;
+    }
+    g_theatre.path_on = TRUE;
+    g_theatre.path_frame = status.frame + 1;
+    snprintf(words, sizeof(words),
+             "a key of the camera at frame %u (%d in all), %.0f degrees seen",
+             status.frame, g_theatre.path.count,
+             port_TheatreFov(g_theatre.view.camera.plane));
+    port_TheatreSays("%s", words);
+}
+
+/* The key nearest the frame on show cleared (U, Delete), or all of them
+ * (with Shift). */
+static void port_TheatreUnkey(s32 all) {
+    PortReplayStatus status;
+    char words[WORD_BYTES];
+    u32 cleared = 0;
+
+    port_GetReplayStatus(&status);
+    g_theatre.path_frame = 0;
+    if (all) {
+        snprintf(words, sizeof(words), "the camera's %d keys cleared",
+                 g_theatre.path.count);
+        g_theatre.path.count = 0;
+    } else if (port_PathClear(&g_theatre.path, status.frame, &cleared)) {
+        snprintf(words, sizeof(words), "the key at frame %u cleared (%d left)",
+                 cleared, g_theatre.path.count);
+    } else {
+        snprintf(words, sizeof(words), "%s", "no key to clear");
+    }
+    port_TheatreSays("%s", words);
+}
+
+/* The camera on its path, or let go of it to be moved freely as it plays
+ * (O). */
+static void port_TheatrePathKey(void) {
+    g_theatre.path_on = !g_theatre.path_on;
+    g_theatre.path_frame = 0;
+    port_TheatreSays(
+        "%s", g_theatre.path.count == 0 ? "no keys: J sets one"
+              : g_theatre.path_on       ? "the camera follows its keys"
+                                        : "the camera let go of its keys");
+}
+
+/* ---- the seek bar ---- */
+
+/* Where the bar is in the window's pixels: its strip, and its track. */
+typedef struct {
+    PortRect area; /* the game's 4:3 area */
+    PortRect band;
+    PortRect track;
+} TheatreBarPlace;
+
+static void port_TheatreBarPlace(TheatreBarPlace *place) {
+    PortRect *area = &place->area;
+
+    port_GetLookArea(area);
+    place->band.x = area->x + BAR_X * area->w / PORT_LOOK_GAME_W;
+    place->band.w =
+        area->x + (BAR_X + BAR_W) * area->w / PORT_LOOK_GAME_W - place->band.x;
+    place->band.y = area->y + BAR_Y * area->h / PORT_LOOK_GAME_H;
+    place->band.h =
+        area->y + (BAR_Y + BAR_H) * area->h / PORT_LOOK_GAME_H - place->band.y;
+    place->track.x = area->x + TRACK_X * area->w / PORT_LOOK_GAME_W;
+    place->track.w =
+        area->x + (TRACK_X + TRACK_W) * area->w / PORT_LOOK_GAME_W -
+        place->track.x;
+    place->track.y = area->y + TRACK_Y * area->h / PORT_LOOK_GAME_H;
+    place->track.h = TRACK_LINE * area->h / PORT_LOOK_GAME_H;
+    if (place->track.h < 1) {
+        place->track.h = 1;
+    }
+}
+
+/* Whether the bar is shown: in a replay of the theatre's (not a film's
+ * run), with the HUD and the line, or for a while after the mouse moved,
+ * or while it is held. */
+static s32 port_TheatreBarShown(void) {
+    if (!g_theatre.replay || port_ExportIsOn()) {
+        return FALSE;
+    }
+    if (g_theatre.bar_held ||
+        (g_theatre.mouse_at != 0 &&
+         SDL_GetTicks() - g_theatre.mouse_at < BAR_MOUSE_MS)) {
+        return TRUE;
+    }
+    return !g_theatre.view.hide_hud && !g_theatre.line_hidden;
+}
+
+static s32 port_TheatreOnBar(s32 x, s32 y) {
+    TheatreBarPlace place;
+
+    if (!port_TheatreBarShown()) {
+        return FALSE;
+    }
+    port_TheatreBarPlace(&place);
+    return x >= place.band.x && x < place.band.x + place.band.w &&
+           y >= place.band.y && y < place.band.y + place.band.h;
+}
+
+/* The frame at the mouse's `x` on the bar sought, where it is another
+ * than the drag sought last. */
+static void port_TheatreBarSeek(s32 x) {
+    PortReplayStatus status;
+    TheatreBarPlace place;
+    u32 frame;
+
+    port_GetReplayStatus(&status);
+    port_TheatreBarPlace(&place);
+    frame = port_BarFrameAt(x, place.track.x, place.track.w, status.frames);
+    if (g_theatre.bar_sought == frame + 1) {
+        return;
+    }
+    g_theatre.bar_sought = frame + 1;
+    port_ReplaySeekTo(frame);
+}
+
+static void port_TheatreMouseAt(s32 x, s32 y) {
+    g_theatre.mouse_x = x;
+    g_theatre.mouse_y = y;
+    g_theatre.mouse_at = SDL_GetTicks();
+    if (g_theatre.mouse_at == 0) {
+        g_theatre.mouse_at = 1;
+    }
+}
+
+/* A time as the line says it: minutes and seconds. */
+static void port_TheatreClock(u32 frame, char *out, u32 room) {
+    u32 seconds = frame / FRAMES_PER_SECOND;
+
+    snprintf(out, room, "%u:%02u", seconds / 60, seconds % 60);
+}
+
+void port_TheatreDrawBar(void) {
+    PortReplayStatus status;
+    TheatreBarPlace place;
+    PortLook *look = &g_theatre.bar;
+    char words[32];
+    u32 need;
+    s32 left;
+    s32 top;
+    s32 line;
+    s32 x;
+    s32 i;
+
+    if (!port_TheatreBarShown()) {
+        return;
+    }
+    port_GetReplayStatus(&status);
+    port_TheatreBarPlace(&place);
+    if (place.area.w <= 0 || place.area.h <= 0 || status.frames == 0) {
+        return;
+    }
+    if (!look->font_ok) {
+        look->font_ok = port_FontStart();
+        if (!look->font_ok) {
+            return;
+        }
+    }
+    /* a page of the game's look the size of its area, of which only the
+     * bar's strip is cleared, drawn and laid over the picture */
+    need = (u32)(place.area.w * place.area.h);
+    if (need > look->room) {
+        free(look->pixels);
+        look->pixels = malloc((size_t)need * sizeof(u32));
+        look->room = look->pixels != NULL ? need : 0;
+    }
+    if (look->pixels == NULL) {
+        return;
+    }
+    look->area_w = place.area.w;
+    look->area_h = place.area.h;
+    top = place.band.y - place.area.y;
+    memset(look->pixels + top * look->area_w, 0,
+           (size_t)(look->area_w * place.band.h) * sizeof(u32));
+    /* the game's panel, and the track's line on it */
+    port_LookBox(look, BAR_X, BAR_Y, BAR_W, BAR_H, PORT_LOOK_PANEL);
+    left = place.track.x - place.area.x;
+    line = place.track.h;
+    top = place.track.y - place.area.y;
+    port_FillRect(look->pixels, look->area_w, look->area_h, left,
+                  top - line / 2, place.track.w, line, PORT_LOOK_OFF);
+    /* the part played, in the rows' gold */
+    x = port_BarXOf(status.frame, left, place.track.w, status.frames);
+    port_FillRect(look->pixels, look->area_w, look->area_h, left,
+                  top - line / 2, x - left, line, PORT_LOOK_ROW);
+    /* the clip's frames marked, brighter and thicker, its ends in white */
+    if (g_theatre.has_in || g_theatre.has_out) {
+        u32 from = g_theatre.has_in ? g_theatre.mark_in : 0;
+        u32 to = g_theatre.has_out ? g_theatre.mark_out : status.frames - 1;
+        s32 a = port_BarXOf(
+            from < to ? from : to, left, place.track.w, status.frames);
+        s32 b = port_BarXOf(
+            from < to ? to : from, left, place.track.w, status.frames);
+        s32 up = MARK_UP * look->area_h / PORT_LOOK_GAME_H;
+
+        port_FillRect(
+            look->pixels, look->area_w, look->area_h, a,
+            top - line / 2 - line / 2, b - a + 1, line + line, PORT_LOOK_GOLD);
+        if (g_theatre.has_in) {
+            port_FillRect(look->pixels, look->area_w, look->area_h, a, top - up,
+                          line > 1 ? line / 2 + 1 : 1, 2 * up, PORT_LOOK_WHITE);
+        }
+        if (g_theatre.has_out) {
+            port_FillRect(look->pixels, look->area_w, look->area_h, b, top - up,
+                          line > 1 ? line / 2 + 1 : 1, 2 * up, PORT_LOOK_WHITE);
+        }
+    }
+    /* the camera's keys, in green under the track */
+    for (i = 0; i < g_theatre.path.count; i++) {
+        s32 kx = port_BarXOf(
+            g_theatre.path.keys[i].frame, left, place.track.w, status.frames);
+        s32 w = KEY_W * look->area_w / PORT_LOOK_GAME_W;
+
+        w = w < 2 ? 2 : w;
+        port_FillRect(look->pixels, look->area_w, look->area_h, kx - w / 2,
+                      top + KEY_DOWN * look->area_h / PORT_LOOK_GAME_H, w,
+                      KEY_H * look->area_h / PORT_LOOK_GAME_H + 1,
+                      port_TheatreFollows() ? PORT_LOOK_GOOD : PORT_LOOK_GREY);
+    }
+    /* where the mouse would seek to */
+    if (!g_theatre.bar_held &&
+        port_TheatreOnBar(g_theatre.mouse_x, g_theatre.mouse_y)) {
+        s32 mx = g_theatre.mouse_x - place.area.x;
+        s32 up = HEAD_UP * look->area_h / PORT_LOOK_GAME_H;
+
+        if (mx >= left && mx <= left + place.track.w) {
+            port_FillRect(
+                look->pixels, look->area_w, look->area_h, mx, top - up,
+                line > 1 ? line / 2 : 1, 2 * up, PORT_LOOK_GREY);
+        }
+    }
+    /* the frame on show: the cursor's yellow, glowing as the game's */
+    {
+        s32 w = HEAD_W * look->area_w / PORT_LOOK_GAME_W;
+        s32 up = HEAD_UP * look->area_h / PORT_LOOK_GAME_H;
+
+        w = w < 2 ? 2 : w;
+        port_FillRect(
+            look->pixels, look->area_w, look->area_h, x - w / 2, top - up, w,
+            2 * up, port_LookPulse((s32)(SDL_GetTicks() / BLANK_MS / 2)));
+    }
+    /* the time on show and the replay's length either side */
+    port_TheatreClock(status.frame, words, sizeof(words));
+    port_LookText(
+        look, TRACK_X - TRACK_TEXT_GAP, TEXT_BASE, PORT_LOOK_SIZE_NOTE,
+        PORT_FACE_BOLD, words, PORT_LOOK_WHITE, PORT_LOOK_RIGHT);
+    port_TheatreClock(status.frames, words, sizeof(words));
+    port_LookText(look, TRACK_X + TRACK_W + TRACK_TEXT_GAP, TEXT_BASE,
+                  PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, words, PORT_LOOK_GREY,
+                  PORT_LOOK_LEFT);
+    top = place.band.y - place.area.y;
+    port_LayPixels(look->pixels + top * look->area_w, look->area_w,
+                   place.band.h, place.area.x, place.band.y);
+}
+
 /* ---- the keys, the mouse and the sticks ---- */
 
 static s32 port_TheatreHeldKey(SDL_Scancode code, s32 down) {
@@ -480,6 +941,12 @@ static s32 port_TheatreHeldKey(SDL_Scancode code, s32 down) {
         break;
     case SDL_SCANCODE_X:
         held = HELD_FARTHER;
+        break;
+    case SDL_SCANCODE_N:
+        held = HELD_NARROWER;
+        break;
+    case SDL_SCANCODE_M:
+        held = HELD_WIDER;
         break;
     case SDL_SCANCODE_LEFT:
         held = g_theatre.view.free ? HELD_YAW_LEFT : -1;
@@ -559,6 +1026,17 @@ static s32 port_TheatrePressed(SDL_Scancode code) {
     case SDL_SCANCODE_G:
         port_TheatreClipMarked();
         return TRUE;
+    case SDL_SCANCODE_J:
+    case SDL_SCANCODE_INSERT:
+        port_TheatreKey();
+        return TRUE;
+    case SDL_SCANCODE_U:
+    case SDL_SCANCODE_DELETE:
+        port_TheatreUnkey(g_theatre.shift);
+        return TRUE;
+    case SDL_SCANCODE_O:
+        port_TheatrePathKey();
+        return TRUE;
     default:
         break;
     }
@@ -616,14 +1094,41 @@ s32 port_TheatreWindowEvent(const union SDL_Event *event) {
     }
     switch (event->type) {
     case SDL_MOUSEBUTTONDOWN:
-    case SDL_MOUSEBUTTONUP:
+    case SDL_MOUSEBUTTONUP: {
+        s32 down = event->type == SDL_MOUSEBUTTONDOWN;
+        s32 x = event->button.x;
+        s32 y = event->button.y;
+
+        port_MouseToPixels(&x, &y);
+        port_TheatreMouseAt(x, y);
         if (event->button.button == SDL_BUTTON_LEFT) {
-            g_theatre.mouse_left = event->type == SDL_MOUSEBUTTONDOWN;
+            if (down && port_TheatreOnBar(x, y)) {
+                /* the seek bar's: a press seeks, and a drag along it */
+                g_theatre.bar_held = TRUE;
+                g_theatre.bar_sought = 0;
+                port_TheatreBarSeek(x);
+                return TRUE;
+            }
+            if (!down && g_theatre.bar_held) {
+                g_theatre.bar_held = FALSE;
+                return TRUE;
+            }
+            g_theatre.mouse_left = down;
         } else if (event->button.button == SDL_BUTTON_RIGHT) {
-            g_theatre.mouse_right = event->type == SDL_MOUSEBUTTONDOWN;
+            g_theatre.mouse_right = down;
         }
         return TRUE;
-    case SDL_MOUSEMOTION:
+    }
+    case SDL_MOUSEMOTION: {
+        s32 x = event->motion.x;
+        s32 y = event->motion.y;
+
+        port_MouseToPixels(&x, &y);
+        port_TheatreMouseAt(x, y);
+        if (g_theatre.bar_held) {
+            port_TheatreBarSeek(x);
+            return TRUE;
+        }
         if (g_theatre.mouse_left || g_theatre.mouse_right) {
             port_TheatreFree();
             if (g_theatre.mouse_left) {
@@ -638,9 +1143,15 @@ s32 port_TheatreWindowEvent(const union SDL_Event *event) {
             port_TheatreApply();
         }
         return TRUE;
+    }
     case SDL_MOUSEWHEEL:
         port_TheatreFree();
-        port_TheatreZoom(1.0 - event->wheel.y * WHEEL_ZOOM);
+        if (SDL_GetModState() & KMOD_CTRL) {
+            /* with Ctrl, the field of view: up narrower, as a zoom in */
+            port_TheatreWiden(-event->wheel.y * FOV_A_NOTCH);
+        } else {
+            port_TheatreZoom(1.0 - event->wheel.y * WHEEL_ZOOM);
+        }
         port_TheatreApply();
         return TRUE;
     case SDL_CONTROLLERAXISMOTION:
@@ -718,6 +1229,68 @@ static void port_TheatreHash(void) {
              "paused %d",
              status.frame, g_port_input_count, (u32)(hash >> 32), (u32)hash,
              counts.looks, counts.failed, status.is_paused);
+}
+
+/* The camera a look draws with now, for a test (`camera`). */
+static void port_TheatreSayCamera(void) {
+    PortReplayStatus status;
+    const PortTheatreCamera *camera = &g_theatre.view.camera;
+
+    port_GetReplayStatus(&status);
+    port_Say("theatre: camera at frame %u free %d follows %d keys %d focus %d "
+             "%d %d angles %d %d %d distance %d plane %d fov %.2f",
+             status.frame, g_theatre.view.free, port_TheatreFollows(),
+             g_theatre.path.count, camera->focus[0], camera->focus[1],
+             camera->focus[2], camera->angles[0], camera->angles[1],
+             camera->angles[2], camera->distance, camera->plane,
+             port_TheatreFov(camera->plane));
+}
+
+/* Where the seek bar is, for a test (`bar`): its track in the window's
+ * pixels, the strip a press on it seeks from, the replay's frames. */
+static void port_TheatreSayBar(void) {
+    PortReplayStatus status;
+    TheatreBarPlace place;
+
+    port_GetReplayStatus(&status);
+    port_TheatreBarPlace(&place);
+    port_Say("theatre: bar track %d %d band %d %d %d %d frames %u shown %d",
+             place.track.x, place.track.w, place.band.x, place.band.y,
+             place.band.w, place.band.h, status.frames, port_TheatreBarShown());
+}
+
+/* The mouse moved to (`from`, `y`), its left button pressed there, moved
+ * along to `to` and let go, as SDL's events of them (`click:`, `drag:`),
+ * in the window's own units. */
+static void port_TheatreTestMouse(s32 from, s32 to, s32 y) {
+    SDL_Event event;
+    s32 i;
+
+    SDL_zero(event);
+    event.type = SDL_MOUSEMOTION;
+    event.motion.x = from;
+    event.motion.y = y;
+    port_TheatreWindowEvent(&event);
+    SDL_zero(event);
+    event.type = SDL_MOUSEBUTTONDOWN;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.x = from;
+    event.button.y = y;
+    port_TheatreWindowEvent(&event);
+    for (i = 1; i <= 4 && to != from; i++) {
+        SDL_zero(event);
+        event.type = SDL_MOUSEMOTION;
+        event.motion.x = from + (to - from) * i / 4;
+        event.motion.y = y;
+        event.motion.xrel = (to - from) / 4;
+        port_TheatreWindowEvent(&event);
+    }
+    SDL_zero(event);
+    event.type = SDL_MOUSEBUTTONUP;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.x = to;
+    event.button.y = y;
+    port_TheatreWindowEvent(&event);
 }
 
 /* One word, where its time has come: FALSE where it waits (at:, input:,
@@ -809,6 +1382,36 @@ static s32 port_TheatreWord(const char *word) {
         g_theatre.plain = TRUE;
     } else if (strcmp(word, "hold") == 0) {
         port_ReplayControl(PORT_REPLAY_HOLD);
+    } else if (sscanf(word, "fov:%d", &a) == 1) {
+        port_TheatreFree();
+        g_theatre.view.camera.plane = port_TheatrePlane(a);
+        port_TheatreApply();
+    } else if (strcmp(word, "key") == 0) {
+        port_TheatreKey();
+    } else if (strcmp(word, "unkey") == 0) {
+        port_TheatreUnkey(FALSE);
+    } else if (strcmp(word, "unkey-all") == 0) {
+        port_TheatreUnkey(TRUE);
+    } else if (strcmp(word, "path") == 0) {
+        port_TheatrePathKey();
+    } else if (strcmp(word, "in") == 0 || strcmp(word, "out") == 0) {
+        port_TheatreMark(word[0] == 'o');
+    } else if (strcmp(word, "camera") == 0) {
+        port_TheatreSayCamera();
+    } else if (strcmp(word, "bar") == 0) {
+        port_TheatreSayBar();
+    } else if (sscanf(word, "click:%d:%d", &a, &b) == 2) {
+        port_TheatreTestMouse(a, a, b);
+    } else if (sscanf(word, "drag:%d:%d:%d", &a, &b, &c) == 3) {
+        port_TheatreTestMouse(a, b, c);
+    } else if (sscanf(word, "shown:%1000s", path) == 1) {
+        s32 was = g_port_unseen;
+
+        /* the picture on show (port_TheatreStill), with what is over it */
+        g_port_unseen = port_TheatreShowsLook() || was;
+        port_Say("theatre: the window shown%s: %s",
+                 port_WriteWindowShown(path) ? "" : " not written", path);
+        g_port_unseen = was;
     } else if (strcmp(word, "quit") == 0) {
         port_Quit(PORT_EXIT_OK);
     } else {
@@ -892,7 +1495,11 @@ void port_TheatreBoundary(void) {
     if (replay != g_theatre.replay) {
         g_theatre.replay = replay;
         if (!replay) {
+            /* the marks and the camera's keys were of that replay */
             g_theatre.has_in = g_theatre.has_out = FALSE;
+            g_theatre.path.count = 0;
+            g_theatre.path_on = FALSE;
+            g_theatre.bar_held = FALSE;
         }
     }
     if (status.is_playing && !status.in_lead && port_ExportIsOn() &&
@@ -912,6 +1519,8 @@ void port_TheatreBoundary(void) {
     if (port_TheatreActive()) {
         port_TheatreMotion();
     }
+    /* the camera on its path at this frame, before a word asks of it */
+    port_TheatreFollow();
     port_TheatreRunWords();
     if (g_theatre.photo_asked && port_TheatreCanLook()) {
         g_theatre.photo_asked = FALSE;
@@ -925,14 +1534,19 @@ void port_TheatrePausedTick(void) {
         return;
     }
     port_TheatreMotion();
+    port_TheatreFollow();
     port_TheatreRunWords();
+    /* (a seek among the words: the camera on its path at the frame) */
+    port_TheatreFollow();
     port_TheatreLookAgain();
 }
 
 /* ---- the line ---- */
 
 s32 port_TheatreWords(char *out, u32 room) {
-    char view[128];
+    char view[160];
+    char fov[24];
+    char keys[40];
 
     out[0] = 0;
     if (g_theatre.line_hidden && port_TheatreActive()) {
@@ -941,20 +1555,33 @@ s32 port_TheatreWords(char *out, u32 room) {
     if (!port_TheatreActive()) {
         return TRUE;
     }
-    snprintf(view, sizeof(view), "%s%s%s%s",
-             g_theatre.view.free ? "   free camera" : "",
+    fov[0] = 0;
+    keys[0] = 0;
+    if (g_theatre.view.free) {
+        snprintf(fov, sizeof(fov), " %.0f deg",
+                 port_TheatreFov(g_theatre.view.camera.plane));
+    }
+    if (g_theatre.replay && g_theatre.path.count > 0) {
+        snprintf(keys, sizeof(keys), "   %d key%s%s", g_theatre.path.count,
+                 g_theatre.path.count == 1 ? "" : "s",
+                 port_TheatreFollows() ? "" : " (let go)");
+    }
+    snprintf(view, sizeof(view), "%s%s%s%s%s%s",
+             g_theatre.view.free ? "   free camera" : "", fov, keys,
              g_theatre.view.hide_hud ? "   no HUD" : "",
              g_theatre.view.time >= 0 ? "   " : "",
              g_theatre.view.time >= 0 ? g_times[g_theatre.view.time + 1] : "");
     if (g_theatre.photo || g_theatre.photo_asked) {
         snprintf(out, room,
                  "Photo mode%s   |   WASD QE move  arrows/mouse turn  Z/X "
-                 "near/far  H HUD  T time  V still  Tab line  F4 back",
+                 "near/far  N/M view  H HUD  T time  V still  Tab line  F4 "
+                 "back",
                  view);
     } else {
         snprintf(out, room,
-                 "%s   |   C camera  WASD QE  arrows/mouse  Z/X  H HUD  T "
-                 "time  V still  ,/PgUp/PgDn/0-9 seek  [ ] G clip  Tab",
+                 "%s   |   C camera  WASD QE  arrows/mouse  Z/X  N/M view  J/U "
+                 "key  O path  H HUD  T time  V still  ,/PgUp/PgDn/0-9 seek  "
+                 "[ ] G clip  Tab",
                  view[0] != 0 ? view + 3 : "theatre");
     }
     return TRUE;

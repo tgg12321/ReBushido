@@ -27,11 +27,15 @@ struct PortInput;
 
 /* A camera as the game's scene_Begin takes one (camera.h, CameraView):
  * the point looked at, the angles it is looked at along (pitch, yaw,
- * roll, 4096 a turn) and the distance of the eye back from it. */
+ * roll, 4096 a turn) and the distance of the eye back from it; and the
+ * distance of the screen from the eye the coprocessor projects with
+ * (SetGeomScreen's: the field of view, 320 / tan(half of it) for the
+ * game's 640 across), 0 for the game's own. */
 typedef struct {
     s32 focus[3];
     s16 angles[3];
     s32 distance;
+    s32 plane;
 } PortTheatreCamera;
 
 /* What a look draws differently from the game's own picture. */
@@ -58,7 +62,8 @@ extern s32 port_TheatreGameCamera(PortTheatreCamera *camera);
 /* ---- the game's (RB_PORT in src/main/) ---- */
 
 /* scene_Begin: the camera it is about to place, replaced by the free one
- * in a look; the game's own noted otherwise. */
+ * in a look (and the coprocessor's screen distance with it, where the
+ * free camera has one); the game's own noted otherwise. */
 extern void port_TheatreScene(s32 *focus, s16 *angles, s32 *distance);
 /* The fight's frame is about to be drawn from `ot` (main.c): in a look
  * that hides the HUD, its first PORT_THEATRE_HUD_SLOTS entries, where the

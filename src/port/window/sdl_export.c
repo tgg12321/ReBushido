@@ -42,7 +42,7 @@
 
 #define PATH_BYTES 1024
 #define LINE_BYTES 512
-#define COMMAND_BYTES 8192
+#define COMMAND_BYTES 16384
 #define WORDS_MAX 40
 #define PERMILLE 1000
 /* the last of the sound kept before the film begins: a blank's head
@@ -514,7 +514,7 @@ static void port_ExportQuote(const char *word, char *out, u32 room) {
 static s32 port_ExportStart(char **words) {
     static char command[COMMAND_BYTES];
     static wchar_t wide[COMMAND_BYTES];
-    char quoted[PATH_BYTES + 16];
+    static char quoted[COMMAND_BYTES];
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
     SECURITY_ATTRIBUTES inherit;
     STARTUPINFOW start;
@@ -786,6 +786,11 @@ s32 port_ExportClip(const char *replay, const char *name,
         words[count++] = to_word;
         words[count++] = (char *)"--theatre-view";
         words[count++] = (char *)clip->view;
+        if (clip->path != NULL) {
+            /* ... and the free camera's keys it follows */
+            words[count++] = (char *)"--theatre-path";
+            words[count++] = (char *)clip->path;
+        }
     }
     words[count++] = (char *)"--no-cards";
     words[count++] = (char *)"--no-log";

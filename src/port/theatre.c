@@ -20,6 +20,8 @@
 /* the inputs kept, more than the looks reach back */
 #define INPUTS 16
 #define LINK_END 0x00FFFFFFU
+/* the screen distance's register holds 16 bits */
+#define PLANE_MASK 0xFFFFU
 
 typedef struct {
     u8 *state;
@@ -77,6 +79,12 @@ void port_TheatreScene(s32 *focus, s16 *angles, s32 *distance) {
                 angles[i] = g_theatre.view.camera.angles[i];
             }
             *distance = g_theatre.view.camera.distance;
+            if (g_theatre.view.camera.plane > 0) {
+                /* the field of view: the look's own coprocessor, whose
+                 * state is put back after it with the rest */
+                port_GteWriteControl(
+                    PORT_GTE_PLANE, (u32)g_theatre.view.camera.plane);
+            }
         }
         return;
     }
@@ -89,6 +97,8 @@ void port_TheatreScene(s32 *focus, s16 *angles, s32 *distance) {
         g_theatre.game.angles[i] = angles[i];
     }
     g_theatre.game.distance = *distance;
+    g_theatre.game.plane =
+        (s32)(port_GteReadControl(PORT_GTE_PLANE) & PLANE_MASK);
     g_theatre.has_game = TRUE;
 }
 

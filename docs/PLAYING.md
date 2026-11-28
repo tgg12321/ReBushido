@@ -1601,6 +1601,7 @@ where you put the camera.
 | the arrows, or the mouse with its left button held | right stick | turn round the point looked at (while the free camera is on; otherwise Right is a frame on as above) |
 | the mouse with its right button held | | slide the camera sideways and up |
 | Z, X, or the mouse's wheel | the triggers | nearer, farther |
+| N, M, or the mouse's wheel with Ctrl held | | the field of view narrower, wider (20 to 100 degrees; the game's own is 45) |
 | Shift held | | four times as fast |
 | H | right stick pressed | the HUD hidden or shown (the game's and the window's own: the match strip, training's lines) |
 | T | | the time of day: dawn, day, dusk, night, the stage's own, and back to the fight's |
@@ -1611,6 +1612,10 @@ where you put the camera.
 | 1 to 9, 0 | | a tenth of the way on each, 0 the start |
 | `[`, `]` | | the clip's first frame, its last |
 | G | | a clip of the frames marked (or five seconds from the frame on show) |
+| J (or Insert) | | a key of the camera at the frame on show: the free camera as it is, with its field of view |
+| U (or Delete) | | the key nearest the frame on show cleared; with Shift, every key |
+| O | | the camera on its keys, or let go of them (to fly freely while it plays) |
+| the mouse on the seek bar | | a click goes to that frame; dragging along it seeks under the mouse |
 | Tab | | the line of keys hidden or shown |
 
 The free camera moving a fight that plays shows it from there as it
@@ -1619,6 +1624,30 @@ back is quick: the theatre keeps the fight's state every five seconds as
 it passes, and a frame back runs on from the nearest of those. The time
 of day changes a **Remastered Classic** stage or an arena (as on the
 stage page) in the Remastered picture.
+
+**The seek bar.** Across the bottom of the picture, in the game's menu
+look: the time on show at its left, the replay's length at its right,
+the part played in gold, the frames marked for a clip brighter between
+two white marks, the camera's keys in green under it and the frame on
+show in the menu cursor's yellow. It is there while the HUD is (H, or
+Tab for the line, hides it), and for a few seconds whenever the mouse
+moves. A click on it goes to that frame, and dragging along it keeps
+seeking under the mouse; a click anywhere else is the camera's, as
+before.
+
+**A camera that moves.** Pause where a shot begins, put the free camera
+where it should be (its field of view too, N and M) and press **J**: a
+key. Go on to where the shot ends (the bar, a frame on, Page Down), move
+the camera and press **J** again; as many keys as you like, up to 64.
+Played or sought, the camera then flies through the keys: a smooth curve
+through each (eased out of the first and into the last), the turns taken
+the short way round with the horizon kept level, and a zoom (the
+distance or the field of view) even. Before the first key and after the
+last it stays at that key. A move of the camera by hand while it is on
+its keys lasts until the frame changes, so that a key can be set from it
+(J on a key's frame replaces it); **O** lets go of the keys to fly freely
+while it plays, **U** clears the nearest. The line says how many keys
+there are, and a clip (G) follows them.
 
 **A clip** (G) is made beside the game, as a film is: another run of the
 program plays the replay from the clip's first frame to its last, in the
@@ -1634,13 +1663,18 @@ line says when it is made.
 From the command line: `--export OUT.gif` (or .mp4, .avi) `--export-from
 F --export-to F` makes a clip of those frames, and `--theatre-view
 free,x,y,z,pitch,yaw,roll,distance,hud,time` (ten numbers) puts the
-camera there.
+camera there; an eleventh is the screen's distance, the field of view
+(320 / tan of half of it: 772 is the game's 45 degrees; 0 the game's).
+`--theatre-path F,x,y,z,pitch,yaw,roll,distance,screen;...` gives the
+camera's keys (nine numbers each, between semicolons), which it follows:
+G gives a clip's run its keys so.
 
 ## Photo mode
 
 In a fight, **F4** stops the fight where it is, for a picture: the game
 waits, nothing of it moves, and the keys are the theatre's (above): the
-free camera (W A S D, Q E, the arrows or the mouse, Z X, Shift), **H**
+free camera (W A S D, Q E, the arrows or the mouse, Z X, N M the field
+of view, Shift), **H**
 the HUD, **T** the time of day, **V** a still into `screenshots/`. **F4**
 or **Escape** (or a controller's B or Back) and the fight goes on from
 exactly where it stopped, as if nothing had happened: the free camera,

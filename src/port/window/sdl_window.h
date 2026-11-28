@@ -56,9 +56,12 @@ typedef struct {
     /* the replay theatre and photo mode (sdl_theatre.c): a test's words
      * (port_TheatreWord: presses, at:FRAME, wait:N, still:PATH, hash, ...),
      * and the view a run begins with (--theatre-view, the words
-     * port_TheatreViewWords makes: a clip's film run is given its own) */
+     * port_TheatreViewWords makes: a clip's film run is given its own),
+     * and the free camera's path it follows (--theatre-path, the keys as
+     * port_TheatrePathWords makes them) */
     const char *theatre_keys;
     const char *theatre_view;
+    const char *theatre_path;
     /* Escape pressed at these blanks ("1500,4000") and let go a few after,
      * as SDL's events of the key (port_EscapeButton) */
     const char *escape_at;
@@ -259,6 +262,18 @@ extern s32 port_TheatreWords(char *out, u32 room);
  * `written`. */
 extern s32 port_WriteWindowStill(
     const char *path, char *written, u32 room, s32 *w, s32 *h);
+/* For a test and the eye: the window as it is shown, the picture with
+ * what is laid over it (the seek bar, the pages), a PNG at `path`. */
+extern s32 port_WriteWindowShown(const char *path);
+/* Where the game's 4:3 area is in the window, in its pixels: what the
+ * pages and the seek bar are placed in. */
+extern void port_GetLookArea(PortRect *area);
+/* A point of the mouse's (SDL's, in the window's own units) in the
+ * window's pixels. */
+extern void port_MouseToPixels(s32 *x, s32 *y);
+/* The theatre's seek bar over the picture, where it is shown
+ * (sdl_theatre.c; port_DrawCounter). */
+extern void port_TheatreDrawBar(void);
 
 /* ---- a replay as a film (sdl_export.c; film.h) ---- */
 
@@ -313,6 +328,7 @@ typedef struct {
     u32 from;
     u32 to;
     const char *view;
+    const char *path; /* the camera's keys (--theatre-path), or NULL */
     s32 is_gif;
 } PortExportClip;
 

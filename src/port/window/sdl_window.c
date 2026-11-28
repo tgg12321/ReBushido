@@ -1993,6 +1993,18 @@ s32 port_WriteWindowStill(
     return port_WritePngFile(written, g_port_window_pixels, window_w, window_h);
 }
 
+/* forward: what is laid over the picture, and the window as a PNG */
+static void port_DrawCounter(void);
+static s32 port_WriteWindowPng(const char *path);
+
+s32 port_WriteWindowShown(const char *path) {
+    port_OpenWindow();
+    port_DrawPicture(port_GetBlankCount(), FALSE);
+    port_DrawCounter();
+    port_DrawNetLine();
+    return port_WriteWindowPng(path);
+}
+
 /* The displayed rectangle of video memory into the window: black where
  * the display is off or has no size. */
 static void port_DrawPicture(u32 blank, s32 may_tap) {
@@ -2365,29 +2377,55 @@ static PortOverlay g_port_page;
 static PortOverlay g_port_panel_rows;
 static PortOverlay g_port_page_lines;
 
-static void port_DrawOverlay(PortOverlay *overlay, PortOverlayPixels make) {
-    const u32 *pixels;
+void port_GetLookArea(PortRect *area) {
     PortRect picture;
-    PortRect box;
-    SDL_Rect where;
-    s32 area_w;
-    s32 area_h;
     s32 window_w = 0;
     s32 window_h = 0;
 
     port_WindowSize(&window_w, &window_h);
     port_PicturePlace(window_w, window_h, &picture);
-    area_h = picture.h;
-    area_w = picture.h * 4 / 3;
-    if (area_w > picture.w) {
-        area_w = picture.w;
-        area_h = picture.w * 3 / 4;
+    area->h = picture.h;
+    area->w = picture.h * 4 / 3;
+    if (area->w > picture.w) {
+        area->w = picture.w;
+        area->h = picture.w * 3 / 4;
     }
-    if (!make(area_w, area_h, &pixels, &box)) {
+    area->x = picture.x + (picture.w - area->w) / 2;
+    area->y = picture.y + (picture.h - area->h) / 2;
+}
+
+void port_MouseToPixels(s32 *x, s32 *y) {
+    int across = 0;
+    int down = 0;
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    if (g_port_window == NULL) {
         return;
     }
-    where.x = picture.x + (picture.w - area_w) / 2 + box.x;
-    where.y = picture.y + (picture.h - area_h) / 2 + box.y;
+    SDL_GetWindowSize(g_port_window, &across, &down);
+    port_WindowSize(&window_w, &window_h);
+    if (across > 0 && down > 0 && window_w > 0 && window_h > 0) {
+        *x = *x * window_w / across;
+        *y = *y * window_h / down;
+    }
+}
+
+static void port_DrawOverlay(PortOverlay *overlay, PortOverlayPixels make) {
+    const u32 *pixels;
+    PortRect area;
+    PortRect box;
+    SDL_Rect where;
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    port_WindowSize(&window_w, &window_h);
+    port_GetLookArea(&area);
+    if (!make(area.w, area.h, &pixels, &box)) {
+        return;
+    }
+    where.x = area.x + box.x;
+    where.y = area.y + box.y;
     where.w = box.w;
     where.h = box.h;
     if (g_port_has_gl) {
@@ -2620,6 +2658,10 @@ static void port_DrawCounter(void) {
         port_DrawStagePage();
         port_DrawMatchPage();
         port_DrawTopPage();
+    }
+    if (!port_MenuIsOpen() && !port_OnlinePagesAreOpen()) {
+        /* the replay theatre's seek bar (sdl_theatre.c) */
+        port_TheatreDrawBar();
     }
     port_DrawWindowPage();
     if (!g_port_show_fps) {
