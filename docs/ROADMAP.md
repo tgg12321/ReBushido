@@ -583,7 +583,9 @@ the stage").
     own power on to the fight, every console hash held, stopping where its
     game went otherwise; an online fight's too (2026-11-26), from its
     session's own power on, with what the game reads of the session (its
-    rules, pads and seed). Left: a run begun with a fight chosen.
+    rules, pads and seed); a run begun with a fight chosen (`--fight`,
+    2026-11-28), its fight kept with the lead-in and started again from
+    power on (`port_replay.py`'s `fight_chosen`).
 24. **2v2** (longer term): four fighters in one fight, two teams; a
     button retargets to the other enemy; online with four players
     (rollback of four, the bench's four-fighter case as the budget).
@@ -692,8 +694,11 @@ the stage").
     and the hit areas (the body's 22 spheres and their cores, the
     blades) over the fight, at the window's resolution; six settings of
     the settings menu's Training page. Proved by `tools/port_training.py`
-    on both sizes. Left: a guard that weighs the distance, the blade's sweep drawn as the hit test
-    tests it, the owner's eye on `tmp/training/`.
+    on both sizes. Then (2026-11-28): the guard weighs the distance (a
+    blow out of its reach, by the CPU's own measure, is let by;
+    `train_guard_far`), and the hit areas draw each blade's sweep as
+    `fight_TestBladesOnBodies` tests it (its two or four triangles from
+    the frame before). Left: the owner's eye on `tmp/training2/`.
 27. **The CPU's difficulty** (the owner, 2026-11-26): a few levels beside
     the original's CPU, which stays as it is. The owner: the CPU must not
     "cheat"; it plays as a real player would, only making better
@@ -804,8 +809,11 @@ the stage").
     round with the horizon level, a zoom even), passed to a clip's run
     (`--theatre-path`); the field of view (N M, Ctrl and the wheel, 20
     to 100 degrees, kept with the keys, in photo mode too). Proved by
-    `port_theatre.py path` and `bar` and `tests/port/window.c`. Left:
-    the owner's eye on `tmp/theatre/` and `tmp/theatre2/`.
+    `port_theatre.py path` and `bar` and `tests/port/window.c`. On a
+    controller too (2026-11-28): L1 held, the triggers the field of view
+    and Cross, Square, Circle and Triangle the camera's keys, none of
+    them the replay's own then (`port_theatre.py pad`). Left: the
+    owner's eye on `tmp/theatre/` and `tmp/theatre2/`.
 30. **Stats** (the owner, 2026-11-26; no achievements): a player's record
     kept by the program: fights and matches won and lost, by fighter,
     weapon, stage, mode and opponent (CPU levels, online names); kills
@@ -919,7 +927,9 @@ the stage").
     folding back, each room's decay, the head's delays and levels, the
     chip unchanged beside it) and `--wav` runs of six stages and
     `port_sound`'s plan, byte for byte the same as main's with
-    `original`. Left: the owner's ears (`tmp/sound/`), and the rooms'
-    levels and the stage table tuned by them; the reverb heard on a step
-    netplay runs again is not put back with the game's state (a short
-    doubling of its tail at a rollback).
+    `original`. Through a rollback (2026-11-28): the mix's running state
+    (the reverb whole) kept beside each state netplay saves and put back
+    with it, so the reverb hears a frame run again once (a rollback's
+    `--wav` byte for byte the run without). Left: the owner's ears
+    (`tmp/sound/`), and the rooms' levels and the stage table tuned by
+    them.

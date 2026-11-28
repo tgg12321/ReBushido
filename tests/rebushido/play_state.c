@@ -112,6 +112,10 @@ void test_Main(void) {
     WHERE(PortTraining, holds);
     WHERE(PortTraining, shown[0][0].buttons);
     WHERE(PortTraining, shown[1][0].buttons);
+    WHERE(PortTraining, guards);
+    WHERE(PortTraining, let_by);
+    WHERE(PortTrainingAreas, sweep_count[0]);
+    WHERE(PortTrainingAreas, sweep_triangles[0][0]);
     /* the hit tests' scratch, which first_frame_sweep.toml reads by
      * address: a sweep's far end as it is and as it was */
     CHECK_EQ(SCRATCHPAD, 0x1F800000);

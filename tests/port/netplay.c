@@ -70,6 +70,11 @@ void port_StateLoad(const void *buf) {
 
 u64 port_StateHash(void) { return g_test_game; }
 
+/* the sound remastered's mix, kept and put back beside the state */
+void port_RemixKeep(u32 place) { (void)place; }
+
+void port_RemixPutBack(u32 place) { (void)place; }
+
 u32 port_GetBlankCount(void) { return g_test_blank; }
 
 /* ---- what else netplay reaches ---- */

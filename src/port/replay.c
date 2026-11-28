@@ -216,13 +216,30 @@ enum {
 
 /* LEAD's words before the events: its version, whose run it is (0 for
  * the run's own; LEAD_SESSION for a session's, whose SESSION_WORDS
- * follow the setup), how many inputs it holds, the setup */
+ * follow the setup; LEAD_FIGHT for the run's own begun with a fight
+ * chosen, --fight, whose FIGHT_WORDS follow it), how many inputs it
+ * holds, the setup */
 #define LEAD_HEAD_WORDS (3 + SETUP_WORDS)
 #define LEAD_SESSION 1
+#define LEAD_FIGHT 2
 
 /* What the game reads of the session an online fight's lead-in was
  * played in (port_net.h, port_SessionGameNow), after the setup. */
 enum { SESSION_RULES, SESSION_PADS, SESSION_SEED, SESSION_WORDS };
+
+/* The fight a run was begun with (port_platform.h, PortFight; --fight,
+ * --fight-2p, --fight-cpu, --partners), after the setup. */
+enum {
+    FIGHT_MODE,
+    FIGHT_STAGE,
+    FIGHT_ROSTER,
+    FIGHT_WEAPON = FIGHT_ROSTER + 2,
+    FIGHT_IS_CPU = FIGHT_WEAPON + 2,
+    FIGHT_HAS_PARTNERS = FIGHT_IS_CPU + 2,
+    FIGHT_PARTNER_ROSTER,
+    FIGHT_PARTNER_WEAPON = FIGHT_PARTNER_ROSTER + 2,
+    FIGHT_WORDS = FIGHT_PARTNER_WEAPON + 2
+};
 
 /* A word the movie player read of the pads that is not the one before:
  * read number `read` of the run's (pad.c, PAD_dr). */
@@ -387,6 +404,9 @@ typedef struct {
     u32 session_words[SESSION_WORDS];
     s32 live;
     u32 number;
+    /* the run's own begun with a fight chosen: the fight */
+    s32 fight;
+    u32 fight_words[FIGHT_WORDS];
 } ReplayLead;
 
 static ReplayLead g_lead = {.broken_at = NONE};
@@ -530,6 +550,9 @@ static struct {
     /* the lead-in is a session's: what the game read of it */
     s32 session;
     u32 session_words[SESSION_WORDS];
+    /* ... or its run was begun with a fight chosen: the fight */
+    s32 fight;
+    u32 fight_words[FIGHT_WORDS];
     /* the fight's resyncs (RSYN): the frame each is put in at, the frame
      * after which its hashes before it are not held, its state's chunks;
      * and room to put one in */
@@ -1436,8 +1459,10 @@ static void port_ReplayServeBuild(void);
  * playback stops and says so.
  *
  * A run keeps it from its first step while it is whole: it began from
- * power on as a plain run does (no --fight, no session started with the
- * program, no link cable), and nothing but its inputs and that setup
+ * power on as a plain run does (no session started with the program, no
+ * link cable, no mod's arena or weapon asked; a fight chosen, --fight,
+ * is kept with the setup and started again the same way), and nothing
+ * but its inputs and that setup
  * changed the game (a play test's poke and the settings menu's Bug fixes
  * end it: port_ReplayLeadBreak). A session begun in the program, a
  * spectator's match and a replay's playback put the player's own state
@@ -1451,6 +1476,50 @@ static void port_ReplaySetupWords(u32 *words) {
     words[SETUP_TIME] = (u32)port_GetStageTimeDefault();
     words[SETUP_MATCH] = port_MatchBits();
     words[SETUP_STAGE_MUSIC] = port_MusicStageSum();
+}
+
+/* The fight the run was begun with into LEAD's words: FALSE for none. */
+static s32 port_ReplayFightWords(u32 *words) {
+    PortFight fight;
+    s32 side;
+
+    if (!port_FightAsked(&fight)) {
+        return FALSE;
+    }
+    words[FIGHT_MODE] = (u32)fight.mode;
+    words[FIGHT_STAGE] = (u32)fight.stage;
+    words[FIGHT_HAS_PARTNERS] = (u32)fight.has_partners;
+    for (side = 0; side < 2; side++) {
+        words[FIGHT_ROSTER + side] = (u32)fight.roster[side];
+        words[FIGHT_WEAPON + side] = (u32)fight.weapon[side];
+        words[FIGHT_IS_CPU + side] = (u32)fight.is_cpu[side];
+        words[FIGHT_PARTNER_ROSTER + side] = (u32)fight.partner_roster[side];
+        words[FIGHT_PARTNER_WEAPON + side] = (u32)fight.partner_weapon[side];
+    }
+    return TRUE;
+}
+
+/* ... and out of them, held for a playback from power on (NULL words:
+ * none, this run's own fight not started either). */
+static void port_ReplayHoldFight(const u32 *words) {
+    PortFight fight;
+    s32 side;
+
+    if (words == NULL) {
+        port_HoldFight(NULL);
+        return;
+    }
+    fight.mode = (s32)words[FIGHT_MODE];
+    fight.stage = (s32)words[FIGHT_STAGE];
+    fight.has_partners = (s32)words[FIGHT_HAS_PARTNERS];
+    for (side = 0; side < 2; side++) {
+        fight.roster[side] = (s32)words[FIGHT_ROSTER + side];
+        fight.weapon[side] = (s32)words[FIGHT_WEAPON + side];
+        fight.is_cpu[side] = (s32)words[FIGHT_IS_CPU + side];
+        fight.partner_roster[side] = (s32)words[FIGHT_PARTNER_ROSTER + side];
+        fight.partner_weapon[side] = (s32)words[FIGHT_PARTNER_WEAPON + side];
+    }
+    port_HoldFight(&fight);
 }
 
 /* The setup held, as a session holds the host's. */
@@ -1700,6 +1769,9 @@ static void port_LeadBoundary(u32 count, const PortGameView *view) {
             port_ReplayLeadBreak("the run did not begin at power on");
             return;
         }
+        /* begun with a fight chosen (--fight): the fight, which a
+         * playback from power on starts as this run did */
+        g_lead.fight = port_ReplayFightWords(g_lead.fight_words);
         port_LeadBegin(&g_lead, view);
         return;
     }
@@ -1745,9 +1817,9 @@ static u32 port_LeadPack(u8 *out, u32 room) {
     for (i = 0; i < frames; i++) {
         sounds += lead->frames[i].sound != 0;
     }
-    need = (LEAD_HEAD_WORDS + SESSION_WORDS + 1 + events * (1 + SETUP_WORDS) +
-            1 + (u32)lead->view_count * 3 + 2 + 1 + sounds * 2 + 1 +
-            (u32)lead->movie_count * 2) *
+    need = (LEAD_HEAD_WORDS + SESSION_WORDS + FIGHT_WORDS + 1 +
+            events * (1 + SETUP_WORDS) + 1 + (u32)lead->view_count * 3 + 2 + 1 +
+            sounds * 2 + 1 + (u32)lead->movie_count * 2) *
                WORD_BYTES +
            hashes * LONG_BYTES + frames * FRAME_PACKED_MOST;
     if (need > room) {
@@ -1755,7 +1827,9 @@ static u32 port_LeadPack(u8 *out, u32 room) {
         return 0;
     }
     port_PutWord(out, LEAD_VERSION);
-    port_PutWord(out + WORD_BYTES, lead->session ? LEAD_SESSION : 0);
+    port_PutWord(out + WORD_BYTES, lead->session ? LEAD_SESSION
+                                   : lead->fight ? LEAD_FIGHT
+                                                 : 0);
     port_PutWord(out + 2 * WORD_BYTES, frames);
     at = 3 * WORD_BYTES;
     for (i = 0; i < SETUP_WORDS; i++, at += WORD_BYTES) {
@@ -1763,6 +1837,10 @@ static u32 port_LeadPack(u8 *out, u32 room) {
     }
     for (i = 0; lead->session && i < SESSION_WORDS; i++, at += WORD_BYTES) {
         port_PutWord(out + at, lead->session_words[i]);
+    }
+    for (i = 0; !lead->session && lead->fight && i < FIGHT_WORDS; i++,
+        at += WORD_BYTES) {
+        port_PutWord(out + at, lead->fight_words[i]);
     }
     port_PutWord(out + at, events);
     at += WORD_BYTES;
@@ -3909,17 +3987,24 @@ static s32 port_ReplayUnpackLead(const u8 *bytes, u32 size) {
         chunk_size < (LEAD_HEAD_WORDS + SESSION_WORDS + 1) * WORD_BYTES ||
         port_GetWord(chunk) != LEAD_VERSION ||
         (port_GetWord(chunk + WORD_BYTES) != 0 &&
-         port_GetWord(chunk + WORD_BYTES) != LEAD_SESSION)) {
+         port_GetWord(chunk + WORD_BYTES) != LEAD_SESSION &&
+         port_GetWord(chunk + WORD_BYTES) != LEAD_FIGHT)) {
         return FALSE;
     }
     g_play.session = port_GetWord(chunk + WORD_BYTES) == LEAD_SESSION;
+    g_play.fight = port_GetWord(chunk + WORD_BYTES) == LEAD_FIGHT;
     g_play.lead_count = port_GetWord(chunk + 2 * WORD_BYTES);
-    if (g_play.lead_count > LEAD_MAX) {
+    if (g_play.lead_count > LEAD_MAX ||
+        (g_play.fight &&
+         chunk_size < (LEAD_HEAD_WORDS + FIGHT_WORDS + 1) * WORD_BYTES)) {
         return FALSE;
     }
     at = 3 * WORD_BYTES;
     for (i = 0; i < SETUP_WORDS; i++, at += WORD_BYTES) {
         g_play.setup[i] = port_GetWord(chunk + at);
+    }
+    for (i = 0; g_play.fight && i < FIGHT_WORDS; i++, at += WORD_BYTES) {
+        g_play.fight_words[i] = port_GetWord(chunk + at);
     }
     for (i = 0; g_play.session && i < SESSION_WORDS; i++, at += WORD_BYTES) {
         g_play.session_words[i] = port_GetWord(chunk + at);
@@ -4119,6 +4204,7 @@ s32 port_PlayReplay(
         return FALSE;
     }
     g_play.session = FALSE;
+    g_play.fight = FALSE;
     if ((g_play.from_boot ? !port_ReplayUnpackLead(g_play.file, size)
                           : !port_ReplayUnpackStart(g_play.file, size)) ||
         !port_ReplayUnpackRest(g_play.file, size) ||
@@ -4252,6 +4338,7 @@ static void port_ReplayEnd(const char *trouble) {
         port_RestoreStageDefaults();
         port_RestoreMatch();
         port_ReleaseSessionGame();
+        port_ReleaseFight();
     }
     g_play.in_lead = FALSE;
     port_StateLoad(g_play.back);
@@ -4306,6 +4393,9 @@ static void port_ReplayBegin(void) {
                           : NULL);
         }
         port_ReplayHoldSetup(g_play.setup);
+        /* the fight its run was begun with, started as that run's was
+         * (or none, where this run was begun with one) */
+        port_ReplayHoldFight(g_play.fight ? g_play.fight_words : NULL);
         if (g_play.session) {
             /* an online fight's: the session as the game read it */
             port_HoldSessionGame(g_play.session_words[SESSION_RULES],
@@ -4381,6 +4471,15 @@ static s32 port_ReplayLeadFrame(void) {
         }
         if (g_play.lead_count > 0) {
             port_RemasterHoldGameView(&g_play.lead_views[g_play.lead[0].view]);
+            return TRUE;
+        }
+        /* a run begun with a fight chosen starts its fight before its
+         * first input (--fight): its start is at input 0, after the
+         * first step, as any input's boundary is */
+        if (!g_play.session) {
+            if (g_play.lead_view_count > 0) {
+                port_RemasterHoldGameView(&g_play.lead_views[0]);
+            }
             return TRUE;
         }
     }

@@ -83,6 +83,7 @@ def check(lines, checks):
     ears = {}
     head = None
     chip = None
+    rollback = None
     stages = 0
     for line in lines:
         w = line.split()
@@ -110,6 +111,8 @@ def check(lines, checks):
             head = (int(w[2]), int(w[4]), int(w[6]))
         elif w[0] == 'chip':
             chip = int(w[2])
+        elif w[0] == 'rollback':
+            rollback = (int(w[2]), int(w[4]))
         elif w[0] == 'stage':
             stages += 1
 
@@ -235,3 +238,9 @@ def check(lines, checks):
 
     # ---- the chip ----
     checks.equal('the chip with the remastered mix beside it: its samples, memory and registers to the bit', chip, 1)
+
+    # ---- a rollback ----
+    checks.true('a rollback with the mix kept and put back beside the chip is heard as the run with none, to the '
+                'bit; without, the reverb hears its blanks twice (%s samples differ)'
+                % (rollback[1] if rollback else '?'),
+                rollback is not None and rollback[0] == 1 and rollback[1] > 735)

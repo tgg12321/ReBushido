@@ -65,6 +65,18 @@ extern void port_RemixVoice(u32 voice, u32 counter, u32 step, s32 noise,
 extern void port_RemixFrame(const s32 *cd, const s32 *chip_wet,
                             const s32 *main_volume, s32 unmuted, s16 *out);
 
+/* A rollback's companion (netplay.c's saves, state.c's self-test): the
+ * mix's running state (its copies of the voices, the head's, the
+ * limiter's, the reverb's lines) kept beside the game's state saved at a
+ * boundary, in place `place` of PORT_REMIX_KEEPS, and put back with it,
+ * so that the steps run again from there are mixed from where the mix
+ * was then, and the reverb does not hear them twice (a tail doubled).
+ * Still not the game's state: nothing of the game reads it. Nothing
+ * where the setting is off; a place never kept is not put back. */
+#define PORT_REMIX_KEEPS 16
+extern void port_RemixKeep(u32 place);
+extern void port_RemixPutBack(u32 place);
+
 /* What the remastered mix did, for --wav's summary. */
 typedef struct {
     u32 samples;

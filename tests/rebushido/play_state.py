@@ -120,6 +120,10 @@ MEMBERS = {
     'port_training_holds': 'PortTraining.holds',
     'port_training_p1_shown': 'PortTraining.shown[0][0].buttons',
     'port_training_p2_shown': 'PortTraining.shown[1][0].buttons',
+    'port_training_guards': 'PortTraining.guards',
+    'port_training_let_by': 'PortTraining.let_by',
+    'port_training_sweep_p1': 'PortTrainingAreas.sweep_count[0]',
+    'port_training_sweep_tris_p1': 'PortTrainingAreas.sweep_triangles[0][0]',
 }
 # Two on two's state is duo.c's own structure, which no header shows: its
 # offsets are those duo.c's PORT_DUO_AT holds the build to, members of

@@ -1300,6 +1300,11 @@ void fight_Update(void) {
     fighter_Update(0, &pad);
     fighter_ReadPad(1, &pad);
     fighter_Update(1, &pad);
+#if RB_PORT
+    /* where training's blades were, which the tests sweep from
+     * (port_training.h) */
+    port_TrainingNoteSweep();
+#endif
     fight_UpdateFighterPair();
 #if RB_PORT
     /* training's hit areas, where this frame's tests had them

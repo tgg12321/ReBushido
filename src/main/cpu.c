@@ -1025,19 +1025,18 @@ static void cpu_ProbeGround(Fighter *fighter) {
 
 /* How far the attack the opponent is making reaches: the motion's own
  * reach, the weapon's, and what the opponent's size adds. */
-static s32 cpu_AttackReach(Fighter *fighter) {
-    Fighter *other = fighter->other;
+#if RB_PORT
+/* (`common`: which of the weapon's tables, the reach of its own moves or
+ * the range of the moves all weapons share) */
+static s32 cpu_ReachOf(Fighter *other, s32 common) {
     s32 base = other->motion_head[MOTION_HEAD_REACH] * MOTION_REACH_UNIT;
 
-    /* (0xFF: the main weapon does not hit in this move; the off hand's does)
-     * Which table goes by the CPU's own move, where the opponent's would be
-     * expected: the original's behaviour. */
-#if RB_PORT
-    /* a mod's weapon's reach and range (port_weapons.h): the game's own
-     * with none */
+    /* (0xFF: the main weapon does not hit in this move; the off hand's
+     * does) a mod's weapon's reach and range (port_weapons.h): the game's
+     * own with none */
     if (other->hit_end_frames[0] != 0xFF) {
         s32 reach =
-            fighter->move_is_common == 0
+            common == 0
                 ? port_WeaponCpuReach(
                       other->index, other->weapon_id,
                       g_cpu_weapon_reaches[other->weapon_id] * 2)
@@ -1049,15 +1048,37 @@ static s32 cpu_AttackReach(Fighter *fighter) {
     } else {
         base += g_cpu_sub_weapon_reaches[other->sub_weapon_kind] * 2;
     }
+    return base + other->reach_bonus + CPU_THREAT_MARGIN;
+}
+
+/* Which table goes by the CPU's own move, where the opponent's would be
+ * expected: the original's behaviour. */
+static s32 cpu_AttackReach(Fighter *fighter) {
+    return cpu_ReachOf(fighter->other, fighter->move_is_common);
+}
+
+/* Training's guard (port_training.h): the table of the attacker's own
+ * move. */
+s32 cpu_PortBlowReach(struct Fighter *attacker) {
+    return cpu_ReachOf(attacker, attacker->move_is_common);
+}
 #else
+/* (as above, in one) */
+static s32 cpu_AttackReach(Fighter *fighter) {
+    Fighter *other = fighter->other;
+    s32 base = other->motion_head[MOTION_HEAD_REACH] * MOTION_REACH_UNIT;
+
+    /* (0xFF: the main weapon does not hit in this move; the off hand's does)
+     * Which table goes by the CPU's own move, where the opponent's would be
+     * expected: the original's behaviour. */
     base += other->hit_end_frames[0] != 0xFF
                 ? (fighter->move_is_common == 0
                        ? g_cpu_weapon_reaches[other->weapon_id] * 2
                        : g_cpu_weapon_ranges[other->weapon_id] * CPU_RANGE_UNIT)
                 : g_cpu_sub_weapon_reaches[other->sub_weapon_kind] * 2;
-#endif
     return base + fighter->other->reach_bonus + CPU_THREAT_MARGIN;
 }
+#endif
 
 /* The directions to hold in order to walk to a place: the pad's direction
  * nearest the way there (the pad is turned towards the middle of the

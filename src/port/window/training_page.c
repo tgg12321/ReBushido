@@ -8,9 +8,12 @@
  * frozen, slow); and the hit areas over the fighters: each point of the
  * body a disc where a blade wounds, a darker one in it where a blade kills
  * (the head, the chest, the hips), and each weapon's blade from the hand
- * to the point, lit while it is in its frames of hitting. Drawn at the window's
- * own resolution, as the match's strip is (match_page.c), from training's state
- * (src/port/training.c), which the game's step alone writes. */
+ * to the point, lit while it is in its frames of hitting, and the sweep the
+ * hit test tested it by that frame (the triangles between where it was the
+ * frame before and where it is, fight_TestBladesOnBodies'). Drawn at the
+ * window's own resolution, as the match's strip is (match_page.c), from
+ * training's state (src/port/training.c), which the game's step alone writes.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,6 +85,11 @@
 #define COLOR_BLADE_1 0xE0E8A05AU
 #define COLOR_BLADE_2 0xE07AB4F0U
 #define COLOR_BLADE_HITS 0xFFFF4040U
+/* the sweep a blade was tested by this frame, by side, and while it can
+ * hit */
+#define COLOR_SWEEP_1 0x40E8A05AU
+#define COLOR_SWEEP_2 0x407AB4F0U
+#define COLOR_SWEEP_HITS 0x50FF4040U
 /* the room round the areas' box, in the game's places */
 #define AREA_MARGIN 8
 
@@ -230,6 +238,63 @@ static void port_TrainingRect(s32 x, s32 y, s32 w, s32 h, u32 color) {
     port_FillRect(
         g_canvas->pixels, g_canvas->box.w, g_canvas->box.h, x0, y0,
         port_TrainingX(x + w) - x0, port_TrainingY(y + h) - y0, color);
+}
+
+/* A triangle of the window's pixels, filled: each pixel whose middle is
+ * inside it (on its edge counted once, by the top-left rule, so that two
+ * triangles sharing an edge do not lay their colour there twice). */
+static void port_TrainingTriangle(const float *x, const float *y, u32 color) {
+    float area = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+    float lo_x = x[0];
+    float hi_x = x[0];
+    float lo_y = y[0];
+    float hi_y = y[0];
+    s32 left;
+    s32 right;
+    s32 top;
+    s32 bottom;
+    s32 px;
+    s32 py;
+    s32 k;
+
+    if (area == 0.0f) {
+        return;
+    }
+    for (k = 1; k < 3; k++) {
+        lo_x = x[k] < lo_x ? x[k] : lo_x;
+        hi_x = x[k] > hi_x ? x[k] : hi_x;
+        lo_y = y[k] < lo_y ? y[k] : lo_y;
+        hi_y = y[k] > hi_y ? y[k] : hi_y;
+    }
+    left = lo_x < 0.0f ? 0 : (s32)lo_x;
+    top = lo_y < 0.0f ? 0 : (s32)lo_y;
+    right = hi_x >= (float)g_canvas->box.w ? g_canvas->box.w - 1 : (s32)hi_x;
+    bottom = hi_y >= (float)g_canvas->box.h ? g_canvas->box.h - 1 : (s32)hi_y;
+    for (py = top; py <= bottom; py++) {
+        for (px = left; px <= right; px++) {
+            float cx = (float)px + 0.5f;
+            float cy = (float)py + 0.5f;
+            s32 inside = TRUE;
+
+            for (k = 0; k < 3 && inside; k++) {
+                s32 n = k == 2 ? 0 : k + 1;
+                float ex = x[n] - x[k];
+                float ey = y[n] - y[k];
+                float side = (ex * (cy - y[k]) - ey * (cx - x[k])) *
+                             (area > 0.0f ? 1.0f : -1.0f);
+                /* an edge's own pixels belong to the triangle on its top
+                 * or left side alone */
+                s32 top_left =
+                    area > 0.0f ? (ey < 0.0f || (ey == 0.0f && ex > 0.0f))
+                                : (ey > 0.0f || (ey == 0.0f && ex < 0.0f));
+
+                inside = side > 0.0f || (side == 0.0f && top_left);
+            }
+            if (inside) {
+                port_TrainingDot(px, py, color, 1.0f);
+            }
+        }
+    }
 }
 
 /* A disc round (cx, cy) of the window's pixels, filled and edged. */
@@ -464,6 +529,36 @@ static void port_TrainingAreas(void) {
         }
     }
     for (side = 0; side < 2; side++) {
+        u32 fill = areas->blade_hits[side] ? COLOR_SWEEP_HITS
+                   : side == 0             ? COLOR_SWEEP_1
+                                           : COLOR_SWEEP_2;
+        float edge = 1.0f * (float)g_canvas->area_h / GAME_H;
+        s32 segment;
+
+        for (segment = 0; segment < areas->sweep_count[side]; segment++) {
+            for (i = 0; i < areas->sweep_triangles[side][segment]; i++) {
+                const s16(*corner)[2] = areas->sweep[side][segment][i];
+                float x[3];
+                float y[3];
+                s32 k;
+
+                if (!areas->sweep_seen[side][segment][i]) {
+                    continue;
+                }
+                for (k = 0; k < 3; k++) {
+                    x[k] = (float)port_TrainingX(corner[k][0]);
+                    y[k] = (float)port_TrainingY(corner[k][1]);
+                }
+                port_TrainingTriangle(x, y, fill);
+                for (k = 0; k < 3; k++) {
+                    port_TrainingLine(
+                        x[k], y[k], x[k == 2 ? 0 : k + 1],
+                        y[k == 2 ? 0 : k + 1], edge, fill | 0x30000000U);
+                }
+            }
+        }
+    }
+    for (side = 0; side < 2; side++) {
         u32 color = areas->blade_hits[side] ? COLOR_BLADE_HITS
                     : side == 0             ? COLOR_BLADE_1
                                             : COLOR_BLADE_2;
@@ -531,6 +626,24 @@ static void port_TrainingAreasBox(s32 *x, s32 *y, s32 *w, s32 *h) {
                 right = at[0] > right ? at[0] : right;
                 top = at[1] < top ? at[1] : top;
                 bottom = at[1] > bottom ? at[1] : bottom;
+            }
+        }
+        for (i = 0; i < areas->sweep_count[side]; i++) {
+            s32 t;
+            s32 k;
+
+            for (t = 0; t < areas->sweep_triangles[side][i]; t++) {
+                if (!areas->sweep_seen[side][i][t]) {
+                    continue;
+                }
+                for (k = 0; k < 3; k++) {
+                    const s16 *at = areas->sweep[side][i][t][k];
+
+                    left = at[0] < left ? at[0] : left;
+                    right = at[0] > right ? at[0] : right;
+                    top = at[1] < top ? at[1] : top;
+                    bottom = at[1] > bottom ? at[1] : bottom;
+                }
             }
         }
     }

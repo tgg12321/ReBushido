@@ -245,6 +245,42 @@ void port_FightTwoPlayers(void) { g_port_fight.is_cpu[1] = FALSE; }
 /* Both fighters the CPU's (--fight-cpu): a fight that plays itself. */
 void port_FightBothCpu(void) { g_port_fight.is_cpu[0] = TRUE; }
 
+/* The fight the run was begun with, as it was asked (port_platform.h):
+ * for a replay's lead-in, which keeps it. */
+s32 port_FightAsked(PortFight *fight) {
+    if (g_port_fight_chosen) {
+        *fight = g_port_fight;
+    }
+    return g_port_fight_chosen;
+}
+
+/* A replay's playback from power on: the fight its run was begun with
+ * (NULL: none) held in place of this run's own, which is put back
+ * after. */
+static PortFight g_port_fight_own;
+static s32 g_port_fight_own_chosen;
+static s32 g_port_fight_held;
+
+void port_HoldFight(const PortFight *fight) {
+    if (!g_port_fight_held) {
+        g_port_fight_own = g_port_fight;
+        g_port_fight_own_chosen = g_port_fight_chosen;
+        g_port_fight_held = TRUE;
+    }
+    g_port_fight_chosen = fight != NULL;
+    if (fight != NULL) {
+        g_port_fight = *fight;
+    }
+}
+
+void port_ReleaseFight(void) {
+    if (g_port_fight_held) {
+        g_port_fight = g_port_fight_own;
+        g_port_fight_chosen = g_port_fight_own_chosen;
+        g_port_fight_held = FALSE;
+    }
+}
+
 const PortFight *port_QuickFight(void) {
     if (g_port_fight_chosen && g_port_fight.stage == FIGHT_STAGE_ARENA) {
         const PortArena *arena = port_ArenaInPlay();

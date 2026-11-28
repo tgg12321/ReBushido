@@ -507,6 +507,7 @@ s32 port_Main(s32 argc, char **argv) {
     s32 rollback_frames = 0;
     s32 rollback_every = ROLLBACK_EVERY;
     s32 rollback_quiet = 0;
+    PortFight asked_fight;
     PortNetAddress net_bind;
     PortNetAddress net_peer;
     s32 net_addresses = 0;
@@ -573,7 +574,6 @@ s32 port_Main(s32 argc, char **argv) {
         } else if (port_TextsEqual(word, "--replay-from-boot")) {
             port_SetReplayFromBoot(1);
         } else if (port_TextsEqual(word, "--fight-cpu")) {
-            port_ReplayLeadBreak("--fight-cpu");
             port_FightBothCpu();
         } else if (port_TextsEqual(word, "--cpu") && has_value) {
             if (!port_CpuParseLevels(argv[++i])) {
@@ -611,10 +611,8 @@ s32 port_Main(s32 argc, char **argv) {
             }
             i++;
         } else if (port_TextsEqual(word, "--fight-2p")) {
-            port_ReplayLeadBreak("--fight-2p");
             port_FightTwoPlayers();
         } else if (port_TextsEqual(word, "--fight")) {
-            port_ReplayLeadBreak("the run began in a fight (--fight)");
             if (i + 3 >= argc) {
                 port_UsageError("--fight takes STAGE FIGHTER FIGHTER", "");
             }
@@ -622,9 +620,12 @@ s32 port_Main(s32 argc, char **argv) {
                 /* it has said what the names are */
                 port_Quit(PORT_EXIT_USAGE);
             }
+            if (port_FightAsked(&asked_fight) && asked_fight.stage < 0) {
+                /* a mod's arena (fight.c): no lead-in, as with --arena */
+                port_ReplayLeadBreak("a mod's arena (--fight)");
+            }
             i += 3;
         } else if (port_TextsEqual(word, "--partners")) {
-            port_ReplayLeadBreak("--partners");
             if (i + 2 >= argc) {
                 port_UsageError("--partners takes FIGHTER FIGHTER", "");
             }

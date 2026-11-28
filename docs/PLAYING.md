@@ -73,7 +73,8 @@ colon, a katana if none. The second fighter is the CPU's; `--fight-2p`
 gives it to the second pad. A name the game does not have lists the
 ones it does. The fight starts with the settings the game starts with:
 the memory card is not read on the way. After it, the game's own menu
-comes up and the game goes on as ever.
+comes up and the game goes on as ever. Its fights are kept as replays
+like any others, and play on another build too.
 
 ## The keys
 
@@ -868,8 +869,10 @@ The dummy is the second fighter, played only by what training gives the
 second pad, as a player's pad would be. **Dummy** in the settings says
 what it does: **Stands**; **Guards**, pressing the attack button the
 game's CPU answers that kind of attack with a frame before your blow can
-land (as the game has it, a blade met by a blade); or **Plays back** what
-you recorded for it, round and round.
+land (as the game has it, a blade met by a blade), but only a blow that
+reaches it: one swung from too far off, by the game's CPU's own measure
+of how far that attack reaches, it lets go by; or **Plays back** what you
+recorded for it, round and round.
 
 Hold **Select** (Right Shift on the keyboard, Back on a controller) and
 press:
@@ -895,7 +898,11 @@ it was held, the direction as an arrow and the buttons as their shapes
 the **Hit areas**: every point of each body as a disc where a blade
 wounds, with a red core where it kills (the head, the chest, the hips),
 the arms and legs in their own colours, and each weapon's blade from the
-hand to its point, red while it is in its frames of hitting.
+hand to its point, red while it is in its frames of hitting, with the
+sweep it was tested by that frame: the game tests a blade not where it is
+but over the stretch it swept since the frame before, two triangles (four
+where its point moved far), and those are drawn shaded as the test has
+them (a pole arm's blade and its shaft each).
 
 The *Training* page of the settings menu (from Training Options, or the
 pause menu's Select):
@@ -1697,7 +1704,7 @@ where you put the camera.
 | the arrows, or the mouse with its left button held | right stick | turn round the point looked at (while the free camera is on; otherwise Right is a frame on as above) |
 | the mouse with its right button held | | slide the camera sideways and up |
 | Z, X, or the mouse's wheel | the triggers | nearer, farther |
-| N, M, or the mouse's wheel with Ctrl held | | the field of view narrower, wider (20 to 100 degrees; the game's own is 45) |
+| N, M, or the mouse's wheel with Ctrl held | L1 held and the triggers | the field of view narrower, wider (20 to 100 degrees; the game's own is 45) |
 | Shift held | | four times as fast |
 | H | right stick pressed | the HUD hidden or shown (the game's and the window's own: the match strip, training's lines) |
 | T | | the time of day: dawn, day, dusk, night, the stage's own, and back to the fight's |
@@ -1708,11 +1715,18 @@ where you put the camera.
 | 1 to 9, 0 | | a tenth of the way on each, 0 the start |
 | `[`, `]` | | the clip's first frame, its last |
 | G | | a clip of the frames marked (or five seconds from the frame on show) |
-| J (or Insert) | | a key of the camera at the frame on show: the free camera as it is, with its field of view |
-| U (or Delete) | | the key nearest the frame on show cleared; with Shift, every key |
-| O | | the camera on its keys, or let go of them (to fly freely while it plays) |
+| J (or Insert) | L1 held and Cross | a key of the camera at the frame on show: the free camera as it is, with its field of view |
+| U (or Delete) | L1 held and Square (and Circle: every key) | the key nearest the frame on show cleared; with Shift, every key |
+| O | L1 held and Triangle | the camera on its keys, or let go of them (to fly freely while it plays) |
 | the mouse on the seek bar | | a click goes to that frame; dragging along it seeks under the mouse |
 | Tab | | the line of keys hidden or shown |
+
+On a controller, **L1** is the theatre's alone: while it is held the
+triggers turn the field of view instead of the distance, and Cross,
+Square, Circle and Triangle are the camera's keys (above) and not the
+replay's own (pause, from the start, stop, to the first cut); let go of
+L1 and they are the replay's again. In photo mode L1 and the triggers
+turn the field of view too.
 
 The free camera moving a fight that plays shows it from there as it
 goes; paused, it is the frame on show seen from wherever you turn. Going

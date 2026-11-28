@@ -16,7 +16,8 @@ back, `seek:F`, `free`, `orbit:YAW:PITCH`, `move:F:R:U`, `zoom:P`, `hud`,
 state's hash), `photo`, `clip:FROM:TO:GIF`, `plain` (no look at all, the
 playback as before the theatre), `fov:DEGREES`, `key`, `unkey`,
 `camera` (a line with the camera), `in`, `out`, `bar`, `click:X:Y`,
-`drag:X1:X2:Y`, `shown:PATH`. The cases:
+`drag:X1:X2:Y`, `shown:PATH`, `pad-down:NAME`, `pad-up:NAME` (a
+controller's button by SDL's name), `pad-axis:AXIS:VALUE`. The cases:
 
   look      the picture of a frame paused, every picture a look (the frame
             drawn again from the state before it), is the picture of the
@@ -57,6 +58,12 @@ playback as before the theatre), `fov:DEGREES`, `key`, `unkey`,
             state's hash a seek's to that frame; a drag along it lands
             where it is let go; a press above it seeks nothing; the window
             as shown (`shown:`) is the still but in the bar's strip
+  pad       a controller's (SDL's events of it): with L1 held the right
+            trigger widens the field of view and leaves the distance,
+            Cross sets a key, Triangle lets go of the keys and takes them
+            again, Square clears the key, and none of them is the
+            replay's own (the paused replay stays paused); L1 let go, the
+            trigger is the distance again and leaves the field of view
 
 It saves a few stills and clips for the eye in --keep (tmp/theatre/ by
 default). It needs the disc's image (REBUSHIDO_RETAIL, the .cue at the
@@ -79,8 +86,9 @@ PROGRAMS = {'nt': 'build/port-sdl/windows/rebushido.exe', 'posix': 'build/port-s
 FIGHT = ['--fight', 'tatara-shrine', 'kannuki', 'mikado', '--fight-cpu']
 RECORD_FRAMES = '4000'
 SIZE = '640x360'
-CASES = ['look', 'seek', 'step', 'still', 'gif', 'photo', 'path', 'bar']
+CASES = ['look', 'seek', 'step', 'still', 'gif', 'photo', 'path', 'bar', 'pad']
 # the path's keys, and the frame half way and a quarter of the way
+PAD_WAIT = 40  # the pictures a trigger is held for
 KEY_A = 200
 KEY_B = 260
 # a picture of the path's clip neither key's: at least this far from both
@@ -778,6 +786,44 @@ def case_bar(runner, replay, report, keep):
         shutil.copy(shown, os.path.join(keep, 'seek-bar.png'))
 
 
+def fov(plane):
+    """The field of view of a screen's distance, in degrees."""
+    return math.degrees(2 * math.atan(320.0 / plane))
+
+
+def case_pad(runner, replay, report):
+    """A controller's camera keys and field of view (L1 held), and nothing
+    of the replay's own controls under them."""
+    trigger = 'pad-axis:5:32767 wait:%d pad-axis:5:0' % PAD_WAIT
+    words = ('at:150 hold free wait:2 camera pad-down:leftshoulder %s camera pad-down:a wait:2 camera '
+             'pad-down:y wait:1 pad-down:y wait:1 pad-down:x wait:2 camera pad-up:leftshoulder %s wait:2 camera '
+             'pad-down:x wait:%d camera quit' % (trigger, trigger, PAD_WAIT))
+    code, said = runner.play('pad', replay, words)
+    seen = cameras(said)
+    if not report.check(code == 0 and ended_well(said) and len(seen) == 6,
+                        'the controller\'s presses played (exit %d, %d cameras)' % (code, len(seen))):
+        print(said[-2000:])
+        return
+    first, widened, keyed, cleared, zoomed, later = seen
+    report.check(fov(widened[6]) > fov(first[6]) + 1 and widened[5] == first[5],
+                 'L1 and the right trigger: the field of view wider (%.2f to %.2f degrees), the distance kept (%d)'
+                 % (fov(first[6]), fov(widened[6]), widened[5]))
+    report.check(keyed[2] == 1 and first[2] == 0 and cleared[2] == 0,
+                 'L1 and Cross: a key of the camera (%d keys); Triangle twice and Square: the key cleared (%d)'
+                 % (keyed[2], cleared[2]))
+    report.check('the camera let go of its keys' in said and 'the camera follows its keys' in said,
+                 'L1 and Triangle: the camera let go of its keys, and on them again')
+    report.check(zoomed[5] > cleared[5] and zoomed[6] == cleared[6],
+                 'L1 let go, the right trigger: farther (%d to %d), the field of view kept (%.2f degrees)'
+                 % (cleared[5], zoomed[5], fov(zoomed[6])))
+    taken = re.findall(r'theatre: pad down (\w+) taken (\d)', said)
+    report.check(taken == [('leftshoulder', '1'), ('a', '1'), ('y', '1'), ('y', '1'), ('x', '1'), ('x', '0')],
+                 'under L1, Cross, Triangle and Square are the theatre\'s and never the replay\'s (pause, to the '
+                 'cut, from the start); without L1, Square is the replay\'s again (%s)'
+                 % ' '.join('%s:%s' % t for t in taken))
+    report.check(len(set(c[0] for c in seen)) == 1, 'the replay held at frame %d throughout' % first[0])
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'theatre'))
@@ -829,6 +875,8 @@ def main(argv):
             case_path(runner, replay, report, keep)
         elif case == 'bar':
             case_bar(runner, replay, report, keep)
+        elif case == 'pad':
+            case_pad(runner, replay, report)
     print('port_theatre: %s' % ('%d checks failed' % report.failed if report.failed else 'every check passed'))
     return 1 if report.failed else 0
 

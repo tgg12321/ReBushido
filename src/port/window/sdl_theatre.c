@@ -136,6 +136,9 @@ static struct {
     s32 mouse_right;
     s32 stick[4]; /* the left stick's x and y, the right's */
     s32 triggers[2];
+    /* a controller's L1 held: the triggers are the field of view, and
+     * Cross, Square, Circle and Triangle the camera's keys */
+    s32 l1;
     u32 ticked_at;
     u32 mark_in;
     u32 mark_out;
@@ -433,9 +436,15 @@ static void port_TheatreMotion(void) {
           port_Stick(g_theatre.stick[2]);
     pitch = held[HELD_PITCH_UP] - held[HELD_PITCH_DOWN] +
             port_Stick(g_theatre.stick[3]);
-    zoom = held[HELD_FARTHER] - held[HELD_NEARER] +
-           (g_theatre.triggers[1] - g_theatre.triggers[0]) / STICK_FULL;
+    zoom = held[HELD_FARTHER] - held[HELD_NEARER];
     wider = held[HELD_WIDER] - held[HELD_NARROWER];
+    /* the triggers: nearer and farther, or with L1 held the field of
+     * view narrower and wider */
+    if (g_theatre.l1) {
+        wider += (g_theatre.triggers[1] - g_theatre.triggers[0]) / STICK_FULL;
+    } else {
+        zoom += (g_theatre.triggers[1] - g_theatre.triggers[0]) / STICK_FULL;
+    }
     if (forward == 0 && right == 0 && up == 0 && yaw == 0 && pitch == 0 &&
         zoom == 0 && wider == 0) {
         return;
@@ -1053,6 +1062,33 @@ static s32 port_TheatrePressed(SDL_Scancode code) {
     return FALSE;
 }
 
+/* A controller's button with L1 held, in a replay: Cross a key of the
+ * camera (J), Square the nearest cleared (U), Circle every key cleared
+ * (Shift and U), Triangle the camera on its keys or let go (O). TRUE
+ * where it was one of them, which the replay's own controls then never
+ * see (Cross pauses, Square and Triangle seek, Circle stops). */
+static s32 port_TheatreKeysButton(u8 button) {
+    if (!g_theatre.replay) {
+        return FALSE;
+    }
+    switch (button) {
+    case SDL_CONTROLLER_BUTTON_A:
+        port_TheatreKey();
+        return TRUE;
+    case SDL_CONTROLLER_BUTTON_X:
+        port_TheatreUnkey(FALSE);
+        return TRUE;
+    case SDL_CONTROLLER_BUTTON_B:
+        port_TheatreUnkey(TRUE);
+        return TRUE;
+    case SDL_CONTROLLER_BUTTON_Y:
+        port_TheatrePathKey();
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 s32 port_TheatreWindowEvent(const union SDL_Event *event) {
     if (port_MenuIsOpen() || port_OnlinePagesAreOpen()) {
         /* a page over the game has every key */
@@ -1066,6 +1102,8 @@ s32 port_TheatreWindowEvent(const union SDL_Event *event) {
         return TRUE;
     }
     if (!port_TheatreActive()) {
+        /* (an L1 held as the theatre ended is let go) */
+        g_theatre.l1 = FALSE;
         return FALSE;
     }
     if (event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) {
@@ -1164,6 +1202,15 @@ s32 port_TheatreWindowEvent(const union SDL_Event *event) {
             event->caxis.value;
         return TRUE;
     case SDL_CONTROLLERBUTTONDOWN:
+        if (event->cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
+            /* L1 held: the triggers the field of view, and the camera's
+             * keys under four buttons (the replay has no L1 of its own) */
+            g_theatre.l1 = TRUE;
+            return TRUE;
+        }
+        if (g_theatre.l1 && port_TheatreKeysButton(event->cbutton.button)) {
+            return TRUE;
+        }
         if (event->cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSTICK) {
             port_TheatreCameraKey();
             return TRUE;
@@ -1180,6 +1227,10 @@ s32 port_TheatreWindowEvent(const union SDL_Event *event) {
         }
         return g_theatre.photo;
     case SDL_CONTROLLERBUTTONUP:
+        if (event->cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
+            g_theatre.l1 = FALSE;
+            return TRUE;
+        }
         return g_theatre.photo;
     default:
         return FALSE;
@@ -1400,6 +1451,32 @@ static s32 port_TheatreWord(const char *word) {
         port_TheatreSayCamera();
     } else if (strcmp(word, "bar") == 0) {
         port_TheatreSayBar();
+    } else if (sscanf(word, "pad-down:%1000s", path) == 1 ||
+               sscanf(word, "pad-up:%1000s", path) == 1) {
+        /* a controller's button by SDL's name (`leftshoulder`, `a`), as
+         * SDL's event of it */
+        SDL_Event event;
+
+        SDL_zero(event);
+        event.type =
+            word[4] == 'd' ? SDL_CONTROLLERBUTTONDOWN : SDL_CONTROLLERBUTTONUP;
+        event.cbutton.button =
+            (Uint8)SDL_GameControllerGetButtonFromString(path);
+        /* whether the theatre took it, or the replay's own controls
+         * would have it (sdl_replay.c) */
+        port_Say("theatre: pad %s %s taken %d",
+                 event.type == SDL_CONTROLLERBUTTONDOWN ? "down" : "up", path,
+                 port_TheatreWindowEvent(&event));
+    } else if (sscanf(word, "pad-axis:%d:%d", &a, &b) == 2) {
+        /* a controller's axis (SDL's number: 4 the left trigger, 5 the
+         * right) to a value */
+        SDL_Event event;
+
+        SDL_zero(event);
+        event.type = SDL_CONTROLLERAXISMOTION;
+        event.caxis.axis = (Uint8)a;
+        event.caxis.value = (Sint16)b;
+        port_TheatreWindowEvent(&event);
     } else if (sscanf(word, "click:%d:%d", &a, &b) == 2) {
         port_TheatreTestMouse(a, a, b);
     } else if (sscanf(word, "drag:%d:%d:%d", &a, &b, &c) == 3) {

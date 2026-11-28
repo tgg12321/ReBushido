@@ -516,6 +516,84 @@ static void test_Chip(void) {
                test_BytesEqual(alone, beside, sizeof(alone)), differ, heard);
 }
 
+/* ---- a rollback ---- */
+
+/* The chip and the mix through 90 blanks in a room, `kept` the mix kept
+ * and put back with the chip (port_RemixKeep) where a rollback goes back:
+ * at blank 30 the chip's state is saved, 8 blanks run, the state put
+ * back and the 8 run again, as netplay's rollback runs them (the second
+ * time is what is heard). The samples heard into `heard`. */
+static __typeof__(g_port_spu) g_kept_spu;
+static u8 g_kept_ram[PORT_SPU_RAM_BYTES];
+static u16 g_kept_regs[PORT_SPU_REG_COUNT];
+
+static void made_Rollback(s32 rolls, s32 kept, s16 *heard) {
+    static s16 cd[2 * 735];
+    static s16 out[2 * 735];
+    static s16 remastered[2 * 735];
+    u32 frames = 735;
+    u32 blank;
+    s32 again = FALSE;
+
+    /* each run from the same mix: its tables made again, the limiter and
+     * the room afresh (the reverb's lines are cleared as the room is
+     * entered) */
+    g_remix.made = 0;
+    port_RemixPrepare();
+    g_remix.look_at = 0;
+    g_remix.least_at = 0;
+    made_Chip(24);
+    port_SetSoundRemastered(1);
+    for (blank = 0; blank < 90; blank++) {
+        if (rolls && blank == 30 && !again) {
+            test_Copy(&g_kept_spu, &g_port_spu, sizeof(g_port_spu));
+            test_Copy(g_kept_ram, port_GetSpuRam(), PORT_SPU_RAM_BYTES);
+            test_Copy(g_kept_regs, g_made_regs, sizeof(g_made_regs));
+            if (kept) {
+                port_RemixKeep(3);
+            }
+        }
+        made_Cd(cd, frames, blank * frames);
+        port_RemixBegin(24); /* the Purple Cavern */
+        port_RunSpuRemastered(cd, NULL, out, NULL, remastered, frames);
+        test_Copy(heard + blank * frames * 2, remastered, sizeof(remastered));
+        if (rolls && blank == 37 && !again) {
+            /* back to blank 30, and its 8 run again */
+            test_Copy(&g_port_spu, &g_kept_spu, sizeof(g_port_spu));
+            test_Copy(port_GetSpuRam(), g_kept_ram, PORT_SPU_RAM_BYTES);
+            test_Copy(g_made_regs, g_kept_regs, sizeof(g_made_regs));
+            if (kept) {
+                port_RemixPutBack(3);
+            }
+            again = TRUE;
+            blank = 29;
+        }
+    }
+    port_SetSoundRemastered(0);
+}
+
+/* A rollback with the mix put back is heard as the run with none, to the
+ * bit; without it (as before 2026-11-28) the reverb heard the 8 blanks
+ * twice and what follows differs. */
+static void test_Rollback(void) {
+    static s16 straight[2 * 735 * 90];
+    static s16 kept[2 * 735 * 90];
+    static s16 unkept[2 * 735 * 90];
+    u32 differ = 0;
+    u32 i;
+
+    made_Rollback(FALSE, FALSE, straight);
+    made_Rollback(TRUE, TRUE, kept);
+    made_Rollback(TRUE, FALSE, unkept);
+    for (i = 0; i < 2 * 735 * 90; i++) {
+        differ += straight[i] != unkept[i];
+    }
+    CHECK(test_BytesEqual(straight, kept, sizeof(kept)));
+    CHECK(differ > 735);
+    test_Print("rollback kept_the_same %d unkept_differ %u\n",
+               test_BytesEqual(straight, kept, sizeof(kept)), differ);
+}
+
 /* ---- the mixer's time ---- */
 
 /* 24 voices sounding for ten seconds, 735 samples a blank: the chip
@@ -568,4 +646,5 @@ void test_Main(void) {
     test_Reverb();
     test_Head();
     test_Chip();
+    test_Rollback();
 }

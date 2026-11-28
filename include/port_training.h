@@ -20,7 +20,9 @@
  *   which training writes in place of the second pad's own: nothing (it
  *   stands), the game's answer to an attack about to land (it guards: the
  *   attack button the game's CPU answers that kind of attack with, pressed
- *   a frame before the blow), or what the player recorded for it.
+ *   a frame before the blow, where the blow reaches it by the game's CPU's
+ *   own measure of an attack's reach), or what the player recorded for
+ *   it.
  * - With Select held on the first pad, its presses are training's and
  *   none of them reach its fighter:
  *     Cross     record the dummy (the first pad drives the dummy's side
@@ -97,6 +99,9 @@ typedef struct {
     /* the presses shown, the newest first: both pads' as their fighters
      * were given them */
     PortTrainingPress shown[2][PORT_TRAINING_SHOWN];
+    /* the guard's frames: pressed, and let by as out of the blow's reach */
+    u32 guards;
+    u32 let_by;
 } PortTraining;
 
 extern PortTraining g_port_training;
@@ -130,6 +135,9 @@ extern s32 port_TrainingHoldEnd(void);
  * each other (fight.c, fight_Update): their hit areas noted for the
  * window, as the frame's camera puts them on the screen. */
 extern void port_TrainingNoteAreas(void);
+/* ... and before they are tested: where their blades were the frame
+ * before, which the tests sweep from (Fighter.prev_weapon_points). */
+extern void port_TrainingNoteSweep(void);
 
 /* The hit areas as the window draws them (training_page.c): each body
  * point's sphere, and its core where it has one (the head, the chest and
@@ -140,6 +148,8 @@ extern void port_TrainingNoteAreas(void);
  * the picture's. */
 #define PORT_TRAINING_BODY_POINTS 22
 #define PORT_TRAINING_BLADE_POINTS 3
+#define PORT_TRAINING_SWEEP_SEGMENTS 2
+#define PORT_TRAINING_SWEEP_TRIS 4
 
 typedef struct {
     s16 x;
@@ -159,6 +169,18 @@ typedef struct {
     PortTrainingArea body[2][PORT_TRAINING_BODY_POINTS];
     s16 blade[2][PORT_TRAINING_BLADE_POINTS][2];
     u8 blade_seen[2][PORT_TRAINING_BLADE_POINTS];
+    /* The sweep each weapon was tested by this frame: the triangles
+     * between where each segment of its blade was the frame before and
+     * where it is (two, or four where its tip moved far), as
+     * fight_TestBladesOnBodies makes them; a pole arm's blade and shaft.
+     * sweep_count 0: no sweep was tested (the weapon cannot hit, the
+     * blades met, a lock or a paired move). */
+    u8 sweep_path;     /* the frame's test was the plain one */
+    u8 sweep_count[2]; /* segments swept */
+    Vec3 sweep_last[2][PORT_TRAINING_BLADE_POINTS]; /* the frame before */
+    u8 sweep_triangles[2][PORT_TRAINING_SWEEP_SEGMENTS];
+    u8 sweep_seen[2][PORT_TRAINING_SWEEP_SEGMENTS][PORT_TRAINING_SWEEP_TRIS];
+    s16 sweep[2][PORT_TRAINING_SWEEP_SEGMENTS][PORT_TRAINING_SWEEP_TRIS][3][2];
 } PortTrainingAreas;
 
 extern PortTrainingAreas g_port_training_areas;

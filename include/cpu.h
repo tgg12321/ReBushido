@@ -415,6 +415,9 @@ extern u32 cpu_IsEasy(void);
  * the opponent is making reaches, by its motion and its weapon. */
 extern void cpu_PortProbeGround(struct Fighter *fighter);
 extern s32 cpu_PortAttackReach(struct Fighter *fighter);
+/* ... and how far the attacker's own move reaches, by the table of its
+ * own move (training's guard, port_training.h). */
+extern s32 cpu_PortBlowReach(struct Fighter *attacker);
 /* The stage's obstacles, as a player sees them: how far off the nearest
  * one across the way to (x, z) is (CPU_NO_OBSTACLE if none); the way round
  * it into Fighter.cpu_route (its corners from node[count - 1] down, the

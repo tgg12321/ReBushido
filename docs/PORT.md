@@ -786,10 +786,36 @@ blank with `remastered` and 0.09 ms with headphones, against a blank of
 bench`, the same `-O1`): 0.68 ms more a blank (64-bit; 0.81 ms 32-bit),
 1.0 ms with headphones; the chip alone is 0.34 ms.
 
-**Not done**: the mix's state is not saved with the game's, so a step
-netplay runs again leaves its tail in the reverb once more (a short
-doubling at a rollback, in what the window had queued and not played);
-the tuning by ear.
+**Through a rollback** (2026-11-28). The mix is still not the game's
+state, but where a rollback puts the game's state back the mix's
+running state goes back with it: netplay keeps it beside each frame it
+saves (`port_NetplaySave`, `port_RemixKeep` into the same place of
+`PORT_REMIX_KEEPS`) and puts it back with the frame it runs again from
+(`port_NetplayRollBack`, `port_RemixPutBack`), and the rollback
+self-test likewise. What is kept is everything a sample changes but the
+counts: the room chosen, the sums, the limiter's look ahead and level,
+the voices' copies, the head's rings and the reverb whole (its lines,
+all-passes, pre-delay and filters; about 310 KB a place, in memory the
+system gives on the first keeping, nothing where the setting is off).
+So the frames run again are mixed from where the mix was then, the
+reverb hears each sound once, and what the window takes of the run
+again in place of what it had queued is the corrected course's own;
+before, the reverb heard the frames run again a second time (its tail
+doubled at a rollback). Run ahead was never touched: a frame run ahead
+is not mixed. The cost is a copy of the place at each save, about 0.1 ms
+(the self-test's saves 432 against 315 microseconds, seven runs at
+once). Proved by `tests/port/remix`'s rollback (the chip and the mix
+through 90 blanks, eight of them run again from a save: with the mix
+put back heard as the run with none, to the bit; without, 88,155 samples
+differ) and by `--wav` runs of a fight (`--fight tatara-shrine kannuki
+mikado:nodachi --fight-cpu --frames 3000`) with the self-test rolling
+back every 24 frames (`--rollback-test 8 --rollback-quiet`):
+`remastered` the same WAV, byte for byte, as without rollbacks and as
+main's without (main's with them: 1,850,284 of 4,421,344 samples differ
+from 7.9 s on, by up to 2,236); `original` the same as main's, with
+rollbacks and without.
+
+**Not done**: the tuning by ear.
 ### The picture
 
 The port has the PlayStation's GPU in C (`src/port/raster.c`,
@@ -10652,7 +10678,11 @@ armed and its first hit frame is this frame or the next, the frontal
 attack's button against an attack of the second kind, the reverse's
 against the first, as `cpu.c`'s threat answers with
 `g_cpu_script_guard_a`/`_b`; it reads the Fighter, it is no part of the
-CPU's decisions); a slot's frame; or, recording, the first pad's own
+CPU's decisions; and only where the blow reaches, as the CPU judges an
+attack coming, `CPU_THREAT_NEAR`: the reach `cpu_PortBlowReach` gives,
+`cpu.c`'s `cpu_AttackReach` by the table of the attacker's own move, at
+least `g_fight_distance`; a blow out of reach is let by, counted in
+`let_by`, a guard in `guards`); a slot's frame; or, recording, the first pad's own
 (which its fighter does not get). Both pads' buttons as given are pushed
 onto the input display's lists (`shown`, the newest first with the
 frames it was held). The slots (four of `PORT_TRAINING_SLOT_FRAMES`, a
@@ -10710,7 +10740,18 @@ GTE's plane and offset), each point's sphere by its radius and its core
 (`g_fighter_body_points`, `BodyPoint.radius`, `core_radius`: the head,
 the chest and the hips have one; a blade that reaches it kills, one that
 reaches the sphere wounds, `fighter_TakeHit`), into
-`g_port_training_areas` (outside the state: the picture's). The canvas
+`g_port_training_areas` (outside the state: the picture's). With them,
+each weapon's sweep as `fight_TestBladesOnBodies` tested it that frame:
+`port_TrainingNoteSweep`, just before `fight_UpdateFighterPair`, notes
+where the blade was the frame before (`prev_weapon_points`, which the
+pair's update then overwrites) and whether the frame's test is the plain
+one (not a lock's or a paired move's) and the weapon is out; after it,
+`port_TrainingNoteAreas` makes each segment's triangles of its six
+corners (the segment now and before and the halves between) as the test
+does, two, or four where the far end moved `SWEEP_SPLIT_DISTANCE` or
+more, none where the blades met (`g_fight_blades_met`), a pole arm's
+blade and shaft each; the window fills them (top-left rule, so that two
+sharing an edge do not lay it twice) under the blade's line. The canvas
 of the areas is as large as they are, beyond the 4:3 area where the
 picture is wider. It is drawn over either picture, the software one and
 the remastered one alike, and not over the pause menu. With run-ahead the
@@ -10733,8 +10774,11 @@ blanks where 60 ran before), puts the moment back (the fight's count of
 frames back to where it was kept, the recording kept), strikes until the
 dummy falls (both start again: still the fight, nobody fallen, one
 restart), and leaves by the pause menu's Return to Main Menu (training
-off); `train_guard`, the dummy guarding the first fighter's strikes;
-`train_playback`, a recording of 30 frames played round and round by
+off); `train_guard`, the dummy guarding the first fighter's strikes (its
+answer pressed, and the strike's sweep noted, one segment of two or four
+triangles); `train_guard_far`, the first fighter stepping back before
+each swing where he starts, out of reach, and the dummy guarding none of
+them (`guards` 0, `let_by` 8 and more); `train_playback`, a recording of 30 frames played round and round by
 itself. The `train` plan run with `--run-ahead 2` prints the same trace
 as without, its moments kept and put back included. `--rollback` runs
 `train` through `tools/port_rollback.py`, moments and all: rolled back
@@ -10754,11 +10798,14 @@ change sides: the game turns the second fighter's left and right by
 its place in the fight, not by where it stands on the screen
 (`fighter_ReadPad`: the second fighter's pad always has left and right
 exchanged, so that its "towards" is a fixed button), and a slot plays
-back towards and away as they were recorded. The guard does not look at the distance, so it also
-swings at a blow that would miss. No replay of a training fight; a
-recording does not outlive the program. The hit areas show the body's
-spheres and the blade's points, not the sweep between two frames that
-the hit test actually tests (`fight_TestBladesOnBodies`).
+back towards and away as they were recorded. The guard weighs the
+distance by the CPU's estimate of a move's reach (its motion's and its
+weapon's), not by where the blade will be: a blow whose reach the
+estimate gets wrong is answered or let by wrongly, as the CPU's is. No
+replay of a training fight; a recording does not outlive the program.
+The sweep drawn is the main weapon's; an off hand's blade (a sidearm's)
+and a gun's shot are not, and nor is a paired move's blow, which tests
+one fighter's blade alone. Pictures of the sweep: `tmp/training2/`.
 
 ## A local tournament
 
@@ -11668,13 +11715,35 @@ console hashes in the 64-bit and the 32-bit programs, every one.
 
 *What a run keeps it for*: a run that began from power on as a plain one
 does, while nothing but its inputs and that setup changed the game. It is
-not kept for a run begun with `--fight`, `--partners`, `--arena`,
+not kept for a run begun with `--arena` (or `--fight` on a mod's arena),
 `--weapon`, a session or a link cable; from a play test's poke, a change of
 the settings menu's Bug fixes, or a link cable's game on, the fights after
 play only on this build (`port_ReplayLeadBreak`, said in the log). A
 session begun in the program, a spectator's match and a replay's playback
 put the player's own state back after them, and the lead-in waits while
 they run.
+
+*A run begun with a fight chosen* (2026-11-28): `--fight` (with
+`--fight-2p`, `--fight-cpu`, `--partners`; in either program) keeps its
+lead-in like any run. The fight asked for is part of what it holds: LEAD's
+second word is `LEAD_FIGHT` (2; 0 a plain run's, 1 a session's) and
+thirteen words of the fight follow the setup (`PortFight`: the mode, the
+stage, each side's fighter, weapon and whether the CPU plays it, the
+partners). Played from power on, the recorded run's fight is held in
+place of the player's own (`port_HoldFight`, `fight.c`; put back as the
+playback ends, `port_ReleaseFight`), so the options page and the boot
+image give way to it and `rb_PortQuickFight` starts it as the run did;
+a plain run's replay is held to no fight, even in a program begun with
+one. Such a run reaches its fight's start before its first input, so its
+fight starts at input 0 (`start_count` 0): the playback's power on runs
+its first step to that boundary before holding anything to the fight's
+start, as it does to input 0's hash. Proved by `tools/port_replay.py`'s
+`fight_chosen`: a run of `--fight tatara-shrine kannuki mikado:nodachi
+--fight-cpu` on both sizes, each file keeping its fight (`LEAD_FIGHT`),
+played by its own program from its start and from power on, and by the
+other size from power on in a program begun without `--fight`, every
+hash held; and port_game's plain fight played from power on by both
+programs begun with `--fight`, every hash held.
 
 *An online fight's* (2026-11-26). A session plays from power on too: the
 state of the game's start put back, the host's cards in both slots, its
@@ -12100,6 +12169,25 @@ past them) and a drag along it seeks each time the frame under it
 changes; the button's press anywhere else is the camera's, as before.
 The mouse's points are taken into the window's pixels
 (`port_MouseToPixels`) where the window's units are not its pixels.
+
+**On a controller** (2026-11-28): L1 is the theatre's, a modifier the
+replay's own controls never had (`sdl_replay.c`: Cross and Start pause,
+the D-pad and R1 step and change the speed, Square from the start,
+Triangle to the cut, Circle and Back stop; the theatre has the sticks,
+their presses and the triggers). While it is held (`g_theatre.l1`, let
+go also when the theatre ends) the triggers drive the field of view at
+the rate N and M do instead of the distance (`port_TheatreMotion`), and
+Cross, Square, Circle and Triangle are J, U, Shift and U, and O
+(`port_TheatreKeysButton`, in a replay), taken before the replay's
+handler sees them; L1 let go, they are the replay's again. In photo
+mode L1 and the triggers turn the field of view the same. Proved by
+`port_theatre.py pad` (SDL's own events of the buttons and the trigger,
+the words `pad-down:`, `pad-up:`, `pad-axis:`): L1 and the right
+trigger widen the view (45 to 84 degrees) and keep the distance; Cross
+sets a key, Triangle lets go and takes the keys again, Square clears
+it; L1 let go, the trigger is the distance again and keeps the view;
+every button under L1 taken by the theatre and Square without it left
+to the replay's own; the replay held at its frame throughout.
 
 **What it costs.** A look is two steps and three snapshots' worth of
 copies (the pages written since); the card draws one frame a look and
