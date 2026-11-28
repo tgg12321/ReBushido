@@ -42,7 +42,7 @@
 
 #define PATH_BYTES 1024
 #define LINE_BYTES 512
-#define COMMAND_BYTES 8192
+#define COMMAND_BYTES 16384
 #define WORDS_MAX 40
 #define PERMILLE 1000
 /* the last of the sound kept before the film begins: a blank's head
@@ -75,12 +75,25 @@ static struct {
     u32 *last;   /* the last picture, for a blank that shows none */
     u32 started; /* SDL's ticks as the first frame was taken */
     s32 told_scale;
+    /* the replay's frames it is of (--export-from, --export-to: the
+     * theatre's clip), `to` 0 for its end */
+    u32 from;
+    u32 to;
+    s32 past; /* the frames are done: the replay stopped */
 } g_film;
+
+u32 port_ExportFrom(void) { return g_film.from; }
+
+void port_ExportSetRange(u32 from, u32 to) {
+    g_film.from = from;
+    g_film.to = to;
+}
 
 s32 port_ExportSetUp(const char *path, s32 w, s32 h, char *why, u32 room) {
     g_film.kind = port_FilmKindOf(path);
     if (g_film.kind == PORT_FILM_NONE) {
-        snprintf(why, room, "--export takes a file ending .mp4 or .avi, not %s",
+        snprintf(why, room,
+                 "--export takes a file ending .mp4, .avi or .gif, not %s",
                  path);
         return FALSE;
     }
@@ -112,18 +125,26 @@ static void port_FilmFails(const char *why) {
     }
 }
 
-/* The film begins with this frame where the replay is at its fight. */
+/* The film begins with this frame where the replay is at its fight (and
+ * at the clip's first frame); a clip ends after its last, the replay
+ * stopped there. */
 s32 port_ExportWants(void) {
     PortReplayStatus status;
 
-    if (g_film.path == NULL || g_film.failed) {
+    if (g_film.path == NULL || g_film.failed || g_film.past) {
         return FALSE;
     }
+    port_GetReplayStatus(&status);
     if (g_film.film != NULL) {
+        if (g_film.to != 0 && status.is_playing && status.frame > g_film.to) {
+            g_film.past = TRUE;
+            port_ReplayControl(PORT_REPLAY_STOP);
+            return FALSE;
+        }
         return TRUE;
     }
-    port_GetReplayStatus(&status);
-    return status.is_playing && port_IsFightScreen();
+    return status.is_playing && !status.in_lead && port_IsFightScreen() &&
+           status.frame >= g_film.from;
 }
 
 /* `pixels` the window's, `w` by `h`, as the film's size: by the nearest
@@ -216,8 +237,14 @@ void port_ExportPicture(u32 blank, const u32 *pixels, s32 w, s32 h) {
         return;
     }
     if (port_FilmPictures(g_film.film) % SAY_EVERY == 0) {
+        u32 last;
+
         port_GetReplayStatus(&status);
-        port_Say("film: frame %u of %u", status.frame, status.frames);
+        last = g_film.to != 0 && g_film.to < status.frames
+                   ? g_film.to
+                   : status.frames;
+        port_Say("film: frame %u of %u", status.frame - g_film.from,
+                 last - g_film.from);
     }
 }
 
@@ -355,8 +382,9 @@ void port_ExportGetView(PortExportView *view) {
 }
 
 /* The film's name in films/ beside the program: the replay's, as an
- * .mp4 where Windows can make one and an .avi elsewhere. */
-static void port_ExportOut(const char *name, s32 kind) {
+ * .mp4 where Windows can make one and an .avi elsewhere, or a .gif; a
+ * clip's with its frames. */
+static void port_ExportOut(const char *name, s32 kind, const char *clip) {
     char *base = SDL_GetBasePath();
     char stem[PORT_REPLAY_NAME_BYTES];
     char *dot;
@@ -373,9 +401,11 @@ static void port_ExportOut(const char *name, s32 kind) {
 #else
     mkdir(g_asked.out, 0755);
 #endif
-    snprintf(g_asked.out, sizeof(g_asked.out), "%s%s/%s.%s",
-             base != NULL ? base : "", FILM_FOLDER, stem,
-             kind == PORT_FILM_MP4 ? "mp4" : "avi");
+    snprintf(g_asked.out, sizeof(g_asked.out), "%s%s/%s%s.%s",
+             base != NULL ? base : "", FILM_FOLDER, stem, clip,
+             kind == PORT_FILM_MP4   ? "mp4"
+             : kind == PORT_FILM_GIF ? "gif"
+                                     : "avi");
     SDL_free(base);
 }
 
@@ -484,7 +514,7 @@ static void port_ExportQuote(const char *word, char *out, u32 room) {
 static s32 port_ExportStart(char **words) {
     static char command[COMMAND_BYTES];
     static wchar_t wide[COMMAND_BYTES];
-    char quoted[PATH_BYTES + 16];
+    static char quoted[COMMAND_BYTES];
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
     SECURITY_ATTRIBUTES inherit;
     STARTUPINFOW start;
@@ -675,8 +705,16 @@ static void port_ExportKill(void) {
 
 s32 port_ExportBegin(
     const char *replay, const char *name, char *why, u32 room) {
+    return port_ExportClip(replay, name, NULL, why, room);
+}
+
+s32 port_ExportClip(const char *replay, const char *name,
+                    const PortExportClip *clip, char *why, u32 room) {
     static char size[32];
     static char graphics_word[16];
+    static char from_word[16];
+    static char to_word[16];
+    char suffix[48];
     static const char * const g_sizes[] = {
         "1920x1080", "1280x720", "2560x1440", "3840x2160"};
     char *words[WORDS_MAX];
@@ -684,7 +722,9 @@ s32 port_ExportBegin(
     /* the settings file this run was told of, or none: the one beside the
      * program, as this run read it */
     const char *settings = port_GetCommandWord("--config");
-    s32 kind = port_FilmCanMake(PORT_FILM_MP4) ? PORT_FILM_MP4 : PORT_FILM_AVI;
+    s32 kind = clip != NULL && clip->is_gif      ? PORT_FILM_GIF
+               : port_FilmCanMake(PORT_FILM_MP4) ? PORT_FILM_MP4
+                                                 : PORT_FILM_AVI;
     s32 count = 0;
     s32 i;
 
@@ -696,12 +736,20 @@ s32 port_ExportBegin(
         snprintf(why, room, "this program cannot start another run of itself");
         return FALSE;
     }
-    port_ExportOut(name, kind);
+    suffix[0] = 0;
+    if (clip != NULL) {
+        snprintf(suffix, sizeof(suffix), "-clip-%u-%u", clip->from, clip->to);
+    }
+    port_ExportOut(name, kind, suffix);
     i = g_port_settings.film_size;
     snprintf(
         size, sizeof(size), "%s",
         g_sizes[i >= 0 && i < (s32)(sizeof(g_sizes) / sizeof(g_sizes[0])) ? i
                                                                           : 0]);
+    if (kind == PORT_FILM_GIF) {
+        /* a GIF is at most PORT_GIF_WIDTH across: drawn a size above it */
+        snprintf(size, sizeof(size), "1280x720");
+    }
     snprintf(graphics_word, sizeof(graphics_word), "%s",
              g_port_settings.film_picture == 0 ? "remastered" : "original");
     words[count++] = (char *)port_GetProgramPath();
@@ -727,6 +775,22 @@ s32 port_ExportBegin(
     if (port_GetCommandWord("--music-mods") != NULL) {
         words[count++] = (char *)"--music-mods";
         words[count++] = (char *)port_GetCommandWord("--music-mods");
+    }
+    if (clip != NULL) {
+        /* the theatre's clip: its frames, and the view it was asked in */
+        snprintf(from_word, sizeof(from_word), "%u", clip->from);
+        snprintf(to_word, sizeof(to_word), "%u", clip->to);
+        words[count++] = (char *)"--export-from";
+        words[count++] = from_word;
+        words[count++] = (char *)"--export-to";
+        words[count++] = to_word;
+        words[count++] = (char *)"--theatre-view";
+        words[count++] = (char *)clip->view;
+        if (clip->path != NULL) {
+            /* ... and the free camera's keys it follows */
+            words[count++] = (char *)"--theatre-path";
+            words[count++] = (char *)clip->path;
+        }
     }
     words[count++] = (char *)"--no-cards";
     words[count++] = (char *)"--no-log";

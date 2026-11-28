@@ -420,9 +420,10 @@ def session_match_problems(label, who, err, out, plan, match='stock'):
     return problems
 
 
-def write_session_plan(program, side, folder, match=None):
+def write_session_plan(program, side, folder, match=None, more=()):
     """The plan of the host (side 0) or the guest (1) for `program`: its
-    path. `match`: the session plays that of SESSION_MATCHES."""
+    path. `match`: the session plays that of SESSION_MATCHES; `more`: more
+    presses of its own pad."""
     fight = port_game_fight()
     rematch = [p.replace('fight+', 'rematch+', 1) for p in fight]
     select = SESSION_SELECT
@@ -435,7 +436,7 @@ def write_session_plan(program, side, folder, match=None):
     elif match == 'arena':
         # the arenas' page (Select), and Cross there on its first
         select = SESSION_SELECT[:-1] + ['select+1150 SELECT'] + SESSION_SELECT[-1:]
-    presses = own_pad(select + fight + rematch, side)
+    presses = own_pad(select + fight + rematch, side) + list(more)
     if side == 0:
         presses.append("after_fight+%d CROSS" % (30 if match else 120))
     toml = os.path.join(folder, 'session_side%d.toml' % side)
@@ -599,14 +600,36 @@ shot = false
 name = "after_fight"''')
 
 
-def write_room_plan(program, folder, crew=False, duo=False, four=False):
+def tournament_fight():
+    """A room's tournament's fight, each pad's: port_game's (a fight of two
+    players, over by frame 600 or so), then from frame 900 port_game's
+    first side's presses (toward the other, the two blows by turns) on
+    both pads for three minutes more, so that a player whose match is
+    against the CPU attacks it whichever pad of the session is his (he is
+    the first side against the CPU: docs/NETPLAY.md, section 22) and the
+    CPU, who circles a player who stands, is met."""
+    out = port_game_fight()
+    for pad in ('', 'P2 '):
+        for start in range(900, 9000, 600):
+            out.append('fight+%df %sRIGHT hold 20f' % (start, pad))
+            for k, at in enumerate(range(start + 22, start + 590, 30)):
+                out.append('fight+%df %s%s' % (at, pad, 'CIRCLE' if k % 2 == 0 else 'CROSS'))
+    return out
+
+
+def write_room_plan(program, folder, crew=False, duo=False, four=False, tournament=False):
     """The plan of every member of a room for `program`: its path. `crew`:
     a Crew 2 match's (ROOM_CREW_CHECKPOINTS). `duo`: a fight of two on two,
     on the stage page's next stage (as the session's, SESSION_MATCHES).
-    `four`: a match of four players' (four_presses), every pad's."""
+    `four`: a match of four players' (four_presses), every pad's.
+    `tournament`: a room's tournament's (docs/NETPLAY.md, section 22),
+    whose player against the CPU is the first side whichever pad he has:
+    the stage's Cross on the second pad too."""
     toml = os.path.join(folder, 'room.toml')
     fight = port_game_fight()
     presses = SESSION_SELECT + fight
+    if tournament:
+        presses = SESSION_SELECT + ['select+1180 P2 CROSS'] + tournament_fight()
     if duo:
         presses = SESSION_SELECT[:-1] + PARTNER_PRESSES + STAGE_AFTER_PARTNERS + fight
     if crew:
@@ -800,16 +823,18 @@ def check_rollback(label, program, args, ports):
     return problems
 
 
-def check_session(label, program, args, ports, window, match='stock', extra=None, resync=False):
+def check_session(label, program, args, ports, window, match='stock', extra=None, resync=False, presses=None):
     """A session between two programs, set up by --host and --join, through
     the versus select screen, a fight, a rematch and the guest's leaving.
     `window`: the programs are the window's, headless (dummy drivers), in
     real time; or else the headless ones, as fast as they go. `extra`: more
     arguments of each side's; `resync`: the two part on purpose and a
-    resync puts them together again (resync_problems)."""
+    resync puts them together again (resync_problems); `presses`: more
+    presses of each side's plan."""
     folder = os.path.join(args.out, 'session', label)
     os.makedirs(folder, exist_ok=True)
-    plans = [write_session_plan(program, side, folder, None if window else match) for side in (0, 1)]
+    plans = [write_session_plan(program, side, folder, None if window else match, presses[side] if presses else ())
+             for side in (0, 1)]
     # both machines' mods: the sample arena, where the session fights on it
     mods = ['--mods', arena_mods(folder)] if match == 'arena' and not window else []
     trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss)]
@@ -1098,17 +1123,21 @@ def resync_problems(label, errs, hashes):
 
 # The cases of a resync: a session of two (the stock match of `session`)
 # whose guest parts on purpose in the first fight and is resynced by
-# itself; whose host parts and the guest's player asks (--resync-auto 0,
-# --resync-ask-at); and four players on four PCs, the third parting.
+# itself; whose host parts and the guest's player asks, holding Select a
+# second (--resync-auto 0; RESYNC_HOLD, from near frame 1,630 of the
+# session, its fight begun near 1,390); and four players on four PCs, the
+# third parting.
 RESYNC_PART_AT = 1450
 RESYNC_ASK_AT = 1620
+RESYNC_HOLD = 'fight+240f SELECT hold 75f'
 RESYNC_FOUR_PART_AT = 2400
 RESYNC_CASES = {
     'resync-guest': {1: ['--net-part-at', str(RESYNC_PART_AT)]},
     'resync-host': {0: ['--net-part-at', str(RESYNC_PART_AT), '--resync-auto', '0'],
-                    1: ['--resync-auto', '0', '--resync-ask-at', str(RESYNC_ASK_AT)]},
+                    1: ['--resync-auto', '0']},
     'resync-four': {2: ['--net-part-at', str(RESYNC_FOUR_PART_AT)]},
 }
+RESYNC_PRESSES = {'resync-host': [[], [RESYNC_HOLD]]}
 
 
 def check_resync(label, program, args, base, case):
@@ -1118,8 +1147,23 @@ def check_resync(label, program, args, base, case):
     extra = RESYNC_CASES[case]
     if case == 'resync-four':
         return check_four('%s-%s' % (label, case), program, args, base, 'four', extra, True)
-    return check_session('%s-%s' % (label, case), program, args, (base, base + 1), False, 'stock',
-                         [extra.get(0, []), extra.get(1, [])], True)
+    problems = check_session('%s-%s' % (label, case), program, args, (base, base + 1), False, 'stock',
+                             [extra.get(0, []), extra.get(1, [])], True, RESYNC_PRESSES.get(case))
+    if case in RESYNC_PRESSES:
+        problems += resync_held(os.path.join(args.out, 'session', '%s-%s' % (label, case)))
+    return problems
+
+
+def resync_held(folder):
+    """The guest's player asked for the resync by holding Select a second
+    (RESYNC_HOLD), parted: it says so (`folder` the session's)."""
+    err = read(os.path.join(folder, 'side1.err'))
+    held = re.search(r'netplay: Select held a second\nnetplay: this player asks for a resync at frame (\d+)', err)
+    if not held:
+        return ['session: %s: the guest\'s Select held did not ask for the resync' % os.path.basename(folder)]
+    print('port_net: %s: the guest held Select a second, parted, and so asked for the resync at frame %s' % (
+        os.path.basename(folder), held.group(1)))
+    return []
 
 
 # ---- four players (docs/NETPLAY.md, section 18) ----

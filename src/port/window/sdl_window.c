@@ -66,6 +66,7 @@
 #include "port_fight_music.h"
 #include "port_match.h"
 #include "port_duo.h"
+#include "port_theatre.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "portmap.h"
@@ -1949,6 +1950,62 @@ static void port_WriteShot(void) {
         path);
 }
 
+static void port_DrawPicture(u32 blank, s32 may_tap);
+
+/* The theatre's still (sdl_theatre.c): the picture alone, as the window
+ * draws it under the counter, the line and the pages, at the window's
+ * size, a PNG at `path`, or in screenshots/ beside the program as
+ * `still-YYYYMMDD-HHMMSS-NNN.png` where `path` is NULL. Written here, so
+ * that a test finds it as soon as the line says so. */
+s32 port_WriteWindowStill(
+    const char *path, char *written, u32 room, s32 *w, s32 *h) {
+    char folder[PATH_BYTES_MAX];
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    if (path == NULL) {
+        char *base = SDL_GetBasePath();
+        time_t now = time(NULL);
+        const struct tm *when = localtime(&now);
+
+        snprintf(folder, sizeof(folder), "%s%s", base != NULL ? base : "",
+                 SHOTS_FOLDER);
+        SDL_free(base);
+        if (when == NULL) {
+            return FALSE;
+        }
+        port_MakeFolder(folder);
+        snprintf(written, room, "%s/still-%04d%02d%02d-%02d%02d%02d-%03u.png",
+                 folder, when->tm_year + SHOT_EPOCH_YEAR, when->tm_mon + 1,
+                 when->tm_mday, when->tm_hour, when->tm_min, when->tm_sec,
+                 g_port_shots_taken % SHOT_NUMBERS);
+        g_port_shots_taken++;
+    } else {
+        snprintf(written, room, "%s", path);
+    }
+    port_OpenWindow();
+    port_DrawPicture(port_GetBlankCount(), FALSE);
+    port_WindowSize(&window_w, &window_h);
+    if (!port_ReadWindowPixels(window_w, window_h)) {
+        return FALSE;
+    }
+    *w = window_w;
+    *h = window_h;
+    return port_WritePngFile(written, g_port_window_pixels, window_w, window_h);
+}
+
+/* forward: what is laid over the picture, and the window as a PNG */
+static void port_DrawCounter(void);
+static s32 port_WriteWindowPng(const char *path);
+
+s32 port_WriteWindowShown(const char *path) {
+    port_OpenWindow();
+    port_DrawPicture(port_GetBlankCount(), FALSE);
+    port_DrawCounter();
+    port_DrawNetLine();
+    return port_WriteWindowPng(path);
+}
+
 /* The displayed rectangle of video memory into the window: black where
  * the display is off or has no size. */
 static void port_DrawPicture(u32 blank, s32 may_tap) {
@@ -2321,29 +2378,55 @@ static PortOverlay g_port_page;
 static PortOverlay g_port_panel_rows;
 static PortOverlay g_port_page_lines;
 
-static void port_DrawOverlay(PortOverlay *overlay, PortOverlayPixels make) {
-    const u32 *pixels;
+void port_GetLookArea(PortRect *area) {
     PortRect picture;
-    PortRect box;
-    SDL_Rect where;
-    s32 area_w;
-    s32 area_h;
     s32 window_w = 0;
     s32 window_h = 0;
 
     port_WindowSize(&window_w, &window_h);
     port_PicturePlace(window_w, window_h, &picture);
-    area_h = picture.h;
-    area_w = picture.h * 4 / 3;
-    if (area_w > picture.w) {
-        area_w = picture.w;
-        area_h = picture.w * 3 / 4;
+    area->h = picture.h;
+    area->w = picture.h * 4 / 3;
+    if (area->w > picture.w) {
+        area->w = picture.w;
+        area->h = picture.w * 3 / 4;
     }
-    if (!make(area_w, area_h, &pixels, &box)) {
+    area->x = picture.x + (picture.w - area->w) / 2;
+    area->y = picture.y + (picture.h - area->h) / 2;
+}
+
+void port_MouseToPixels(s32 *x, s32 *y) {
+    int across = 0;
+    int down = 0;
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    if (g_port_window == NULL) {
         return;
     }
-    where.x = picture.x + (picture.w - area_w) / 2 + box.x;
-    where.y = picture.y + (picture.h - area_h) / 2 + box.y;
+    SDL_GetWindowSize(g_port_window, &across, &down);
+    port_WindowSize(&window_w, &window_h);
+    if (across > 0 && down > 0 && window_w > 0 && window_h > 0) {
+        *x = *x * window_w / across;
+        *y = *y * window_h / down;
+    }
+}
+
+static void port_DrawOverlay(PortOverlay *overlay, PortOverlayPixels make) {
+    const u32 *pixels;
+    PortRect area;
+    PortRect box;
+    SDL_Rect where;
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    port_WindowSize(&window_w, &window_h);
+    port_GetLookArea(&area);
+    if (!make(area.w, area.h, &pixels, &box)) {
+        return;
+    }
+    where.x = area.x + box.x;
+    where.y = area.y + box.y;
     where.w = box.w;
     where.h = box.h;
     if (g_port_has_gl) {
@@ -2570,9 +2653,17 @@ static void port_DrawCounter(void) {
 
     /* what is laid over the picture's corner is laid over it with the
      * stage pages' kinds of stage (stage_page.c) */
-    port_DrawStagePage();
-    port_DrawMatchPage();
-    port_DrawTopPage();
+    /* the theatre's picture without the HUD has none of the window's own
+     * over the fight either (sdl_theatre.c) */
+    if (!port_TheatreHidesOverlays()) {
+        port_DrawStagePage();
+        port_DrawMatchPage();
+        port_DrawTopPage();
+    }
+    if (!port_MenuIsOpen() && !port_OnlinePagesAreOpen()) {
+        /* the replay theatre's seek bar (sdl_theatre.c) */
+        port_TheatreDrawBar();
+    }
     port_DrawWindowPage();
     if (!g_port_show_fps) {
         return;
@@ -3450,6 +3541,11 @@ static void port_ReadEvents(void) {
     s32 pad;
 
     while (SDL_PollEvent(&event)) {
+        if (port_TheatreWindowEvent(&event)) {
+            /* the theatre's or photo mode's key, button or mouse
+             * (sdl_theatre.c) */
+            continue;
+        }
         if (port_ReplayWindowEvent(&event)) {
             /* a playback's key or button (sdl_replay.c) */
             continue;
@@ -3539,6 +3635,9 @@ static void port_ReadInput(u32 blank) {
 static void port_ReadInputLate(void) {
     s32 was;
 
+    /* the theatre's turn: its view for the look about to be run, photo
+     * mode's wait (sdl_theatre.c) */
+    port_TheatreBoundary();
     if (!g_port_is_open) {
         return;
     }
@@ -3558,7 +3657,8 @@ static void port_ReadInputLate(void) {
     }
     /* in a load, no frame is run ahead across it (step.c) */
     g_port_ahead_held = port_LoadKind() != PORT_LOAD_NONE;
-    if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0 &&
+    if (g_port_has_gl && g_port_tween_on &&
+        (port_GetRunAhead() > 0 || port_TheatreIsOn()) &&
         port_TweenTakeMirrorBehind()) {
         /* A picture between frames that could not keep what it changed of
          * the card's mirror of video memory put back what video memory

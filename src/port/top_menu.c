@@ -36,6 +36,11 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
          PORT_TOP_ONLINE,
          GAME_ROW_LINK,
          0},
+        {"Tournament",
+         {"Tournament", "A bracket of up to eight players or CPUs"},
+         PORT_TOP_TOURNAMENT,
+         GAME_ROW_VS,
+         0},
         {"Options", {NULL, NULL}, PORT_TOP_OPTIONS, GAME_ROW_OPTIONS, 0},
     },
     {
@@ -43,6 +48,7 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
         {"Vs. CPU", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_VSCPU, SIDE},
         {"Slash", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_CHANBARA, SIDE},
         {"Group Battle", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_TEAM, SIDE},
+        {NULL, {NULL, NULL}, PORT_TOP_EMPTY, GAME_ROW_STORY, 0},
         {"Back",
          {"Back", "To the main menu"},
          PORT_TOP_BACK,
@@ -65,6 +71,7 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
          PORT_TOP_TRAINING_OPTIONS,
          GAME_ROW_OPTIONS,
          0},
+        {NULL, {NULL, NULL}, PORT_TOP_EMPTY, GAME_ROW_STORY, 0},
         {NULL, {NULL, NULL}, PORT_TOP_EMPTY, GAME_ROW_STORY, 0},
         {"Back",
          {"Back", "To the main menu"},
@@ -107,12 +114,15 @@ const PortTopRow *port_TopMenuRow(void) {
     return &g_port_top_rows[g_port_top_menu.page][port_TopMenuCursor()];
 }
 
+/* Whether a row can be chosen: an empty one never, training's and a
+ * tournament's not in a session, a mode's where the game's row is. */
 s32 port_TopRowIsLit(const PortTopRow *of, u32 rows_on) {
     if (of->kind == PORT_TOP_EMPTY) {
         return FALSE;
     }
-    if (of->kind == PORT_TOP_TRAIN && port_SessionIsOn()) {
-        /* training is never a session's */
+    if ((of->kind == PORT_TOP_TRAIN || of->kind == PORT_TOP_TOURNAMENT) &&
+        port_SessionIsOn()) {
+        /* training and a local tournament are never a session's */
         return FALSE;
     }
     return (of->kind != PORT_TOP_MODE && of->kind != PORT_TOP_TRAIN) ||
@@ -139,6 +149,16 @@ void port_TopMenuMove(s32 step, u32 rows_on) {
 }
 
 void port_TopMenuOpenPage(s32 page) { g_port_top_menu.page = (u8)page; }
+
+void port_TopMenuCursorOn(s32 kind) {
+    s32 row;
+
+    for (row = 0; row < PORT_TOP_ROWS; row++) {
+        if (g_port_top_rows[g_port_top_menu.page][row].kind == kind) {
+            g_port_top_menu.cursor[g_port_top_menu.page] = (u8)row;
+        }
+    }
+}
 
 void port_TopMenuAsk(s32 page) {
     g_port_top_menu.asks++;

@@ -102,7 +102,12 @@ the counter in the corner: `59.8/30.0 100%` is the pictures shown a
 second, the game's own frames a second (30 in a fight and 60 in the
 main menu are full speed), and the speed against the console's.
 Online, **F5** resyncs a game that has fallen out of step with the
-other player's ("Playing online", below).
+other player's ("Playing online", below); on a controller, **hold
+Select** (Back) a second. Select is the resync's only while the games
+are out of step, and holding it then is not pressed in the game; it is
+whatever key or button your settings make Select (`p1.select`, below),
+Right Shift on the keyboard unless you change it. In a fight offline,
+**F4** is photo mode ("Photo mode", below).
 
 **F9 keeps a report of a problem**: press it when something looked or
 sounded wrong, or the game stuttered, and a folder
@@ -137,7 +142,7 @@ page, which the PlayStation disc shows first, is not shown, and its
 setting, Bug fixes, is in the settings menu with the rest. A memory card
 with the game's save on it is loaded without asking. Then the main menu,
 in the game's own look (its title says MAIN MENU where the game's said
-TOP MENU), with five rows:
+TOP MENU), with six rows:
 
 | The row | What it is |
 |---|---|
@@ -145,6 +150,7 @@ TOP MENU), with five rows:
 | **Versus** | two players, the second on the second pad |
 | **Training** | a page of its own: **Training**, a fight against a dummy ("Training", below), the game's own **Classic Training** (either kind of practice), **Training Options** and **Back** |
 | **Online Play** | the online pages, a page of the game's own look: Quick Match, host a room, browse rooms, join by code or by address ("Playing online"); Back on them comes back here |
+| **Tournament** | a local tournament of up to eight players and CPUs ("Tournament", below); while one is on, its bracket |
 | **Options** | the settings menu (below), in place of the game's own options page and in its look |
 
 Up and down choose, Cross takes the row, Triangle goes back (from the
@@ -189,8 +195,9 @@ none still held as it closes). Over the pause the fight's picture is
 darkened under the menu's panel, as under a game's own pause page.
 
 Its first page is a row for each group of settings -- **The game**,
-**Display**, **The remastered picture**, **Controls** and **Mods** --
-then **Replays**, **Stats** (your record, "Stats" below), **Play
+**Display**, **The remastered picture**, **Controls**, **Mods**,
+**Training** and **Tournament** (what a tournament's page begins with,
+"Tournament" below) -- then **Replays**, **Stats** (your record, "Stats" below), **Play
 online**, **Updates**, **Back to the game** and **Quit ReBushido**. A
 group's row opens its page: its settings, each with its value, a line
 under them about the one the cursor is on, and beside the cursor's value
@@ -905,6 +912,102 @@ pause menu's Select):
 No replay is kept of a training fight, and training is not offered
 online.
 
+## Tournament
+
+**Tournament** on the main menu runs a local tournament on one PC: two
+to eight entrants, each a player or the CPU, in a bracket of single or
+double elimination, every match played under one of the match rules.
+
+**Its page** (in the settings menu's look) has the tournament's four
+settings and then a row for each entrant:
+
+| Row | Values | What it does |
+|---|---|---|
+| Entrants | 2 to 8 | how many (`tournament_entrants`); where they do not fill the bracket (3, 5, 6, 7) the top seeds have byes, a first round they do not play |
+| Elimination | Single, Double | out at the first loss, or at the second (`tournament_elimination`) |
+| Seeding | Drawn, In order | the seeds drawn at random, or the entrants' order, the first the top seed (`tournament_seeding`) |
+| Each match | One fight, First to 2, First to 3, Stock 2, Stock 3 | each match's rule (`tournament_match`); "One fight" is fought again on a draw, so every match has a winner |
+| 1. ..., 2. ... | | each entrant: **Left** and **Right** say who plays it (Player 1's to Player 4's pad, or the CPU: the game's own, Novice, Adept, Veteran, Master); **Cross** opens its own page |
+| Begin the tournament | | draws the bracket |
+
+An entrant's page has its **Name** (Cross, then type; Enter keeps it),
+**Played by**, and for a CPU its **Fighter** and **Weapon**: one of the
+fighters with blades, or Any (drawn for each match from the six a new
+save has), one of the six blades or Any. A player always picks his
+fighter and weapon at the select screen. Two entrants cannot be played
+by the same pad.
+
+**Between matches** the bracket is shown: each round's matches, the
+winners in white, the next match lit, the line from each match to where
+its winner goes, and the champion's box; with double elimination the
+winners' bracket on top with the grand finals beside it, the losers'
+bracket under it. **Play the next match** plays it; **Leave the
+tournament** (press it twice) ends it there, and nothing of it is kept.
+Escape or Circle goes to the main menu, whose Tournament brings the
+bracket back; choosing another mode there leaves the tournament.
+
+**A match** with a player in it goes to the select screen of versus:
+each player picks with his own pad (a player is always the first side
+against the CPU), the CPU's side is picked for it, and a player picks the
+stage. A match of two CPUs goes straight to its fight, on one of the open
+stages the CPU's levels were measured on; Start on any pad pauses it, and
+the pause menu's Return to Main Menu leaves the match unplayed (it is
+offered again). Each match is a match of the rule chosen (the lives or
+the score over the fight, the card between fights), and when it is
+decided the game goes back to the main menu and the bracket.
+
+**Double elimination**: a first loss sends an entrant to the losers'
+bracket, a second loss is out. The grand final is the winners' bracket's
+champion against the losers' bracket's; if the losers' champion wins it,
+the winners' champion has his first loss and a second grand final (the
+reset) decides it, so nobody is out without losing twice.
+
+**The places**: the champion first, the final's loser second; in single
+elimination the semifinals' losers third, the quarterfinals' fifth; in
+double elimination the losers' final's loser third, the round before
+fourth, then fifth and seventh in pairs.
+
+**The record**: when a tournament is over, it is kept in your record
+(Options, **Stats**, **Tournaments**): when, how many, the rule, the
+champion, and every entrant's place. The fights you play in it count in
+your record as any versus fight does (also under **By mode**,
+*Tournament*); a match of two CPUs counts nothing there, but is a match
+of the tournament's result. A tournament left is not kept, and one is
+never resumed after the program closes.
+
+### A tournament in a room
+
+A **room of several** (Online Play, below) can hold a tournament too.
+Its host chooses, on the room's page:
+
+| Row | What it does |
+|---|---|
+| Begin a tournament | the room's players (everyone in it who plays, not the spectators) and the CPUs below, seeded at random, in a bracket; the bracket's page comes up |
+| Its bracket | single elimination with one fight a match, First to 2 or Stock 2; or double elimination with one fight or First to 2 |
+| Its CPUs | none, or as many as fill the bracket's eight: each at Adept, its fighter and weapon drawn for each match |
+
+Once it is on, the row is **Tournament** for everyone, and shows the next
+match or the champion; Cross on it shows the bracket (the same page as a
+local tournament's). Each match is played by its two entrants, one
+after another, while everyone else in the room watches it, live, as the
+room's spectators watch any match; nothing has to be pressed between
+matches. A match against a CPU is played against the host's PC, which
+plays the CPU (or another member's, where the host is the CPU's
+opponent); you pick your fighter and the stage as against the CPU on one
+PC. A fight with the CPU in it that goes on three minutes with neither
+fallen is judged (the less wounded wins), as two CPUs' are on one PC:
+the room waits on each match.
+
+**Leaving**: a player who leaves his match in the middle (F1 or Escape
+twice), or the room, loses that match; one who has left the room is out
+of the tournament, and each of his later matches is won by the other
+without a fight. A match that could not be met is played again. If the
+host leaves the room, the tournament ends there.
+
+When it is over, the champion is shown on the room's page and the
+bracket's, and the tournament is kept in each player's record, as a
+local one is.
+
 ## Everything unlocked
 
 **`unlock_all = on`** (the settings menu's "Unlock everything"; off with
@@ -1298,17 +1401,20 @@ same way, and the pages say why.
 **If the two games fall out of step** (a desync: the two PCs' games
 have come to differ, which should not happen, and each of you would see
 a fight of his own), the session goes on and the line at the top says
-*The game fell out of step with the other player's | F5: resync now |
-by itself in 3 s*. Press **F5**, either of you (or anyone's, with four
-players), or wait three seconds: the game stops a moment (*Resyncing:
+*The game fell out of step with the other player's | F5 or hold Select:
+resync now | by itself in 3 s*. Press **F5** or **hold Select** a second
+(on a controller, Back), either of you (or anyone's, with four players),
+or wait three seconds: the game stops a moment (*Resyncing:
 the host's game is coming*, with how much of it has come, a second or
 two; a few through the lobby's relay), the host's game is put on every
 PC, and the fight goes on from there, *Back in step* on the line. If it
-falls out of step again within twenty seconds it waits for F5. Only if
-the host's game cannot reach you (nothing of it for 15 seconds) does the
-session end, as before. A spectator who falls out of step with the
-players waits for the same and watches on. The fight's replay keeps the
-resync and plays to its end.
+falls out of step again within twenty seconds it waits for F5 or
+Select. Only if the host's game cannot reach you (nothing of it for 15
+seconds) does the session end, as before. A spectator who falls out of
+step with the players waits for the same and watches on, in a fight of
+four as in one of two. The fight's replay keeps the resync and plays to
+its end. (A spectator who comes into a fight of four after its resync
+waits for its next fight to watch from.)
 The settings menu cannot be opened during a session (the other
 player's game would have to stop too).
 
@@ -1345,6 +1451,12 @@ their round trip to the lobby), the match now and the last result.
   opens one of your own, and another member who is not playing takes it
   with *Join a match beside*. It is played as the rotation's are, while
   the rotation goes on, and can be watched too.
+- **A tournament**: the host's *Begin a tournament* puts the room's
+  players (and CPUs) in a bracket, and the rotation follows it until its
+  champion ("Tournament", "A tournament in a room"). Meanwhile the
+  rotation's own choice and *Play in the rotation* are the tournament's,
+  and the host's page shows a match beside the room's of its own,
+  waiting: that is the bracket's board, which nobody joins.
 - *Leave the room* takes you back to the online pages; Escape on the
   room's page goes to that row, so that nobody leaves by a slip.
 
@@ -1546,8 +1658,109 @@ one of the console's vertical blanks (59.83 a second, the rate the game
 and its sound keep), so its sound is the fight's own, frame for frame.
 
 From the command line: `rebushido --replay FILE --export OUT.mp4` (or
-`.avi`), with `--window 1280x720` for another size and `--graphics
-original` for the console's picture.
+`.avi`, or `.gif`), with `--window 1280x720` for another size and
+`--graphics original` for the console's picture.
+
+## The replay theatre
+
+A replay played from the Replays page is a theatre as well: besides the
+keys above, the camera can be let loose, the HUD hidden, the time of day
+turned, the fight gone to any frame, a still kept and a clip made. None
+of it changes the fight: every frame is played as it was recorded and
+held to the recording, and the picture is the fight drawn again from
+where you put the camera.
+
+| Key | Controller | What it does |
+|---|---|---|
+| C | left stick pressed | the free camera on (from where the game's was), or the game's camera again |
+| W, S, A, D | left stick | the free camera forward, back, left, right (along the ground) |
+| E, Q | | up, down |
+| the arrows, or the mouse with its left button held | right stick | turn round the point looked at (while the free camera is on; otherwise Right is a frame on as above) |
+| the mouse with its right button held | | slide the camera sideways and up |
+| Z, X, or the mouse's wheel | the triggers | nearer, farther |
+| N, M, or the mouse's wheel with Ctrl held | | the field of view narrower, wider (20 to 100 degrees; the game's own is 45) |
+| Shift held | | four times as fast |
+| H | right stick pressed | the HUD hidden or shown (the game's and the window's own: the match strip, training's lines) |
+| T | | the time of day: dawn, day, dusk, night, the stage's own, and back to the fight's |
+| V | | a still: the picture alone, at the window's full size, as a PNG in `screenshots/` (`still-...png`) |
+| `,` (or Left with the free camera off) | | a frame back (and pause) |
+| `.` | D-pad right, R1 | a frame on (and pause) |
+| Page Up, Page Down | | five seconds back, on |
+| 1 to 9, 0 | | a tenth of the way on each, 0 the start |
+| `[`, `]` | | the clip's first frame, its last |
+| G | | a clip of the frames marked (or five seconds from the frame on show) |
+| J (or Insert) | | a key of the camera at the frame on show: the free camera as it is, with its field of view |
+| U (or Delete) | | the key nearest the frame on show cleared; with Shift, every key |
+| O | | the camera on its keys, or let go of them (to fly freely while it plays) |
+| the mouse on the seek bar | | a click goes to that frame; dragging along it seeks under the mouse |
+| Tab | | the line of keys hidden or shown |
+
+The free camera moving a fight that plays shows it from there as it
+goes; paused, it is the frame on show seen from wherever you turn. Going
+back is quick: the theatre keeps the fight's state every five seconds as
+it passes, and a frame back runs on from the nearest of those. The time
+of day changes a **Remastered Classic** stage or an arena (as on the
+stage page) in the Remastered picture.
+
+**The seek bar.** Across the bottom of the picture, in the game's menu
+look: the time on show at its left, the replay's length at its right,
+the part played in gold, the frames marked for a clip brighter between
+two white marks, the camera's keys in green under it and the frame on
+show in the menu cursor's yellow. It is there while the HUD is (H, or
+Tab for the line, hides it), and for a few seconds whenever the mouse
+moves. A click on it goes to that frame, and dragging along it keeps
+seeking under the mouse; a click anywhere else is the camera's, as
+before.
+
+**A camera that moves.** Pause where a shot begins, put the free camera
+where it should be (its field of view too, N and M) and press **J**: a
+key. Go on to where the shot ends (the bar, a frame on, Page Down), move
+the camera and press **J** again; as many keys as you like, up to 64.
+Played or sought, the camera then flies through the keys: a smooth curve
+through each (eased out of the first and into the last), the turns taken
+the short way round with the horizon kept level, and a zoom (the
+distance or the field of view) even. Before the first key and after the
+last it stays at that key. A move of the camera by hand while it is on
+its keys lasts until the frame changes, so that a key can be set from it
+(J on a key's frame replaces it); **O** lets go of the keys to fly freely
+while it plays, **U** clears the nearest. The line says how many keys
+there are, and a clip (G) follows them.
+
+**A clip** (G) is made beside the game, as a film is: another run of the
+program plays the replay from the clip's first frame to its last, in the
+theatre's view as it is when G is pressed (the free camera where it is,
+the HUD as it is), and writes it into `films/` beside the program, named
+by the replay and its frames (`...-clip-200-350.gif`). The settings
+menu's Replays page, **Theatre's clip** (`clip`): **GIF** (built in), 640
+pixels across, the fight's own 30 frames a second and no sound, which
+every chat and browser shows; or **Film**, an .mp4 (Windows) or .avi as
+"A film of a replay" above makes, of `film_size` and with the sound. The
+line says when it is made.
+
+From the command line: `--export OUT.gif` (or .mp4, .avi) `--export-from
+F --export-to F` makes a clip of those frames, and `--theatre-view
+free,x,y,z,pitch,yaw,roll,distance,hud,time` (ten numbers) puts the
+camera there; an eleventh is the screen's distance, the field of view
+(320 / tan of half of it: 772 is the game's 45 degrees; 0 the game's).
+`--theatre-path F,x,y,z,pitch,yaw,roll,distance,screen;...` gives the
+camera's keys (nine numbers each, between semicolons), which it follows:
+G gives a clip's run its keys so.
+
+## Photo mode
+
+In a fight, **F4** stops the fight where it is, for a picture: the game
+waits, nothing of it moves, and the keys are the theatre's (above): the
+free camera (W A S D, Q E, the arrows or the mouse, Z X, N M the field
+of view, Shift), **H**
+the HUD, **T** the time of day, **V** a still into `screenshots/`. **F4**
+or **Escape** (or a controller's B or Back) and the fight goes on from
+exactly where it stopped, as if nothing had happened: the free camera,
+the HUD and the time go back to the fight's own. It is there to show the
+stages' skies and dressing: with Remastered and a Remastered Classic
+stage, turn the time to dawn or dusk and the camera to the sky.
+
+Not online (the other player would not wait), nor over a link cable;
+in a replay the theatre's keys are the same.
 
 ## Stats
 
@@ -1569,10 +1782,11 @@ yours). Under them a row opens each list:
 | By fighter | your record as each fighter, and against each fighter |
 | By weapon | as each of your weapons |
 | By stage | on each stage |
-| By mode | Story, Vs. CPU, Slash, Versus, Group Battle, the link cable, Online, Ranked, and Two on two besides |
+| By mode | Story, Vs. CPU, Slash, Versus, Group Battle, the link cable, Online, Ranked, and Two on two and Tournament besides |
 | By opponent | each CPU level (the game's own CPU, Novice, Adept, Veteran, Master), a player beside you, and each player online by name |
 | Kills | the blows that killed, by what struck (a strike, a running or leaping strike, from a climb, the second sword, a thrown weapon, a shot, a paired move) and where (head, chest, hips, ...), from behind; and the fights by how they ended: a kill, a surrender, on points, on the clock |
 | Match history | every fight (the newest 255), the newest first: who won, the fighters, how long; under them when, the mode and the match (Stock 3, fight 2, the match won), the opponent, how it was decided, the stage and the weapons |
+| Tournaments | every local tournament over, the newest first: when, how many entrants, the elimination and the rule, the champion; the line under the rows has every entrant's place |
 
 On the history, **Enter** or **Cross** plays a fight's replay where one
 was kept (Keep replays on; a replay the folder has let go of, or one of
@@ -1583,7 +1797,7 @@ cut down all hundred). In versus on one PC the record is the first
 player's; online it is yours, whichever side you are.
 
 The record is the file `rebushido-stats.txt` beside `rebushido.cfg`, a
-line a fight, written again after each one (into a new file first, which
+line a fight and a line a tournament, written again after each one (into a new file first, which
 then takes the old one's place, so a crash or a full disc never leaves
 half a file). A file the program cannot read (a newer version's, or one
 spoiled) is not written over: it is renamed

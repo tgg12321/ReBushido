@@ -88,8 +88,13 @@
  * resync (docs/NETPLAY.md, section 21): netplay's input datagram carries
  * the resyncs its sender has had and a resync asked for, and the host's
  * state goes to every guest in chunks (KIND_RESYNC, KIND_RESYNC_ACK) where
- * the machines' games part. */
-#define SESSION_PROTOCOL 21
+ * the machines' games part. 22: a room's tournament's match
+ * (docs/NETPLAY.md, section 22): the welcome carries the match's two
+ * entrants (MEET_TOURNAMENT: each the host's pad, the guest's or the CPU,
+ * a level, a fighter and weapon), put in the state of both machines as a
+ * tournament of two (port_TournamentSessionBegin); its result is by
+ * entrant, the host's or the guest's, as the sides are seated. */
+#define SESSION_PROTOCOL 22
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -115,6 +120,15 @@
 /* Once the two have met, either gives up on the other after this long
  * with nothing heard: the host waits for another guest, the guest ends. */
 #define SILENT_GIVE_UP_MS 15000
+/* A guest the lobby has sent the host (the way between the two found)
+ * whose first hello has not come in this long has given up or gone: the
+ * host lets its seat go at the lobby and waits for another. A guest whose
+ * way was found directly said so a moment before and says hello at
+ * once; one relayed may be a program held up opening its window inside
+ * its meeting, which took up to 30 s on a loaded machine. Meanwhile the
+ * host tells the lobby the seat is still its own this often. */
+#define MET_GIVE_UP_MS 45000
+#define STILL_HERE_EVERY_MS 1000
 /* The disc is told from another by a sum of its sectors: every this
  * many from the first, and the volume's own description. */
 #define DISC_SAMPLE_EVERY 997
@@ -176,6 +190,14 @@ enum {
     KIND_MOVE   /* the host's: this port has its guest, go to the next */
 };
 
+/* MEET_TOURNAMENT's words (port_tournament.h's PortTournamentForm): on,
+ * the rule and its number; each entrant's pad and CPU level; their
+ * fighters and weapons; the dice. */
+#define TOURNAMENT_WORDS 4
+#define FORM_SHIFT_1 8
+#define FORM_SHIFT_2 16
+#define FORM_SHIFT_3 24
+
 /* KIND_LOBBY's number: the players here, and the session's, a byte each;
  * its word after the header, the shape every program cuts faces off at. */
 #define LOBBY_BYTES (PORT_NET_HEADER_BYTES + WORD_BYTES)
@@ -228,8 +250,9 @@ enum {
  * the time of day the stages start at (port_stage_choice.h), the match
  * rule (port_match.h), the welcome's rules (PORT_SESSION_RULE_...), the
  * session's pads and seats, the custom arenas' sum (port_ArenaSessionHash,
- * part of the gameplay mods' too: it says which of them differ), the
- * version's text, and last the player's name. */
+ * part of the gameplay mods' too: it says which of them differ), a room's
+ * tournament's match (four words, port_tournament.h's PortTournamentForm),
+ * the version's text, and last the player's name. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
     MEET_DISC = MEET_BUILD + 2 * WORD_BYTES,
@@ -246,7 +269,8 @@ enum {
     MEET_RULES = MEET_MATCH + WORD_BYTES,
     MEET_SEATS = MEET_RULES + WORD_BYTES,
     MEET_ARENAS = MEET_SEATS + WORD_BYTES,
-    MEET_VERSION = MEET_ARENAS + 2 * WORD_BYTES,
+    MEET_TOURNAMENT = MEET_ARENAS + 2 * WORD_BYTES,
+    MEET_VERSION = MEET_TOURNAMENT + TOURNAMENT_WORDS * WORD_BYTES,
     MEET_NAME = MEET_VERSION + VERSION_BYTES,
     MEET_BYTES = MEET_NAME + PORT_SESSION_NAME_BYTES
 };
@@ -303,6 +327,9 @@ static struct {
     s32 all_here;
     u32 peer_shape;
     SessionGuest guest[SESSION_GUESTS];
+    /* a room's tournament's match: the host's, or the guest's from the
+     * welcome */
+    PortTournamentForm tournament;
 } g_session = {.pads = 2, .pcs = 2};
 
 s32 (*g_port_session_ready_hook)(void);
@@ -345,6 +372,55 @@ void port_SetSessionSeed(u32 seed) {
 }
 
 void port_SetSessionRules(u32 rules) { g_session.rules = rules; }
+
+void port_SetSessionTournament(const PortTournamentForm *form) {
+    u32 i;
+
+    for (i = 0; i < sizeof(g_session.tournament); i++) {
+        ((u8 *)&g_session.tournament)[i] = 0;
+    }
+    if (form != NULL && form->on) {
+        g_session.tournament = *form;
+    }
+}
+
+/* MEET_TOURNAMENT's words, written and read. */
+static void port_PutTournament(u8 *out, const PortTournamentForm *form) {
+    port_NetPutWord(out, (u32)form->on | (u32)form->rule << FORM_SHIFT_1 |
+                             (u32)form->rule_count << FORM_SHIFT_2);
+    port_NetPutWord(out + WORD_BYTES,
+                    (u32)form->pad[0] | (u32)form->pad[1] << FORM_SHIFT_1 |
+                        (u32)form->cpu[0] << FORM_SHIFT_2 |
+                        (u32)form->cpu[1] << FORM_SHIFT_3);
+    port_NetPutWord(
+        out + 2 * WORD_BYTES,
+        (u32)form->fighter[0] | (u32)form->fighter[1] << FORM_SHIFT_1 |
+            (u32)form->weapon[0] << FORM_SHIFT_2 |
+            (u32)form->weapon[1] << FORM_SHIFT_3);
+    port_NetPutWord(out + 3 * WORD_BYTES, form->dice);
+}
+
+/* ... and read: a welcome's, a guest's own. */
+static void port_GetTournament(const u8 *in, PortTournamentForm *form) {
+    u32 words[TOURNAMENT_WORDS];
+    u32 i;
+
+    for (i = 0; i < TOURNAMENT_WORDS; i++) {
+        words[i] = port_NetGetWord(in + i * WORD_BYTES);
+    }
+    form->on = (u8)(words[0] & BYTE_MASK);
+    form->rule = (u8)(words[0] >> FORM_SHIFT_1 & BYTE_MASK);
+    form->rule_count = (u8)(words[0] >> FORM_SHIFT_2 & BYTE_MASK);
+    form->pad[0] = (u8)(words[1] & BYTE_MASK);
+    form->pad[1] = (u8)(words[1] >> FORM_SHIFT_1 & BYTE_MASK);
+    form->cpu[0] = (u8)(words[1] >> FORM_SHIFT_2 & BYTE_MASK);
+    form->cpu[1] = (u8)(words[1] >> FORM_SHIFT_3 & BYTE_MASK);
+    form->fighter[0] = (u8)(words[2] & BYTE_MASK);
+    form->fighter[1] = (u8)(words[2] >> FORM_SHIFT_1 & BYTE_MASK);
+    form->weapon[0] = (u8)(words[2] >> FORM_SHIFT_2 & BYTE_MASK);
+    form->weapon[1] = (u8)(words[2] >> FORM_SHIFT_3 & BYTE_MASK);
+    form->dice = words[3];
+}
 
 /* The host's --players (port_net.h): 2, 4 on four PCs, or 4 on two. */
 void port_SetSessionPlayers(s32 pads, s32 pcs) {
@@ -737,6 +813,7 @@ static void port_SendMeet(s32 kind) {
     port_NetPutWord(out + MEET_TIME, g_session.time);
     port_NetPutWord(out + MEET_RULES, g_session.rules);
     port_NetPutWord(out + MEET_MATCH, g_session.match);
+    port_PutTournament(out + MEET_TOURNAMENT, &g_session.tournament);
     port_NetPutWord(
         out + MEET_SEATS,
         kind == KIND_WELCOME
@@ -1164,6 +1241,9 @@ static s32 port_HostSession(char *note, u32 note_room) {
     u32 welcomed_at = 0;
     u32 heard_at = 0;
     u32 punched_at = 0;
+    /* when the lobby last sent this link a guest (the way found) */
+    u32 sent_at_lobby = start;
+    u32 still_here_at = start;
     s32 met = 0;
     u32 i;
 
@@ -1216,6 +1296,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
                 if (!port_HostWaitAgain()) {
                     return 0;
                 }
+                sent_at_lobby = port_NetClock();
                 continue;
             }
             if (kind == KIND_HELLO && !met) {
@@ -1230,6 +1311,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
                     if (port_IsRelayOn() && !port_HostWaitAgain()) {
                         return 0;
                     }
+                    sent_at_lobby = port_NetClock();
                     continue;
                 }
                 port_FixNetPeer();
@@ -1257,6 +1339,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
                 if (!port_HostWaitAgain()) {
                     return 0;
                 }
+                sent_at_lobby = port_NetClock();
                 continue;
             }
             if (kind == KIND_HELLO && met) {
@@ -1295,6 +1378,30 @@ static s32 port_HostSession(char *note, u32 note_room) {
             port_NetSendTo(&g_session.punch_to, punch, sizeof(punch));
             punched_at = now;
         }
+        if (!met && port_IsRelayOn() &&
+            now - still_here_at >= STILL_HERE_EVERY_MS) {
+            /* the lobby forgets a meeting whose way is found 30 s after
+             * its last hello: the seat kept while its guest is awaited */
+            port_RelayStillHere();
+            still_here_at = now;
+        }
+        if (!met && port_IsRelayOn() && now - sent_at_lobby > MET_GIVE_UP_MS) {
+            /* the lobby sent a guest, who gave up or went before his first
+             * hello came (NETPLAY.md, section 18, *The meeting*): his seat
+             * is let go (port_RelayMeet's reset), another waited for */
+            port_Log("session: the player the lobby sent to link %d never "
+                     "said hello in %u seconds; letting the seat go and "
+                     "waiting for another\n",
+                     link + 1, MET_GIVE_UP_MS / MS_PER_SECOND);
+            port_SessionText(note, note_room,
+                             "A player who came to the room gave up before "
+                             "joining.");
+            if (!port_HostWaitAgain()) {
+                return 0;
+            }
+            sent_at_lobby = port_NetClock();
+            continue;
+        }
         if (met && now - heard_at > SILENT_GIVE_UP_MS) {
             port_Log("session: the guest stopped answering; waiting for "
                      "another\n");
@@ -1304,6 +1411,7 @@ static s32 port_HostSession(char *note, u32 note_room) {
             if (!port_HostWaitAgain()) {
                 return 0;
             }
+            sent_at_lobby = port_NetClock();
             continue;
         }
         if (met) {
@@ -1621,6 +1729,7 @@ static s32 port_JoinSession(void) {
                 g_session.music = port_NetGetWord(in + MEET_MUSIC);
                 g_session.time = port_NetGetWord(in + MEET_TIME);
                 g_session.match = port_NetGetWord(in + MEET_MATCH);
+                port_GetTournament(in + MEET_TOURNAMENT, &g_session.tournament);
                 number = port_NetGetWord(in + MEET_SEATS);
                 g_session.pads = (s32)(number & BYTE_MASK) == 4 ? 4 : 2;
                 g_session.pcs =
@@ -1767,6 +1876,7 @@ void port_ResetSession(void) {
     g_session.seed = 0;
     g_session.cards = 0;
     g_session.rules = 0;
+    port_SetSessionTournament(NULL);
     g_session.have = 0;
     g_session.needed = 0;
     g_session.next_chunk = 0;
@@ -1923,6 +2033,16 @@ void port_ApplySession(void) {
     port_HoldSessionStageMusic(g_session.peer_stage_music);
     port_HoldStageTimeDefault((s32)g_session.time);
     port_HoldMatch(g_session.match);
+    if (g_session.tournament.on) {
+        const PortTournamentForm *form = &g_session.tournament;
+
+        /* a room's tournament's match: its two entrants in the state */
+        port_TournamentSessionBegin(form);
+        port_Log("session: a room's tournament's match: the host's side "
+                 "%s, the guest's %s\n",
+                 form->pad[0] == PORT_TOURNAMENT_CPU ? "the CPU's" : "its own",
+                 form->pad[1] == PORT_TOURNAMENT_CPU ? "the CPU's" : "its own");
+    }
     port_Log("session: the host's match rule is %s, %d\n",
              port_GetMatchRule() == PORT_MATCH_STOCK      ? "stock"
              : port_GetMatchRule() == PORT_MATCH_FIRST_TO ? "first_to"
@@ -2184,9 +2304,16 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
          * on: its end is the session's, on every machine at the same
          * frame (netplay.c), who won kept in the state */
         if (port_MatchIsDecided(&winner)) {
+            /* (a room's tournament's match: by entrant, the host's or the
+             * guest's, as the sides were seated) */
+            winner = winner >= 0 ? port_TournamentSessionEntrant(winner) : -1;
             g_port_top_menu.session_left = frame + 1;
             g_port_top_menu.session_result =
                 (u8)(winner >= 0 ? winner + 1 : PORT_SESSION_RESULT_DRAW);
+        } else if (port_TournamentSessionDecided(&winner)) {
+            /* two CPUs judged after three minutes, out of the fight */
+            g_port_top_menu.session_left = frame + 1;
+            g_port_top_menu.session_result = (u8)(winner + 1);
         }
     }
     if (g_port_top_menu.session_result != 0) {

@@ -9647,6 +9647,62 @@ median and 1.65 and 1.79 at the 95th centile against main's 1.55 and 2.07
 and 2.15 run between them; under 1.5 asks the grass itself to be cheaper
 too, which the mist alone can no longer give.
 
+**The grass cheaper, its look kept** (2026-11-27). Four changes to how
+the foliage is drawn in the picture (`port_GlDressingDrawSolid`), none
+to what is drawn:
+
+- *Only the squares in the picture.* The foliage's squares of 1,024
+  units (`DressSpan`, which the lights' maps already drew by) are held to
+  the picture's sides and near plane, their boxes grown by a blade's
+  reach again for a lean, a push or a bloom (`port_DressBoxUnseen`,
+  `port_DressDrawRunSeen`); before, every block's things all went
+  through the vertex shader, those behind the camera too.
+- *The nearest first.* The squares in the picture are drawn in the order
+  of their distance from the camera.
+- *Depth tested before the light.* The foliage's fragments wrote their
+  depth (`gl_FragDepth`, the linear depth of the ground's mesh), which
+  keeps the card from testing it before it shades them, so every blade
+  behind nearer blades was lit for nothing. The vertex shader now puts
+  that linear depth in the position's z, and the near plane where the
+  projection had it in a clip distance (`GL_CLIP_DISTANCE0`); the
+  foliage's program is the solid fragment with `DRESS_RASTER_DEPTH`. The
+  depth is now interpolated across a triangle linearly on the screen
+  rather than in the world: some hundredths of a unit within a blade,
+  which moves where two crossing blades meet by a pixel here and there.
+- *Each corner once.* A tuft was 105 vertices, each worked out whole (its
+  wind, its pushes, its blade); its corners are now numbered once each
+  (49) and drawn by an index list of the same triangles in the same
+  order (`port_DressMakeCorners`, `glDrawElementsInstanced`), the casters'
+  draws too.
+
+The pictures (`port_dressing.py shots --stages 31 --times night`, the
+fight's camera at 2,560 by 1,440, before and after in `tmp/grass/`): 0.3
+to 0.9% of the pixels differ, by a mean of 0.003 levels of 255 over the
+picture, at most 7 to 16 levels at single pixels where blades cross (two
+runs of the same program differ by a level in up to 1% of the pixels,
+in the clouds).
+
+*What it costs* (the bench's `ra1-dressed --dressed-stage 31`, the same
+program built before and after, run in turns, four rounds, on a machine
+with other agents' work on it, 25 to 40% of the processors busy):
+`dress` at the median 1.31 to 1.32 before, 1.18 to 1.20 after; at the
+95th centile 1.78 to 2.03 before, 1.67 to 1.70 after. The foliage itself
+(the dressing with it left out: 0.34) went from about 0.98 to 0.85.
+Still over `DRESS_BUDGET_MS` at the 95th centile on that machine; a quiet
+bench is to say where it stands.
+
+*Measured and not kept.* What the card spends on the grass was taken
+apart by trial programs: lighting each fragment with nothing (0.05 to
+0.2 ms of it), writing none of the slots' and depth's targets (0.16),
+blades of one bend (0.06), blades of a triangle (0.19), three blades a
+tuft (0.35). So it is the blades' triangles and the pixels they cover
+and write, not the light. A blade drawn with fewer bends where it is
+small would hold the look, but on the cemetery no square's tallest blade
+is under 40 pixels at its nearest, so nothing would be drawn less;
+thinning the tufts to five blades from 4,500 units (not 6,000) shows
+in the middle distance (13% of the pixels, the meadow sparser) and was
+left out.
+
 **What is left.** The shipped stages' lamps stand where the grass's shadows
 from them are small in the fight's pictures; a mist lies at one height
 over its ground, without the light of a lamp shafting through it. The
@@ -10704,6 +10760,281 @@ recording does not outlive the program. The hit areas show the body's
 spheres and the blade's points, not the sweep between two frames that
 the hit test actually tests (`fight_TestBladesOnBodies`).
 
+## A local tournament
+
+ROADMAP 31: a bracket of up to eight players or CPUs on one PC, single
+or double elimination, each match a match of the rules (above, "Match
+rules"), the bracket shown between matches and the result kept in the
+record (below, "Stats"). How a player runs one: PLAYING.md,
+"Tournament". All of it is under `RB_PORT`: `include/port_bracket.h`,
+`include/port_tournament.h`; the PlayStation builds play as they did,
+and nothing changes where no tournament is on (every hook returns at
+once when `g_port_tournament.phase` is `PORT_TOURNAMENT_OFF`).
+
+**The bracket** (`src/port/bracket.c`) is arithmetic alone, with no
+variable of its own: a `PortBracket` of bytes that the tournament keeps
+in the game's state. Two to eight entrants in seed order, in a bracket of
+the next power of two (2, 4, 8) with the standard order of seeds (1-8,
+4-5, 2-7, 3-6), so that a place with no entrant is a bye against a top
+seed and no two byes meet; a match with a bye is not played, its entrant
+goes on (`port_BracketSettle`). Each match's two slots are fed by a seed
+or by the winner or the loser of a match before (`PORT_BRACKET_FROM_...`),
+and the matches are kept in the order they are played: the winners'
+first round, then each later winners' round followed by the two losers'
+rounds it feeds (a round of the losers' bracket's own winners, then one
+where that winners' round's losers come in, crossed over so that two who
+just met need not meet again), then the grand finals. The next match is
+the first with both slots known and no result. Double elimination's
+grand final is the winners' champion against the losers', **with a
+bracket reset** (the choice made): if the losers' champion wins, the
+winners' champion has his first loss and a second grand final decides,
+so nobody is out with one loss; where the winners' champion wins the
+reset is skipped. The places come from how far each got (the round of
+the last loss; the losers' rounds after the winners', the grand finals
+last): single elimination's first, second, third (both semifinals'
+losers), fifth; double's first, second, third, fourth, fifth (two),
+seventh (two). The seeds drawn are a Fisher-Yates of the tournament's
+own dice (`port_BracketShuffle`, xorshift32), never the game's `rand()`.
+
+**The state.** `g_port_tournament` (`src/port/tournament.c`, a state
+file) holds the setup (each entrant's name, who plays it: one of the
+PC's four pads or the CPU at a level, a CPU's fighter and weapon or
+`PORT_TOURNAMENT_RANDOM`; the elimination, the seeding, the rule and its
+number, the dice), the bracket, the phase (`BETWEEN` at the main menu,
+`STARTING` once Play is asked, `PLAYING` from the select screen or the
+fight to the match's end, `DONE`), the match in play and its sides, each
+side's fighter and weapon, and the matches judged. So a rollback, a
+frame run ahead and a fight's replay see the tournament as the fight
+did. The window's asks (Begin, Play, Leave) and `--tournament` are kept
+outside the state (`src/port/tournament_ask.c`), each a count that only
+goes forward and the number of the input it is for (`g_port_input_count`
+as it was asked), and taken in as the game takes that input
+(`port_TournamentTakeInput`, from `port_TakeInput`; `taken`, in the
+state, the counts taken), as the window's menu sounds are: a frame run
+ahead takes it and gives it back with its state, and a step the rollback
+self-test runs again takes it at the same input. (The first way, the ask
+written into the state at the host's boundary as training's moment is,
+failed the self-test: its first run took it at one boundary and its run
+again at none, the stage choice of a CPUs' fight begun there the first
+difference.) The log's lines and the record are written at the host's
+boundary between two steps (`port_TournamentBoundary` in `main.c`),
+once, for the tournament's number (`number`), so nothing a rollback runs
+again writes twice; `--tournament-auto` asks Play from there, N of the
+game's inputs after the main menu came up (since 2026-11-28; it counted
+boundaries before, and the rollback self-test's runs again brought each
+match 8 frames sooner than a plain run did: the two runs' fights were
+other fights, and `rollback`'s results matched `byes`' only by luck,
+until the CPU's levels came nearer each other and one did not).
+
+**A match.** At the main menu's top page (`menu_Update`, before the
+top menu's own frame) `port_TournamentTopMenu` asks the window for the
+bracket where it is to be shown (`PORT_TOP_ASK_BRACKET`, the top menu's
+cursor put on Tournament), and once Play has made the phase `STARTING`
+seats the bracket's next match: its two entrants on the two sides, a
+player first where the other is the CPU; each CPU's fighter and weapon
+as set or drawn by the dice (the six fighters of an empty save, the six
+blades; never the other side's fighter); a stage drawn from the eight of
+open ground the CPU's levels were measured on. A match with a player
+goes to versus mode's select screen as if the top menu's Versus row were
+chosen (`g_game_settings.menu_mode`, `menu_GetChosenMode`: the select
+screen's mode and its second pad come from them; the first try left
+them as the last row chosen, and the screen was a one-player mode's): the pads are the
+entrants' (`port_TournamentTakeInput` in `port_TakeInput`: each side's
+pad is the pad of the entrant who plays it, the others' buttons none;
+where both are CPUs, any pad's Start on the first, to pause), no rule
+page (`port_MatchRulePageOpen`: the page's rule is the tournament's), and
+the CPU's side picked on the screen itself (`select_PortTournamentCpu`:
+its cursor put on its character's place, or the first open one no cursor
+is on, then on its weapon's place where its clan's row has it, and Cross
+pressed on its pad, after the player's weapon), so the screen's sounds,
+pictures and flags are the game's own; a player picks the stage. A match
+of two CPUs goes straight to its fight (`menu_LeaveForFight` with the
+settings' picks and stage the tournament's, the stage choice reset as a
+select screen resets it). `fight_ApplyConfig` gives each side to the CPU
+or the player (`port_TournamentApplyConfig`), `port_MatchBegin` takes the
+tournament's rule, `port_MatchCpuLevel` a CPU entrant's level (so the
+port's CPU, `src/port/cpu.c`, plays it at that level; the original's
+where it is the game's own). "One fight" is First to 1: a draw scores
+nothing and the fight is fought again, so every match has a winner.
+Where the match is decided (`port_MatchAfterFight`, its result's card
+down) `port_TournamentMatchOver` tells the bracket and goes back to the
+main menu as a Crew match's end does. Back at the main menu without a
+result (the select screen left, the pause's Return to Main Menu) the
+match is not played and the bracket is shown again. Choosing another
+mode on the main menu ends a tournament (`port_TournamentModeChosen`).
+
+**The judges.** The port's CPU can circle another for ever (CPU.md,
+"What is left"), and with two CPUs nobody is there to stop it: a window
+run of the test met a winners' semifinal still going after 60,000
+frames. So a fight of two CPUs that has gone three minutes of the
+game's time (`PORT_TOURNAMENT_JUDGE_FRAMES`, 5,400 frames, neither
+fallen) is judged (`port_TournamentJudge`, from `fight_UpdateMode`): the
+one with fewer wounds (legs, sword arm, body, the off arm lost) wins the
+match, the tournament's dice where they are alike, and the game leaves
+the fight for the main menu as the pause's Return to Main Menu does. The
+log says so; no fight a person plays is ever judged. It is common: in the
+proving runs (below) 11 of 34 matches of two CPUs went to the judges
+(the eight of `cpu8` 4 of 15, `window`'s 5 of 15, `byes` 2 of 4), which
+said more of the CPU's circling than any one fight did. Since the CPU
+commits (2026-11-28, CPU.md, "Committing") `cpu8` and `byes` have none
+judged, and of the bench's 1,152 fights of every pairing of the levels
+none went past three minutes (CPU.md, "Fights to the clock"); the judges stay
+for the rare one.
+
+**The window** (`src/port/window/tournament_page.c`, pages of the
+settings menu, `menu.c`): the main menu's fifth row, **Tournament**
+(`PORT_TOP_TOURNAMENT`, between Online Play and Options; the top page has
+six rows now, in the places of the game's first five and its last), asks
+for the tournament's page (`PORT_TOP_ASK_TOURNAMENT`, or the bracket
+where one is on): its four settings (the settings menu's seventh group,
+*Tournament*: `tournament_entrants`, `tournament_elimination`,
+`tournament_seeding`, `tournament_match`, entries of `settings_list.h`),
+a row for each entrant (Left and Right who plays it; Cross its own page:
+its name typed, who plays it, a CPU's fighter and weapon) and Begin,
+which refuses two entrants of one pad and hands the setup to the game
+(`port_AskTournamentStart`, dice from the PC's clock). The entrants
+themselves are the page's alone and last as long as the program. The
+bracket's page draws the bracket itself (`port_TournamentDrawBracket`):
+each round a column, each match a box of its two entrants (the winner
+white, the loser dark, a bye dim, the next match lit with the cursor's
+glow), the lines from each match to where its winner goes (lit where it
+has gone), the champion's box; with double elimination the winners'
+rounds above with the grand finals and the champion beside them, the
+losers' rounds under; under it Play (with the next match's entrants) and
+Leave (twice), or, at the end, Back to the main menu, and a line of the
+next match's round and who plays it, or the places. It is opened beside
+the game over the main menu (the game draws its backdrop under it, as
+for the other pages), and closes itself when the game leaves the main
+menu. With `--menu-shots` a test's picture is taken each time it comes
+up (`bracket-NNN.png`).
+
+**The record.** A fight a person plays in a tournament is counted as any
+versus fight (the person's side; the CPU's level the entrant's), with a
+word more, `tournament=`, the tournament's date; the Stats page counts
+those fights under *Tournament* besides their mode. A fight of two CPUs
+counts nothing there, as before. When the tournament is over its own
+line goes into the record: `tournament`, the date over and begun, the
+elimination, the seeding, the rule, the entrants (`eN=who:place:losses:
+seed:name`, `who` `pad1` to `pad4` or the CPU's level) and every match
+played in order (`mN=part:round:first:second:winner`). The file's
+version is 2 (a program of version 1 keeps a file of 2 aside, as it
+keeps any later one's; this one reads both). The Stats page's last list,
+**Tournaments**, has each, newest first, its line under the rows every
+entrant's place. A tournament left is not kept, and none is resumed
+after the program closes (the choice made: a tournament is an evening's,
+and nothing of the game's state is saved beside a session).
+
+**Not in a session.** The Tournament row is dark in a session, and the
+window's asks are never taken in one (they are one machine's). A
+tournament of a room of several is the next section's: there the state
+of each match's session carries that match alone.
+
+### A tournament in a room
+
+ROADMAP 31's room half, on ROADMAP 22's rooms; how it goes on the
+network, NETPLAY.md, section 22; how a player uses it, PLAYING.md, "A
+tournament in a room". The code: `src/port/room_tournament.c` (outside
+the state: the host's bracket and board, each member's copy, the pair it
+says plays), with `port_room.h`'s `port_RoomTournament...`; the match's
+form in the session (`port_tournament.h`'s `PortTournamentForm`,
+session.c's `MEET_TOURNAMENT`, protocol 22); the room's page and the
+bracket's page in `src/port/window/online_pages.c`, drawn by
+`tournament_page.c`'s `port_TournamentDrawShown`.
+
+- **The bracket is the host's**, a `PortBracket` as the local
+  tournament's, outside the state (it is the room's, not any session's).
+  The host shows it to the room on a **board**: the 64 bytes of settings
+  of a match beside the room's that it opens and nobody joins, which the
+  server keeps and gives any member who asks (`WATCH`): the setup (each
+  entrant a member's id or the CPU at a level, its fighter and weapon),
+  the seeds, the winners in their order and the walkovers, who left, and
+  the two members who are to play next. Every member rebuilds the
+  bracket from it (`port_BracketBuild` and each result reported again),
+  so every bracket is the host's.
+- **The rotation follows it**: the host sets a fixed turn, and each
+  member says it plays only while the board names it, once the room's
+  matches it was in are older than the board (so the two who just played
+  are not paired again before the next board). The server's two free
+  players are then the board's, and it makes their match as any.
+- **A match** is a room's match, a session of two (`ONE_MATCH`), whose
+  host holds the tournament's rule (`port_KeepMatch`, as a ranked match)
+  and sends its two entrants in the welcome: each the host's pad, the
+  guest's or the CPU, at a level, with a fighter and weapon. Both
+  machines put them in the state as the session begins
+  (`port_TournamentSessionBegin`): a local tournament of two whose one
+  match is asked for at once, `online` set (no bracket of its own shown,
+  no ask of the window's). So the game's own tournament code seats the
+  sides (a player first against the CPU, `port_TournamentSessionEntrant`
+  to tell the result by entrant), picks for the CPU at the select screen,
+  sends two CPUs straight to their fight and judges them after three
+  minutes (`port_TournamentSessionDecided`, where the session ends too),
+  and spectators, who take the fight's start, have it as well. In a
+  room a fight of a player against the CPU is judged after three minutes
+  too (`port_TournamentJudge`, `online`): the CPU circles a player as it
+  circles another CPU, and in the first proofs a player who attacked for
+  two minutes was never met, while the whole room waited.
+- **The CPU's side** is carried by the host where it is not the CPU's
+  opponent, else by another member; both CPUs by the host and another.
+  Nothing of the CPU is the carrier's: both machines compute it.
+- **A leaver**: the server gives his match in the middle to the other,
+  as any room's; the host sees him gone and gives each later match of his
+  to the other (a walkover). The choice is the forfeit, not the CPU
+  playing on: a room's matches are of two PCs, and the CPU for a leaver
+  is four PCs' (NETPLAY.md, section 19). A match not met is played
+  again, and one whose CPU's carrier left too.
+- **The command line** for tests: `--room-tournament WORDS` (the host's:
+  `--tournament`'s words, `@Name` a member, begun once all are in),
+  `--room-until-champion` (leave and end once it is over),
+  `--room-quit-left` (with `--leave-at`, leave the room as well).
+
+**How it is proved.** `tests/port/bracket.c` (`python3 tests/run.py
+--rebushido port/bracket`, both sizes): every count from two to eight,
+single and double, played to the end by the top seed always winning, the
+bottom seed, each slot by turns and forty throws of dice, 73,974 checks:
+every match played between two entrants still in and never a bye, byes
+only where the field does not fill the bracket and never two met, N - 1
+matches single and 2N - 2 or 2N - 1 double, everyone out with one loss
+(two), the champion's none (or one after a reset), one first, one second
+and places that count the field; the standard seeding of eight and five
+(the top three's byes), a reset played and skipped, the round names, the
+shuffle. `tests/port/stats.c`: a tournament's line written and read back
+the same, kept after the fights and read again, a version 1 file read
+as it is, a torn tournament's line keeping the file aside.
+`tools/port_tournament.py` (WSL, the disc): `window`, the window's
+program with SDL's dummy drivers, a tournament begun as a player begins
+one (the main menu's fifth row down, the page's presses: eight entrants,
+double, the first entrant made the CPU Master with Kannuki and the
+katana, Begin, Play), eight CPUs to the champion, each later match begun
+by `--tournament-auto`; its matches held to the bracket's rules, its
+record's line to the log, no fight in the record; pictures of the pages
+and of the bracket each time it came up: `tmp/tournament/`. `cpu8`, the
+same tournament by `--tournament` on both sizes of the headless port, the
+same matches, places and record on both; `byes`, five CPUs single in
+order, the first match seeds four and five, the top three's first match a
+semifinal; `person`, Player 1 (pressing nothing in his fight) and two
+CPUs (both set to Gengoro and the yari): his bye, the CPUs' semifinal
+straight to its fight (the second side's Gengoro made another fighter),
+the final at the select screen, the CPU's side picked for it as set, the
+CPU winning; his fight in the record, lost to the CPU at the winner's
+level, with the tournament's date; `rollback`, byes' tournament under the
+rollback self-test (`--rollback-test 8 --rollback-every 24`) and
+run-ahead 2, the same matches, places and record as without.
+
+**What is left.** A tournament resumed after the program closes; the
+owner's eye on `tmp/tournament/` and `tmp/room-tournament/`; two on two
+and Crew are not offered as a tournament's rule. They do not fit as the
+tournament is: a CPU entrant picks one fighter and weapon at the select
+screen (`select_PortTournamentCpu`), where a Crew match needs a whole
+crew picked place by place with no character twice, and a match of two
+CPUs goes to its fight with no grid at all, so its crews would have to
+be drawn and put in the match's by hand; a Crew match whose crews run
+out together has no winner, which a bracket needs. Two on two needs an
+entrant that is two pads (or a CPU pair), which the page, the bracket's
+names, the record's line and the pads' mapping (one pad an entrant) do
+not have, and the partners' second grid has no CPU pick. In a room:
+replays of a room's tournament's fight across builds (the lead-in plays
+the session from power on without its form).
+
 ## ReBushido's main menu
 
 The owner, 2026-11-19: drop the options page at boot, put every setting
@@ -10726,9 +11057,11 @@ sets the game's row (`TOP_ROW`) to the one the cursor's row stands for
 -- its picture, its caption, and what `menu_ChooseTopRow`, the game's
 own cross and triangle, chooses for a mode's row, the second pad's
 rules and the sounds included -- and draws the page as
-`menu_DrawTopRows` does, its five rows in the places of the game's
-first four and its last, without their names. Cross on Singleplayer,
-Back, Online Play or Options is the port's: a page, or the count and
+`menu_DrawTopRows` does, its six rows (five on the top page since the
+local tournament's, "A local tournament" above; the other pages have
+empty places) in the places of the game's first five and its last,
+without their names. Cross on Singleplayer, Back, Online Play,
+Tournament or Options is the port's: a page, or the count and
 the page asked for (`port_TopMenuAsk`). The view is the side view
 (`first_person` held at 0 there and in `fight_ApplyConfig`). The
 game's Difficulty, Music and Monitor are the window's `difficulty`,
@@ -11501,6 +11834,227 @@ lag of 0 and alike 0.9997. Linux: `python3 tools/port_film.py`, offscreen
 on llvmpipe, an .avi; Windows: `python tools/port_film.py`, on the card,
 an .mp4 and an .avi.
 
+## The replay theatre and photo mode
+
+ROADMAP 29. How a player uses them: [`PLAYING.md`](PLAYING.md), "The
+replay theatre" and "Photo mode". The code: `src/port/theatre.c` and
+`include/port_theatre.h` (the looks, outside the state), the game's three
+questions under `RB_PORT` (`src/main/fight.c`'s two scene beginnings,
+`src/main/main.c`'s frame), `port_RunLook` in `step.c`, the keyframes and
+the seek in `replay.c`; the window's part `src/port/window/sdl_theatre.c`
+(the keys, the mouse, the sticks, photo mode's wait, a test's words) and
+the GIF `film_gif.c`.
+
+**A look.** The picture is what the game's own steps draw, so another
+picture of a frame (another camera, no HUD, another time of day) is that
+frame's step run again with something else asked of it, and its state
+put back. The theatre keeps the state of the last three boundaries (a
+ring of snapshots, `port_StateSave`, whose saves copy only the pages
+written since) and the inputs the game took there (`port_TheatreInput`,
+in `port_TakeInput` after every other hook). At a boundary
+(`port_BeforeStep`, before the step) a look puts the state of two
+boundaries back in, runs those two steps again with the inputs they took,
+as frames run ahead are run (`g_port_ahead`: drawn, never heard, the
+window given no turn, nothing recorded, nothing counted in the stats),
+and puts this boundary's state back (`port_RunLook`). The step itself then
+runs as ever, heard and paced, but unseen (`g_port_unseen`): the window
+shows what the look left, as it shows what frames run ahead left. While a
+replay is paused, or photo mode waits, a change of view is a look again at
+the same boundary.
+
+*Two steps*, because the display a step leaves is the frame the step
+before it drew: the game draws one buffer while the other is shown
+(`main.c`'s frame: `PutDispEnv`, then `DrawOTag`). The first step draws
+the frame; the second puts it up. The card is given only the second's
+writes into video memory (`g_port_ahead_kept`, as run-ahead does for a
+frame drawn already), so that it draws one frame a look as it draws one a
+step, and the picture's own clock (the lights' flicker, the sky, the
+dressing) keeps the game's pace. One step left the window showing the
+frame before, drawn by nobody; two give, paused, the picture the playback
+without looks shows, pixel for pixel in Original (`port_theatre.py look`).
+
+*In a look alone* (`g_theatre.looking`):
+
+- the camera: `port_TheatreScene` in `camera_BeginFightScene` and
+  `camera_BeginReplayScene` replaces the view's point looked at, its
+  angles and its distance before `scene_Begin` places the camera, so the
+  stage's cells, the effects facing the eye, the remastered ground's mesh,
+  the fighters' models, the sky and the shadows all follow, in both
+  pictures. Outside a look it notes the game's own, which the free camera
+  starts from;
+- the HUD: `port_TheatreCutHud` before the frame's `DrawOTag` ends the
+  ordering table at its fourth entry: the 2D layer is linked in the first
+  four (the HUD at 1, the scene from 4, `g_render_ot`); the window leaves
+  its own lettering over the fight out too (the match strip, training's
+  lines and hit areas);
+- the time of day: `port_StageTime`, which the picture alone asks
+  (`gl_time.c`), answers the theatre's while it has one.
+
+**Why nothing of it reaches the game.** Every look ends with this
+boundary's state put back, so whatever the free camera changed (the eye,
+the cells opened, the effects' facing, the ordering table cut) is gone
+before the step. The theatre's own variables are outside the state
+(`config/port_state.txt`). Its ring is of one run of moments: a load not
+its own (a seek, the training's moment, a rollback, the playback's end)
+empties it (`g_port_state_loads`), however its counts read. Never online
+nor over a link cable (`port_IsNetplayOn`, `port_LinkIsUp`): no look is
+run there at all. A replay played in the theatre holds every hash the
+recording has, as ever, and photo mode's fight is the same hash for hash
+as the fight without it.
+
+**The seek** (`port_ReplaySeekTo`). The playback keeps a keyframe, the
+state at every 150th frame as it passes (eight at most: then every other
+one is let go and they are twice as far apart, `port_ReplayKeyframe`). A
+seek goes to the latest keyframe not past the frame (or the start, or
+where it is, if that is nearer) and runs on unseen
+(`port_ReplayQuietStep`, as the skips always did), every hash held, the
+last two boundaries before it kept for the theatre's look there. A frame
+back is so a load and under five seconds of steps run unseen: a few
+milliseconds. `--replay-check`'s restart and skip use the keyframes too.
+
+**A still** (`port_WriteWindowStill`): the picture alone as the window
+draws it under the counter, the line and the pages, at the window's own
+size, a PNG, written at once (a test finds it when the line says so).
+
+**A clip** is made as a replay's film is ("A replay as a film"): another
+run plays the replay, `--export OUT --export-from F --export-to F
+--theatre-view ...` (the ten numbers of the theatre's view as G was
+pressed), sought to its first frame at once and stopped after its last.
+Its kind is the setting `clip`: a GIF, or the film the Replays page makes.
+
+- *The GIF* is the port's own (`film_gif.c`): GIF89a looping, the film's
+  every second blank (a frame of the fight is two), its time in
+  hundredths counted from the clip's start so that it never drifts
+  (3, 3, 4, 3: 33.43 ms a frame), at most 640 pixels across (the film's
+  run draws at 1280 by 720 and each pixel of the GIF is the mean of its
+  block), a palette of 256 colours of each picture's own by the median
+  cut over 32,768 boxes, an ordered dither of four by four (still from
+  picture to picture where the scene is), LZW as GIF has it. After the
+  first picture a pixel within 6 of each channel of what it was last
+  drawn from is left as it is (the transparent index): four seconds of a
+  remastered fight from a still camera, 1.9 MB against 15.4 with every
+  pixel drawn again. No sound.
+- *A film*: the MP4 of Windows' own encoders, or the port's AVI. MP4
+  elsewhere was weighed and left: no encoder is in the program (the AVI
+  is the port's own), and an ffmpeg found on the PATH would be a second
+  way to the same file that nothing else of the port needs; the AVI
+  plays in VLC and mpv, and PLAYING.md gives the one line of ffmpeg that
+  makes it an MP4.
+
+**Photo mode** (F4). In a fight offline (not online, a link cable, a
+replay, whose theatre has the same keys, or a film's run), the theatre is
+turned on with the free camera where the game's is; at the first boundary
+whose state two before is kept (two frames on) the window holds the
+boundary (`port_PhotoWait`, in its boundary hook): it reads the window,
+moves the camera, runs a look again where the view changed and shows it,
+a blank at a time, stepping no frame, until F4 or Escape. Then the view
+goes back to the game's, the theatre off, and the step runs from the state
+it was left in.
+
+**The field of view** is the coprocessor's screen distance
+(`SetGeomScreen`'s, `PORT_GTE_PLANE`), a member of the theatre's camera
+(`plane`, 0 for the game's). In a look whose camera is free,
+`port_TheatreScene` writes it into the coprocessor as it replaces the
+camera, before `scene_Begin`, where every reader of the projection takes
+it (the remastered stage's view, the fighters', the training's areas);
+the state is put back after the look, as the rest. Outside a look it
+notes the game's own with the game's camera, so the free camera starts
+with the field of view the game had (45 degrees at the side, 80 in first
+person). The window keeps it from 20 to 100 degrees (N M, Ctrl and the
+wheel): the screen's distance 320 / tan of half the angle, the game's
+640 across.
+
+**The camera's keys** (`src/port/window/theatre_path.c`, arithmetic
+held by `tests/port/window.c`; the keys in `sdl_theatre.c`). A key is
+the free camera at a replay's frame (J); up to 64, by their frames.
+Where the free camera follows them (in a replay, a key or more, not let
+go with O), at each boundary whose frame is another than the one it was
+last put on the path at, the view's camera is the path's at the frame
+on show (`port_TheatreFollow`), before the look and before a test's words
+ask of it; so a move by hand lasts until the frame changes, and a key
+can be set from it. Each number of the camera is a cubic Hermite curve
+through the keys with Catmull-Rom's slopes for keys unevenly spaced (at a
+key, the slope of the line through the keys either side; none at the
+first and the last, so that two keys ease out and in). The focus is
+curved as it is; the yaw and the roll are unwrapped the short way round
+from key to key and curved; the distance by its inverse and the field
+of view by its screen distance, what a thing's size on the screen goes
+as, so that a zoom is even. The pitch, the distance and the field of view
+are kept within the keys' own where the curve would overshoot. Slerp on
+a quaternion was weighed for the turn and left: the camera is an orbit's
+(a pitch held short of straight up and down, a yaw, no roll of its own),
+whose angles have no pole to pass, and a slerp from one key to the next
+would tilt the horizon between them and break the curve's smoothness at
+each key. A clip (G) passes the keys to its run as `--theatre-path`
+(nine numbers a key; the view's words have an eleventh, the screen
+distance), which follows them at the frames it plays, as the theatre did.
+
+**The seek bar** (`port_TheatreDrawBar`, from `port_DrawCounter`): a
+strip of the game's panel across the bottom of the 4:3 area, drawn as
+the window's pages are (`page_look.c`'s box, colours, lettering and the
+cursor's pulse) into a page of the area's size of which only the strip
+is cleared and laid over the picture (`port_LayPixels`). Shown in a
+replay of the theatre's (not a film's run) with the HUD and the line, or
+for 2.5 seconds after the mouse moves, or while it is held. A press of
+the left button on the strip seeks to the frame under it
+(`port_BarFrameAt`: the nearest frame to the pixel, the track's ends
+past them) and a drag along it seeks each time the frame under it
+changes; the button's press anywhere else is the camera's, as before.
+The mouse's points are taken into the window's pixels
+(`port_MouseToPixels`) where the window's units are not its pixels.
+
+**What it costs.** A look is two steps and three snapshots' worth of
+copies (the pages written since); the card draws one frame a look and
+none for the step unseen. Measured, the first 200 frames of a fight's
+replay at 640 by 360 as fast as they run (`--fast`, the program's start
+and the fight's load among them): on the owner's PC and its card, 4.0
+seconds with looks against 3.1 without (Remastered), 4.8 against 2.5
+(Original, drawn by the port's software GPU); on llvmpipe (WSL) 33
+against 21 (Remastered) and 4.9 against 3.4 (Original). At the game's
+own pace that is well inside a frame.
+
+**Proved** by `tools/port_theatre.py` (WSL: the Linux window's program,
+offscreen on llvmpipe; Windows: the .exe): a fight of two CPUs recorded,
+then played with `--theatre-keys` (the theatre's words, a test's keys:
+`at:F`, `hold`, `step`, `back`, `seek:F`, `free`, `orbit:`, `move:`,
+`zoom:`, `hud`, `time:`, `still:`, `hash`, `photo`, `clip:`,
+`clip-wait`, `plain`). `look`: frame 200 paused, a look's picture the
+playback's own without looks (`plain`), 0 pixels of 230,400 differing in
+Original, and within a channel's mean of 2 of 255 in Remastered;
+`seek`: the state's hash at frames 100, 320 and 460 played through, sought
+on from frame 10, and sought back from 470 (to a keyframe and on, and to
+the start and on), the same, every recorded hash held; `step`: a wait
+paused stays, a step is a frame on, `back` a frame back to the hash it
+had; `still`: PNGs of the window's size, the free camera turned another
+picture, the HUD hidden a small part of it, the hash the same; `gif`: a
+clip of frames 200 to 260 by `--export` and by the theatre's `clip:`
+(another run beside the playback), each decoded whole by the tool's own
+LZW: 640 by 360, 61 pictures, 203 hundredths, and the first's pictures,
+laid one over another as a viewer shows them, within a channel's mean of
+3.4 of 255 of the window's own pixels at their blanks (`--tap-window`,
+taken down to the GIF's size); `photo`: a fight of two
+CPUs paused in photo mode (the camera turned, the HUD hidden, four
+times of day, four stills) has at inputs 300, 600 and 900 the state's
+hash of the same fight without it, and photo mode is refused in a
+replay; `path`: keys at frames 200 and 260 (the second moved, turned,
+nearer and at 75 degrees, `fov:`), the camera at 230 and 215 the
+curve's (to a unit), the state's hash at 230 a plain seek's, the
+theatre's clip of 200 to 260 decoded with its middle picture far from
+both ends and every picture another than the one before, and a film's
+run given the keys (`--theatre-path`) with the playback's cameras at
+its frames and its first and last pictures within a channel's mean of
+6 of 255 of the keys' stills; `bar`: a press at 30 per cent of the
+track (SDL's events, `click:`) lands on the frame of that pixel, with a
+seek's hash there, a drag to 60 per cent on its frame, a press above
+the strip on none, and the window as shown (`shown:`) is the still but
+in the strip's rows. Every check passed both ways (2026-11-27): the Linux program
+on llvmpipe (the remastered look within 1.51 of 255) and the Windows
+program on the owner's card (1.40); `path` and `bar` too, both ways
+(the film's ends within 3.45 of the keys' stills on llvmpipe, 3.43 on
+the card). Examples for the eye in `tmp/theatre/`, and of the keys and
+the seek bar in `tmp/theatre2/`. The rollback self-test
+(`port-rollback`) runs the core with the theatre's hooks in.
+
 ## Stats
 
 ROADMAP 30; the owner, 2026-11-26: "a player's record kept by the
@@ -11593,7 +12147,8 @@ boundary and end hold it, or waits for that fight to be counted.
 
 **The file**, `rebushido-stats.txt` beside the settings (as the ranked
 identity is; `--stats FILE` in any run, the window's in a player's run
-only): text, the first line `rebushido-stats 1`, then a line a fight,
+only): text, the first line `rebushido-stats 2` (1 before the local
+tournament's lines), then a line a fight,
 oldest first, of words `key=value`:
 
     fight date=2026-11-27T08:07:01 mode=vs online=local teams=1 cpu=person side=0 rule=stock count=2 match=1
@@ -11616,9 +12171,8 @@ At about 330 bytes a fight, a thousand fights are a third of a
 megabyte, written in a millisecond or two at the boundary after a fight.
 
 **The page.** The settings menu's first page has **Stats** under
-Replays (not the top menu: its five rows are the game's own page's
-places, each with the game's picture and caption, and all five are
-taken; the replays it opens are the settings menu's too). Its first view
+Replays (not the top menu: its rows are the game's own page's places,
+each with the game's picture and caption, and all are taken; the replays it opens are the settings menu's too). Its first view
 is the totals (`port_StatsTally`: fights and matches won, lost and drawn,
 the longest run of fights won and the one going, kills and wounds given
 and taken, the time fought, the ladder's rating where `port_RankedGet`
@@ -11663,8 +12217,8 @@ is a session's last fight where a player leaves before its end is
 final); a fight that ended between a guest's parting and the resync,
 in the host's game, is counted on the host and lost on that guest (the
 state put in is past its end); a CPU's level is the run's setting as the fight ends; local
-versus is the first player's record alone; a tournament's results
-(ROADMAP 31) are to be kept here.
+versus is the first player's record alone. A local tournament's result
+is kept here since version 2 of the file ("A local tournament", above).
 
 ## Rooms of several
 
@@ -11713,6 +12267,9 @@ in `session.c` (`PORT_SESSION_RULE_ONE_MATCH`) and the room's page in
   is its teams' (the first and third players against the second and
   fourth, `port_OnlineMatchEnds`), and a player who leaves it loses it for
   his team (`port_NetplayLeftPad`).
+- **A tournament** in the room ("A local tournament", "A tournament in a
+  room"): the host's bracket on a board the room's members read, the
+  rotation following it (`src/port/room_tournament.c`).
 
 ## 64 bits
 

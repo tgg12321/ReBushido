@@ -807,6 +807,11 @@ void main(void) {
         if (g_sys_skip_frames != 0) {
             g_sys_skip_frames--;
         } else {
+#if RB_PORT
+            /* the picture without the HUD, in a look of the theatre's
+             * alone (port_theatre.h) */
+            port_TheatreCutHud(frame_db->ot);
+#endif
             DrawOTag(&frame_db->ot[DISP_OT_SIZE - 1]);
             g_disp_frame_count++;
         }

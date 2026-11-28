@@ -9,13 +9,15 @@
  * - the options page of ReBushido's disc (rb_options.h) is not shown at
  *   boot: its settings are the window's (`bugfixes`), and the game goes
  *   straight to its opening;
- * - the game's top menu has five rows in place of its eight: Singleplayer,
+ * - the game's top menu has six rows in place of its eight: Singleplayer,
  *   a page of its own with Story, Vs. CPU, Slash and Group Battle;
  *   Versus; Training, a page of its own with training against a dummy
  *   (port_training.h), the game's own training (Classic Training) and
  *   the settings menu's Training page; Online Play, the settings menu's
- *   Play online page; and Options, the settings menu, in place of the
- *   game's own options page and its memory card and key configuration;
+ *   Play online page; Tournament, the window's page of a local
+ *   tournament (port_tournament.h); and Options, the settings menu, in
+ *   place of the game's own options page and its memory card and key
+ *   configuration;
  * - the view is always the side view: no row offers the first person's
  *   (POV), and no fight is played in it;
  * - the game's options (Difficulty, Music, Monitor) are the window's
@@ -58,12 +60,15 @@ enum {
     PORT_TOP_TRAIN = 6,
     PORT_TOP_TRAINING_OPTIONS = 7, /* the settings menu's Training page */
     PORT_TOP_EMPTY = 8,            /* no row: nothing drawn, never lit */
+    /* a local tournament: the window's page of it, or its bracket where
+     * one is on (port_tournament.h) */
+    PORT_TOP_TOURNAMENT = 9,
 };
 
-/* Rows a page: four in the places of the game's first four, and the last
+/* Rows a page: five in the places of the game's first five, and the last
  * in the place of the game's last (its options). */
-#define PORT_TOP_ROWS 5
-#define PORT_TOP_LAST_ROW 4
+#define PORT_TOP_ROWS 6
+#define PORT_TOP_LAST_ROW 5
 
 /* A row: its name, what it does, the game's row whose picture and caption
  * it shows (and which a mode chooses), the views drawn beside it (the
@@ -91,6 +96,8 @@ enum {
     PORT_TOP_ASK_OPTIONS = 0,
     PORT_TOP_ASK_ONLINE = 1,
     PORT_TOP_ASK_TRAINING = 2,
+    PORT_TOP_ASK_TOURNAMENT = 3, /* the tournament's page, to begin one */
+    PORT_TOP_ASK_BRACKET = 4,    /* the bracket of the one on */
 };
 
 typedef struct {
@@ -163,6 +170,8 @@ extern s32 port_TopMenuRowIsOn(s32 row, u32 rows_on);
 extern s32 port_TopRowIsLit(const PortTopRow *of, u32 rows_on);
 /* The page changed: `page`, its cursor where it was. */
 extern void port_TopMenuOpenPage(s32 page);
+/* The cursor of the page on its row of the kind `kind` (PORT_TOP_...). */
+extern void port_TopMenuCursorOn(s32 kind);
 /* The settings menu asked for (PORT_TOP_ASK_...). */
 extern void port_TopMenuAsk(s32 page);
 /* The game's options as the run's settings have them, into the menus'

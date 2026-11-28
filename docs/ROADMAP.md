@@ -729,9 +729,20 @@ the stage").
     fighters, so the port's CPU plays partners, the CPU's team and a
     leaver's fighter, at the host's level online. Walking round the
     stage's obstacles by their corners, as the original plans (2026-11-27).
+    Committing (2026-11-28; CPU.md, "Committing"): two of the port's CPUs
+    stood off each other (two masters past three minutes in 23 of 48
+    fights; the tournament's judges decided 11 of its 34 matches of two
+    CPUs); now a patience that runs out (pressing the longer nothing
+    happens, the more it is behind, the later in the fight), lunges and
+    pokes, meeting him as he walks in, feints from the veteran up, its
+    reach its attacks' own, and over a drop or a step between them: none
+    of 1,152 fights past three minutes (53 of 480 before), the levels
+    still in order, the game's own CPU untouched with the setting
+    Original.
     Left: circling at an edge; dirt, thrown
     weapons and guns; levels learned from replays of real players; a
-    person's test of how it feels to fight.
+    person's test of how it feels to fight; the master over the veteran
+    the thinnest step (55 to 57%).
 28. **A resync button** (the owner, 2026-11-26, instead of a desync
     report): when an online session finds the machines' hashes parted, a
     press (any player's, or offered on its own) puts the host's state on
@@ -740,7 +751,9 @@ the stage").
     the replay, so a replay of a resynced fight still plays.
     **Done on the port** ([`NETPLAY.md`](NETPLAY.md), section 21;
     [`PLAYING.md`](PLAYING.md), "Playing online"): a parting found, the
-    session goes on and the line says so; F5, any player's, or by itself
+    session goes on and the line says so; F5 or Select held a second
+    (a controller's, through the remapping; Select the resync's alone
+    while parted), any player's, or by itself
     three seconds on (`--resync-auto`), the host says a frame 20 ahead,
     every machine stops there, the host's state packed as a spectator's
     start (0.69 MB in a fight of two, 1.09 MB of four) goes to every
@@ -748,17 +761,51 @@ the stage").
     put in; the hashes held again from there (session protocol 21). Each
     machine's replay keeps it (`RSYN`) and plays through it; a parted
     spectator is given it by the lobby as the match's newest start; a
-    ranked digest leaves the parted hashes out. Proved on desyncs made
-    on purpose (`--net-part-at`): two and four players, a press and by
-    itself, the relay, a room's spectator, Windows' windows (NETPLAY.md,
-    "How it is proved"). Left: two real PCs; a spectator of a fight of
-    four whose host parts (over the lobby's 1 MB); a controller's press.
+    ranked digest leaves the parted hashes out; a fight of four's state,
+    over the lobby's 1 MB, is given its spectators as the difference from
+    the state of the frame all last held the same (320 KB of 1.06 MB).
+    Proved on desyncs made on purpose (`--net-part-at`): two and four
+    players, a press, Select held and by itself, the relay, a room's
+    spectator of two and of four, Windows' windows (NETPLAY.md, "How it
+    is proved"). Left: two real PCs.
 29. **A replay theatre and photo mode**: a replay played with a free
     camera, paused, slowed or stepped, from any frame; the picture
     without the HUD; a still saved at full size, and a clip saved as a
     video (MP4) or GIF. Also a photo mode in a fight (paused, a free
     camera, the time of day changed), to show the stages' skies and
     dressing (items 17, 20).
+    **Done on the port** ([`PORT.md`](PORT.md), "The replay theatre and
+    photo mode"; [`PLAYING.md`](PLAYING.md), "The replay theatre" and
+    "Photo mode"): every picture of a replay in the window is a "look",
+    the frame drawn again from the states of the two boundaries before it
+    (kept in a ring, `src/port/theatre.c`) as frames run ahead are drawn,
+    with the game's camera replaced in the look alone (C, W A S D Q E,
+    the arrows or the mouse, Z X), the 2D layer cut (H) and the time of
+    day turned (T), the step itself unseen: nothing of it reaches the
+    game's state. A frame back, five seconds either way, a tenth of the
+    way, any frame (`port_ReplaySeekTo`: keyframes every five seconds as
+    the playback passes, eight at most, then on unseen, every hash held);
+    a still at the window's full size (V, a PNG in `screenshots/`); a
+    clip of the frames marked ([ ] G) made by another run as a film is,
+    in the theatre's view: a GIF of the port's own (`film_gif.c`, 640
+    across, the fight's 30 frames a second) or the Replays page's film
+    (Windows' own MP4, or the port's AVI; no ffmpeg). Photo mode: F4 in a
+    fight offline, the game waiting at a boundary while the camera, the
+    HUD and the time change, then going on from the very same state.
+    Proved by `tools/port_theatre.py` (a look's picture the playback's
+    own, a seek's hashes the played-through ones, step and back, stills,
+    both clips decoded, photo mode's fight the same hash for hash as one
+    without it). Then (PORT.md, "The camera's keys", "The seek bar",
+    "The field of view"): a seek bar for the mouse in the menus' look
+    (shown with the HUD or as the mouse moves; a click or a drag seeks,
+    the clip's marks and the camera's keys on it); a camera that moves
+    through a clip, keys of the free camera (J, U, O) on a curve
+    through them (Catmull-Rom on each number, the turn the short way
+    round with the horizon level, a zoom even), passed to a clip's run
+    (`--theatre-path`); the field of view (N M, Ctrl and the wheel, 20
+    to 100 degrees, kept with the keys, in photo mode too). Proved by
+    `port_theatre.py path` and `bar` and `tests/port/window.c`. Left:
+    the owner's eye on `tmp/theatre/` and `tmp/theatre2/`.
 30. **Stats** (the owner, 2026-11-26; no achievements): a player's record
     kept by the program: fights and matches won and lost, by fighter,
     weapon, stage, mode and opponent (CPU levels, online names); kills
@@ -787,6 +834,52 @@ the stage").
     (item 27's levels) on one machine or in a room (item 22), single or
     double elimination, under the match rules of item 21, the bracket
     shown between matches and its result kept in the stats (item 30).
+    **Done on one machine** ([`PORT.md`](PORT.md), "A local tournament";
+    [`PLAYING.md`](PLAYING.md), "Tournament"): the main menu's
+    Tournament (its fifth row) opens its page: 2 to 8 entrants, each a
+    pad's player or the CPU at a level (a CPU's fighter and weapon set or
+    drawn each match), single or double elimination (a losers' bracket,
+    the grand final with a bracket reset), the seeds drawn or in order,
+    byes to the top seeds, each match one fight (a draw fought again),
+    First to 2 or 3, or Stock 2 or 3; the bracket's page between matches
+    (each round's matches, the next lit, the lines on to the champion),
+    Play or Leave (not kept, never resumed); a player's match at versus
+    mode's select screen with his own pad, the CPU's side picked for it
+    there; two CPUs straight to their fight, judged after three minutes
+    with neither fallen (the CPU can circle for ever); the result a line
+    of the record (version 2: entrants, places, every match), the fights
+    a person played counted as versus and as the tournament's, the Stats
+    page's Tournaments. Proved by `tests/port/bracket.c` (2 to 8, single
+    and double, byes, resets, 73,974 checks), `tests/port/stats.c` and
+    `tools/port_tournament.py` (eight CPUs to the champion in the
+    window's program begun from its page, the same on both sizes of the
+    headless port, byes, a person's match at the select screen, the
+    rollback self-test with run-ahead; pictures in `tmp/tournament/`).
+    **In a room** (2026-11-28; [`NETPLAY.md`](NETPLAY.md), section 22;
+    [`PORT.md`](PORT.md), "A tournament in a room"; [`PLAYING.md`](PLAYING.md),
+    "A tournament in a room"): the room's host begins one on the room's
+    page (its players and up to eight with CPUs, single or double, one
+    fight, First to 2 or Stock 2) and runs the bracket; with the lobby
+    unchanged (version 4): the host shows it on a board, the settings of
+    a match beside the room's nobody joins, which every member reads, and
+    the rotation follows it, only the board's next two saying they play.
+    Each match a room's match, its session (protocol 22) carrying the
+    match's two entrants into the state of both machines, so the game's
+    own tournament seats the sides, picks for the CPU and judges a fight
+    with a CPU after three minutes (a player against it too, online);
+    the CPU's side carried by the host (or another member); the rest of
+    the room watching. A leaver forfeits (his match in the middle, then
+    walkovers), the CPU not playing on for him. Proved by
+    `port_net_lobby.py`'s `rooms-tournament` (four players and a
+    spectator, to the champion), `rooms-tournament-leave` (double
+    elimination with a CPU, a leave in a fight, a walkover, the grand
+    final's reset) and `win-tournament` (begun from a window's pages).
+    Left: a tournament resumed after the program closes; Crew and two on
+    two as a tournament's rule, which do not fit as it is (PORT.md, "A
+    local tournament", "What is left": a CPU's crew picked place by place
+    and two CPUs' crews with no grid; an entrant of two pads); about a third of the matches of two CPUs go to
+    the judges (item 27's circling); real players in a room; the owner's
+    eye on the pages (`tmp/tournament/`, `tmp/room-tournament/`).
 32. **The sound remastered**, as a setting (the original's sound stays):
     a reverb of each stage's own (the dojo, the cave, the open), sound
     placed for headphones (HRTF), and better resampling of the game's

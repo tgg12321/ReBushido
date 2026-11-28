@@ -182,6 +182,12 @@ void port_TakeInput(void) {
     /* in a fight of training, Select's presses are training's and the
      * second pad is the dummy's (port_training.h) */
     port_TrainingTakeInput(&g_port_input);
+    /* in a local tournament's match each side is its entrant's pad
+     * (port_tournament.h) */
+    port_TournamentTakeInput(&g_port_input);
+    /* the theatre's look runs a step again with the input it took
+     * (port_theatre.h) */
+    port_TheatreInput(&g_port_input, g_port_input_count);
     port_TakeTopMenuCover();
     port_ReplayTook(&g_port_input, g_port_input_count);
     port_PlayAskedSound();

@@ -69,6 +69,7 @@ struct PortFilm {
     u64 samples;
     Avi *avi;
     PortMf *mf;
+    PortGif *gif;
 };
 
 static u32 port_Tag(const char *four) {
@@ -103,11 +104,15 @@ s32 port_FilmKindOf(const char *path) {
     if (length >= 4 && (strcmp(end, ".avi") == 0 || strcmp(end, ".AVI") == 0)) {
         return PORT_FILM_AVI;
     }
+    if (length >= 4 && (strcmp(end, ".gif") == 0 || strcmp(end, ".GIF") == 0)) {
+        return PORT_FILM_GIF;
+    }
     return PORT_FILM_NONE;
 }
 
 s32 port_FilmCanMake(s32 kind) {
-    return kind == PORT_FILM_AVI || (kind == PORT_FILM_MP4 && port_MfCan());
+    return kind == PORT_FILM_AVI || kind == PORT_FILM_GIF ||
+           (kind == PORT_FILM_MP4 && port_MfCan());
 }
 
 /* ---- the AVI ---- */
@@ -397,10 +402,12 @@ PortFilm *port_FilmOpen(
     }
     if (!port_FilmCanMake(kind)) {
         snprintf(why, room, "%s",
-                 kind == PORT_FILM_MP4 ? "this Windows has no Media "
-                                         "Foundation to make an MP4 with "
-                                         "(an .avi can be made)"
-                                       : "a film is an .mp4 or an .avi");
+                 kind == PORT_FILM_MP4
+                     ? "this Windows has no Media "
+                       "Foundation to make an MP4 with "
+                       "(an .avi can be made)"
+                     : "a film is an .mp4, an .avi or a "
+                       ".gif");
         return NULL;
     }
     film = calloc(1, sizeof(PortFilm));
@@ -414,10 +421,12 @@ PortFilm *port_FilmOpen(
     snprintf(film->path, sizeof(film->path), "%s", path);
     if (kind == PORT_FILM_MP4) {
         film->mf = port_MfOpen(path, w, h, why, room);
+    } else if (kind == PORT_FILM_GIF) {
+        film->gif = port_GifOpen(path, w, h, why, room);
     } else {
         film->avi = port_AviOpen(path, w, h, why, room);
     }
-    if (film->mf == NULL && film->avi == NULL) {
+    if (film->mf == NULL && film->avi == NULL && film->gif == NULL) {
         free(film);
         return NULL;
     }
@@ -425,8 +434,9 @@ PortFilm *port_FilmOpen(
 }
 
 s32 port_FilmPicture(PortFilm *film, const u32 *pixels) {
-    s32 ok = film->mf != NULL
-                 ? port_MfPicture(film->mf, pixels, film->pictures)
+    s32 ok = film->mf != NULL ? port_MfPicture(film->mf, pixels, film->pictures)
+             : film->gif != NULL
+                 ? port_GifPicture(film->gif, pixels, film->pictures)
                  : port_AviPicture(film->avi, pixels, film->pictures);
 
     if (ok) {
@@ -436,9 +446,11 @@ s32 port_FilmPicture(PortFilm *film, const u32 *pixels) {
 }
 
 s32 port_FilmSound(PortFilm *film, const s16 *samples, u32 frames) {
+    /* a GIF has no sound: its samples are counted all the same */
     s32 ok = film->mf != NULL
                  ? port_MfSound(film->mf, samples, frames, film->samples)
-                 : port_AviSound(film->avi, samples, frames);
+             : film->gif != NULL ? TRUE
+                                 : port_AviSound(film->avi, samples, frames);
 
     if (ok) {
         film->samples += frames;
@@ -455,6 +467,11 @@ s32 port_FilmClose(PortFilm *film, s32 keep, char *why, u32 room) {
 
     if (film->mf != NULL) {
         ok = port_MfClose(film->mf, why, room);
+    } else if (film->gif != NULL) {
+        ok = port_GifClose(film->gif, keep);
+        if (!ok) {
+            snprintf(why, room, "%s could not be written whole", film->path);
+        }
     } else {
         ok = port_AviClose(film->avi, film->pictures, film->samples);
         if (!ok) {

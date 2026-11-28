@@ -120,6 +120,8 @@ extern s32 port_ReplayServedStart(
  * as a playback keeps it; netplay's frame it is of. FALSE where it is not
  * whole, or not the state its host had (its hash). */
 extern s32 port_ReplayLoadServed(const u8 *blob, u32 size, u32 *frame);
+/* The most a start served may be: what the lobby keeps (1 MB). */
+#define PORT_REPLAY_SERVED_MOST (1024U * 1024U)
 
 /* ---- a resync online (docs/NETPLAY.md, section 21) ---- */
 
@@ -127,7 +129,8 @@ extern s32 port_ReplayLoadServed(const u8 *blob, u32 size, u32 *frame);
  * spectators' start is (this run's own left out, what the disc holds
  * pointed at, the rest deflated): TRUE, its bytes. A fight's file or a
  * start being made is finished first. */
-extern s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size);
+extern s32 port_ReplayResyncPack(
+    u32 frame, u32 agreed, const u8 **blob, u32 *size);
 /* A guest or a spectator: a state so packed put in, this run's own kept:
  * TRUE, netplay's frame it is of; FALSE where it is not whole, or not the
  * state its host had (its hash). */
@@ -138,6 +141,20 @@ extern s32 port_ReplayResyncLoad(const u8 *blob, u32 size, u32 *frame);
  * not held by a playback; a room's spectators are served it; the
  * session's run from power on is not whole from here. */
 extern void port_ReplayResynced(u32 agreed_frame);
+/* The spectators' copy of a resync's state, where the whole is more than
+ * the lobby keeps (a fight of four's): the difference from the state of
+ * the frame every machine last held the same, which a spectator who
+ * parted has (port_ReplayResyncPack's `agreed`; 0xFFFFFFFF for none).
+ * Each program keeps the last few hashed frames' states for it, as the
+ * host makes its hashes final (`saved`, its netplay's snapshot) or a
+ * spectator runs them (NULL: the state now); one is held from a parting
+ * to the resync (0xFFFFFFFF: none held). */
+extern void port_ReplayKeepBase(u32 frame, u64 hash, const void *saved);
+extern void port_ReplayHoldBase(u32 frame);
+/* Whether a start served is such a difference from a state this program
+ * has not kept (a spectator come in after the resync): TRUE, netplay's
+ * frame it is of. */
+extern s32 port_ReplayServedNeedsBase(const u8 *blob, u32 size, u32 *frame);
 
 /* ---- playing back ---- */
 
@@ -195,10 +212,18 @@ enum {
     PORT_REPLAY_FASTER,  /* twice as fast, up to eight times */
     PORT_REPLAY_RESTART, /* from its first frame */
     PORT_REPLAY_KILL,    /* to a moment before the first cut */
-    PORT_REPLAY_STOP     /* back to the game */
+    PORT_REPLAY_STOP,    /* back to the game */
+    PORT_REPLAY_HOLD     /* paused, whether it was or not */
 };
 
 extern void port_ReplayControl(s32 what);
+/* To the fight's frame `frame` (the theatre's seek, port_theatre.h), from
+ * the nearest keyframe not past it, or the start, or on from where it is:
+ * the frames between run unseen, every hash held. Paused or not as it
+ * was. */
+extern void port_ReplaySeekTo(u32 frame);
+/* The file of the replay being played, or NULL. */
+extern const char *port_ReplayPlayingPath(void);
 
 typedef struct {
     s32 is_playing;

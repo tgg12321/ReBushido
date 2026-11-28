@@ -89,6 +89,26 @@ static PortMatch *port_Match(void) {
     return match;
 }
 
+/* A local tournament's match (port_tournament.h): the page's rule is
+ * the tournament's, one on one. TRUE where one is in play. */
+static s32 port_MatchTournamentPage(PortMatch *match) {
+    s32 rule;
+    s32 count;
+
+    if (!port_TournamentRule(&rule, &count)) {
+        return FALSE;
+    }
+    match->page_rule = (u8)rule;
+    match->page_count = (u8)port_MatchCount(count);
+    match->page_teams = PORT_TEAMS_ONE;
+    return TRUE;
+}
+
+void port_MatchForgetPage(void) {
+    /* (one more than any rule: the next ask resets the page) */
+    g_port_match.default_rule = PORT_MATCH_RULES;
+}
+
 /* The window's cpu setting taken in (PortMatch.cpu_setting). */
 static void port_MatchTakeCpuSetting(PortMatch *match) {
     match->cpu_setting[0] = (u8)port_GetCpuLevel(0);
@@ -235,6 +255,7 @@ void port_MatchBegin(s32 mode) {
     match->to_top = FALSE;
     match->mode = (u8)mode;
     port_MatchTakeCpuSetting(match);
+    port_MatchTournamentPage(match);
     match->rule =
         port_MatchModeHasRules(mode) ? match->page_rule : (u8)PORT_MATCH_SINGLE;
     match->count = (u8)port_MatchCount(match->page_count);
@@ -435,6 +456,10 @@ s32 port_MatchAfterFight(s32 pressed) {
         return TRUE;
     }
     match->card = PORT_MATCH_CARD_NONE;
+    if (match->over && port_TournamentMatchOver(match->winner)) {
+        /* a tournament's match: the bracket told, the main menu */
+        return TRUE;
+    }
     if (!match->over) {
         if (match->rule == PORT_MATCH_CREW) {
             port_MatchNextCrewFight(match);
@@ -512,7 +537,8 @@ s32 port_MatchPageStep(s32 mode, s32 pressed, s32 is_open) {
     PortMatch *match = port_Match();
 
     match->page_on = (u8)port_MatchModeHasRules(mode);
-    if (!match->page_on || !is_open || match->rule_first) {
+    if (!match->page_on || !is_open || match->rule_first ||
+        port_TournamentIsPlaying()) {
         /* (a rule chosen before the grid is shown, not changed: the crews
          * picked are of it) */
         return FALSE;
@@ -808,6 +834,7 @@ static void port_MatchRuleTaken(PortMatch *match) {
 void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
     PortMatch *match = port_Match();
     s32 room = port_SessionIsRoomMatch();
+    s32 tournament;
 
     match->crew_most = (u8)(open < PORT_MATCH_CREW_LEAST ? PORT_MATCH_CREW_LEAST
                             : open > PORT_MATCH_CREW_MOST ? PORT_MATCH_CREW_MOST
@@ -830,10 +857,12 @@ void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
         match->page_cpu = (u8)port_GetCpuLevel(1);
     }
     port_MatchTakeCpuSetting(match);
-    /* a room's rule is the room's, as its host set it: no page */
+    /* a room's rule is the room's, as its host set it: no page; a
+     * tournament's likewise (port_tournament.h) */
+    tournament = port_MatchTournamentPage(match);
     match->rule_page =
         (u8)((match->rule_first || (match->cpu_row && port_TopMenuIsOn())) &&
-             !room && !to_stages);
+             !room && !to_stages && !tournament);
     match->rule_row =
         match->rule_first ? PORT_MATCH_ROW_RULE : PORT_MATCH_ROW_CPU;
     match->rule_sides = (u8)sides;
@@ -964,8 +993,16 @@ s32 port_MatchRulePageStep(s32 pressed, s32 *leave) {
     return TRUE;
 }
 
+/* The CPU's level of a place (port_match.h): a tournament's entrant's,
+ * the page's where it holds, or the window's setting. */
 s32 port_MatchCpuLevel(s32 place) {
     const PortMatch *match = &g_port_match;
+    s32 level;
+
+    /* a local tournament's CPU entrant: its own level */
+    if (port_TournamentCpuLevel(place, &level)) {
+        return level;
+    }
 
     if (match->cpu_taken && match->page_cpu <= PORT_CPU_LEVELS) {
         return match->page_cpu;

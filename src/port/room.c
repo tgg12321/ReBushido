@@ -149,6 +149,7 @@ static struct {
     s32 four;       /* opening a room whose matches are of four */
     s32 side_open;
     s32 side_join; /* the side's place, or -1 */
+    s32 side_done; /* a side of this member's let go: its number */
     s32 result_number;
     s32 result_winner;
 } g_room = {.socket = -1, .rule_asked = -1, .side_join = -1};
@@ -308,8 +309,19 @@ static void port_RoomTake(const u8 *in) {
     if (g_room.rule_asked >= 0 && view->rule == g_room.rule_asked) {
         g_room.rule_asked = -1;
     }
+    if (g_room.side_done != 0) {
+        s32 still = FALSE;
+
+        for (i = 0; i < view->side_count; i++) {
+            still |= view->sides[i].number == g_room.side_done;
+        }
+        if (!still) {
+            g_room.side_done = 0;
+        }
+    }
     for (i = 0; i < view->side_count; i++) {
-        if (view->sides[i].a == view->you) {
+        if (view->sides[i].a == view->you &&
+            view->sides[i].number != g_room.side_done) {
             g_room.side_open = FALSE;
         }
         if (view->sides[i].b == view->you) {
@@ -357,7 +369,9 @@ static void port_RoomReceive(u32 wait_ms) {
             port_Log("room: the lobby has no room %s for this member now\n",
                      g_room.code);
             g_room.view.in_room = FALSE;
-        } else if (kind == KIND_FEED_ACK || kind == KIND_SCENE) {
+        } else if ((kind == KIND_FEED_ACK || kind == KIND_SCENE) &&
+                   !port_RoomTournamentTake(in, got)) {
+            /* (a tournament's board is its own: room_tournament.c) */
             port_WatchTake(in, got);
         }
     }
@@ -593,6 +607,7 @@ void port_RoomLeave(void) {
         port_Log("room: left room %s\n", g_room.code);
     }
     port_WatchStop();
+    port_RoomTournamentForget();
     if (g_room.socket >= 0) {
         port_HostUdpClose(g_room.socket);
     }
@@ -619,6 +634,9 @@ void port_RoomTick(void) {
         return;
     }
     port_RoomReceive(0);
+    /* a tournament's turn: its host's board, each member's word that it
+     * plays (room_tournament.c) */
+    port_RoomTournamentTick();
     now = port_NetClock();
     if (now - g_room.stay_at < STAY_EVERY_MS) {
         return;
@@ -633,6 +651,9 @@ void port_RoomTick(void) {
         port_RoomSay(ACTION_SIDE_OPEN, 0, 0, "", NULL, NULL);
     } else if (g_room.side_join >= 0) {
         port_RoomSay(ACTION_SIDE_JOIN, g_room.side_join, 0, "", NULL, NULL);
+    } else if (g_room.side_done != 0) {
+        port_RoomSay(
+            ACTION_SIDE_DONE, 0, (u32)g_room.side_done, "", NULL, NULL);
     } else {
         port_RoomSay(ACTION_STAY, 0, 0, "", NULL, NULL);
     }
@@ -678,6 +699,11 @@ void port_RoomSideOpen(void) {
 
 void port_RoomSideJoin(s32 side) {
     g_room.side_join = side;
+    port_RoomAskNow();
+}
+
+void port_RoomSideDone(s32 number) {
+    g_room.side_done = number;
     port_RoomAskNow();
 }
 

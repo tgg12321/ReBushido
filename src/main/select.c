@@ -936,6 +936,82 @@ static void select_PortTrainingPads(s32 *held, s32 *pressed) {
 }
 #endif
 
+#if RB_PORT
+/* A local tournament's CPU side (port_tournament.h): the cursor of the
+ * side on its character's place of the grid (or, where another cursor
+ * has it, on the first open place no cursor is on), then on its weapon's
+ * place of the row where its clan has it, and Cross pressed on the side's
+ * pad, so that the screen picks for it as for a player. */
+static void select_PortTournamentCpu(void) {
+    s32 side;
+
+    for (side = 0; side < 2; side++) {
+        s32 fighter;
+        s32 weapon;
+        s32 row;
+        s32 col;
+
+        if (!port_TournamentCpuPick(side, &fighter, &weapon) ||
+            g_select_door != SELECT_DOOR_OPEN) {
+            continue;
+        }
+        if (g_select_step == SELECT_STEP_FIGHTER &&
+            g_select_picks.rec[side].fighter == SELECT_NONE) {
+            u8 *flags = &g_select_fighter_flags
+                            [g_select_grid[g_select_fighter_rows[side]]
+                                          [g_select_fighter_cols[side]]
+                                              .value];
+            s32 found = FALSE;
+            s32 pass;
+
+            /* the character's own place first, any open one after */
+            for (pass = 0; pass < 2 && !found; pass++) {
+                for (row = 0; row < SELECT_GRID_ROWS && !found; row++) {
+                    for (col = 0; col < SELECT_GRID_COLS && !found; col++) {
+                        const SelectCell *cell = &g_select_grid[row][col];
+                        u8 at = g_select_fighter_flags[cell->value];
+                        s32 own = row == g_select_fighter_rows[side] &&
+                                  col == g_select_fighter_cols[side];
+
+                        if ((at & SELECT_FIGHTER_OPEN) &&
+                            (own || !(at & SELECT_FIGHTER_TAKEN)) &&
+                            (pass == 1 || cell->fighter == fighter) &&
+                            cell->fighter != SELECT_FIGHTER_FIXED_1 &&
+                            cell->fighter != SELECT_FIGHTER_FIXED_2) {
+                            *flags &= ~SELECT_FIGHTER_TAKEN;
+                            g_select_fighter_rows[side] = (s16)row;
+                            g_select_fighter_cols[side] = (s16)col;
+                            g_select_fighter_flags[cell->value] |=
+                                SELECT_FIGHTER_TAKEN;
+                            found = TRUE;
+                        }
+                    }
+                }
+            }
+            if (found) {
+                g_select_pressed |= PAD_OF(PADRdown, side);
+            }
+        } else if (g_select_step == SELECT_STEP_WEAPON &&
+                   g_select_picks.rec[side].weapon == SELECT_NONE &&
+                   g_select_work->weapon_frames[1 - side] == 0) {
+            s32 first_clan =
+                (g_select_fighter_flags[g_select_picks.rec[side].hover] &
+                 SELECT_FIGHTER_FIRST_CLAN) != 0;
+            s32 place;
+
+            for (place = first_clan ? 0 : 1;
+                 place <= SELECT_WEAPON_PLACES - (first_clan ? 2 : 1);
+                 place++) {
+                if (g_select_weapon_ids[place] == weapon) {
+                    g_select_weapon_cursors[side] = (s16)place;
+                }
+            }
+            g_select_pressed |= PAD_OF(PADRdown, side);
+        }
+    }
+}
+#endif
+
 /* A frame of the screen: moves the doors, starts the frame's pool, draws
  * the doors (not while the weapons are up) and runs the step. Returns 1
  * when everything is picked, -1 when the screen is left, 0 otherwise. In
@@ -958,6 +1034,9 @@ s32 select_Update(s32 held, s32 pressed) {
     if (g_select_mode == FIGHT_MODE_PRACTICE) {
         g_select_pressed = pressed & 0xFFFF;
     }
+#if RB_PORT
+    select_PortTournamentCpu();
+#endif
 #if RB_PORT
     if (g_select_step < SELECT_STEP_STAGE_1 ||
         g_select_step >= SELECT_STEP_COUNT) {

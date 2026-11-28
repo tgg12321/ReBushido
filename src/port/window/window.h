@@ -305,9 +305,10 @@ enum {
     PORT_MENU_CONTROLS = 4,
     PORT_MENU_MODS = 5,
     PORT_MENU_TRAINING = 6,
+    PORT_MENU_TOURNAMENT = 7,
 };
 
-#define PORT_CHOICE_GROUPS 6
+#define PORT_CHOICE_GROUPS 7
 
 /* A number as the text of it, for a setting built in as a constant. */
 #define PORT_QUOTE(number) PORT_QUOTE_TEXT(number)
@@ -605,7 +606,7 @@ extern void port_MatchRuleName(char *out, s32 room, s32 rule, s32 count);
  * up, which of its two pages and rows, each row's name and whether it can
  * be chosen, and the caption the window draws for the cursor's row (NULL
  * where the game draws its own). */
-#define PORT_TOP_VIEW_ROWS 5 /* PORT_TOP_ROWS */
+#define PORT_TOP_VIEW_ROWS 6 /* PORT_TOP_ROWS */
 
 typedef struct {
     s32 is_up;
@@ -685,6 +686,8 @@ extern void port_SetBugfixes(s32 on);
 extern const char *port_NameScreen(s32 screen);
 extern const char *port_NameMode(s32 mode);
 extern const char *port_NameRoster(s32 roster);
+/* ... a character's (enum CharacterId), by its roster's name */
+extern const char *port_NameCharacter(s32 character);
 extern const char *port_NameWeapon(s32 weapon);
 extern const char *port_NameStage(s32 stage);
 /* `ReBushido VERSION (COMMIT)`. */

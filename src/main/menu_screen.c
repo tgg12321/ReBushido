@@ -445,6 +445,60 @@ static inline void menu_BackToTop(void) {
     g_sys_screen_frames = 0;
 }
 
+#if RB_PORT
+/* The top menu's rows (g_menu_row_modes). */
+#define MENU_TOP_ROW_MODES 8
+
+/* A local tournament's next match from the top menu (port_tournament.h):
+ * versus mode's select screen where a player is in it, or with two CPUs
+ * the fight itself, their fighters, weapons and stage as the select
+ * screen would have left them. TRUE where it began. */
+static s32 menu_PortTournamentStep(void) {
+    GameSettings *settings = menu_GetSettings();
+    s32 next = port_TournamentTopMenu();
+    u8 fighters[2];
+    u8 weapons[2];
+    u8 stage;
+    s32 side;
+    s32 row;
+
+    if (next == PORT_TOURNAMENT_STAY) {
+        return FALSE;
+    }
+    /* the top menu's Versus row as if it were chosen (menu_RunTop): its
+     * row in the settings, the second pad's side of the select screen */
+    for (row = 0; row < MENU_TOP_ROW_MODES; row++) {
+        if (g_menu_row_modes[row][0] == FIGHT_MODE_VS) {
+            settings->menu_mode = row;
+        }
+    }
+    g_fight_config.mode = menu_GetChosenMode();
+    switch (next) {
+    case PORT_TOURNAMENT_TO_SELECT:
+        cdrom_StopAndWait();
+        menu_EnterMode(g_fight_config.mode);
+        return TRUE;
+    case PORT_TOURNAMENT_TO_FIGHT:
+        port_TournamentFightPicks(fighters, weapons, &stage);
+        for (side = 0; side < 2; side++) {
+            settings->match_picks[side][0].fighter = fighters[side];
+            settings->match_picks[side][0].weapon = weapons[side];
+        }
+        settings->stage_index = stage;
+        /* as a select screen begins: no arena, the kinds' default, no
+         * mod's weapon, the music the window's (select.c, select_Load) */
+        port_StageChoiceReset();
+        port_PlayReset();
+        port_WeaponPickReset();
+        port_FightMusicReset();
+        menu_LeaveForFight();
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+#endif
+
 /* SCREEN_MENU_UPDATE: one frame of whichever page is up. */
 void menu_Update(void) {
     s32 result;
@@ -517,6 +571,11 @@ void menu_Update(void) {
         if (g_sys_screen_frames >= MENU_IDLE_FRAMES) {
             g_sys_screen = SCREEN_MOVIE;
         }
+#if RB_PORT
+        if (menu_PortTournamentStep()) {
+            break;
+        }
+#endif
         result = menu_RunTop(g_pad_state.held, g_pad_state.pressed);
         if (result == PAGE_RUNNING) {
             break;

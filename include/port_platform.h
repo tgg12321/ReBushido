@@ -342,6 +342,11 @@ extern s32 g_port_ahead_unpainted;
 /* The host's turn before a step (main.c): g_port_boundary_hook, then the
  * frames ahead. */
 extern void port_BeforeStep(void);
+/* A look of the theatre's (port_theatre.h): the state `from` put in,
+ * `frames` steps run from it as frames ahead are run, and the state `back`
+ * put in after them; TRUE where they ran to the end, FALSE where they were
+ * given up (a load). */
+extern s32 port_RunLook(const void *from, s32 frames, const void *back);
 /* A blank in an ahead step (clock.c), and an ahead step stopped where it
  * is: the state is put back. */
 extern void port_AheadBlank(u32 blank);

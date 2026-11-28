@@ -24,6 +24,8 @@ static const char * const g_port_group_titles[PORT_CHOICE_GROUPS][2] = {
     {"Mods", "The mods beside the program, and the menus the program ships"},
     {"Training",
      "The dummy, its recordings, slow motion, the presses and hit areas"},
+    {"Tournament",
+     "What a local tournament begins with: its entrants and its rules"},
 };
 
 /* What the menu shows of a switch. */

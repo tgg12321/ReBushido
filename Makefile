@@ -385,13 +385,18 @@ port-rollback:
 # under each rule, which it does not take (docs/PORT.md, "Match rules";
 # tools/port_match.py); and two on two, a retarget, the third pad, the
 # CPU's four, each way a fight ends and a Stock match, the replays of three
-# played back (docs/PORT.md, "Two on two"; tools/port_duo.py). It needs the
-# disc's image, as port-rollback does, and runs what make port built.
+# played back (docs/PORT.md, "Two on two"; tools/port_duo.py); and a local
+# tournament's byes, a person's match at the select screen and the
+# rollback self-test through a whole tournament (docs/PORT.md, "A local
+# tournament"; tools/port_tournament.py, whose eight CPUs on both sizes
+# and in the window's program are run by hand). It needs the disc's image,
+# as port-rollback does, and runs what make port built.
 port-stage-select:
 	python3 tools/port_stage_select.py
 	python3 tools/port_match.py
 	python3 tools/port_duo.py
 	python3 tools/port_training.py
+	python3 tools/port_tournament.py --only byes person rollback
 
 # Two programs of the port playing each other over UDP on 127.0.0.1
 # (docs/NETPLAY.md, sections 11 to 13; tools/port_net.py): the game's own

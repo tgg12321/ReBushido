@@ -162,15 +162,24 @@ static const char g_port_window_usage[] =
     "and the session's log says where it went. F9 keeps a report of a\n"
     "problem: the picture, the last ten seconds' times, the log, the\n"
     "settings and what the PC is, in a folder report-... beside the log.\n"
-    "Online, F5 resyncs a game fallen out of step with the other's.\n"
+    "Online, F5 resyncs a game fallen out of step with the other's, as\n"
+    "Select held a second does then (whatever key or button it is).\n"
+    "Offline, F4 in a fight is photo mode (docs/PLAYING.md).\n"
     "--fight STAGE FIGHTER FIGHTER starts straight in a fight (below).\n"
     "\n"
     "A replay as a film: --replay FILE --export OUT.mp4 plays it with no\n"
     "window shown, as fast as the PC goes, and writes the fight as a film\n"
     "with its sound: an .mp4 (H.264 and AAC, by Windows' own encoders) or\n"
-    "an .avi (Motion JPEG and the sound as it is, on any system). It is\n"
-    "1920 by 1080 unless --window WxH says, the picture as --graphics or\n"
-    "the settings say (docs/PLAYING.md, \"Replays\").\n"
+    "an .avi (Motion JPEG and the sound as it is, on any system), or a\n"
+    ".gif (640 across, no sound). It is 1920 by 1080 unless --window WxH\n"
+    "says, the picture as --graphics or the settings say (docs/PLAYING.md,\n"
+    "\"Replays\"). --export-from F --export-to F: those frames alone (the\n"
+    "replay theatre's clip); --theatre-view F,X,Y,Z,P,Y,R,D,H,T,S the\n"
+    "theatre's view: the free camera on, its focus, angles and distance,\n"
+    "the HUD hidden, the time of day, the screen's distance (the field of\n"
+    "view); --theatre-path F,X,Y,Z,P,Y,R,D,S;... the camera's keys, which\n"
+    "it follows (\"The replay theatre\"). For a test,\n"
+    "--theatre-keys WORDS: the theatre's words (tools/port_theatre.py).\n"
     "\n"
     "Online: the settings menu's Play online page, or --host ADDRESS:PORT\n"
     "(0.0.0.0:7845 to be found from other PCs) and --join ADDRESS:PORT\n"
@@ -930,6 +939,8 @@ int main(int argc, char **argv) {
     s32 is_session = 0; /* started into a session of online play */
     /* a replay's film made (--export), or one read back for a test */
     const char *export_path = NULL;
+    u32 export_from = 0; /* ... of these frames of it (a theatre's clip) */
+    u32 export_to = 0;
     const char *film_read = NULL;
     const char *film_folder = NULL;
     const char *film_at = NULL;
@@ -1186,6 +1197,16 @@ int main(int argc, char **argv) {
             options->online_keys = argv[++i];
         } else if (strcmp(word, "--escape-at") == 0 && has_value) {
             options->escape_at = argv[++i];
+        } else if (strcmp(word, "--theatre-keys") == 0 && has_value) {
+            options->theatre_keys = argv[++i];
+        } else if (strcmp(word, "--theatre-view") == 0 && has_value) {
+            options->theatre_view = argv[++i];
+        } else if (strcmp(word, "--theatre-path") == 0 && has_value) {
+            options->theatre_path = argv[++i];
+        } else if (strcmp(word, "--export-from") == 0 && has_value) {
+            export_from = (u32)atoi(argv[++i]);
+        } else if (strcmp(word, "--export-to") == 0 && has_value) {
+            export_to = (u32)atoi(argv[++i]);
         } else {
             /* the port's own, which it reads itself */
             if (strcmp(word, "--image") == 0) {
@@ -1238,6 +1259,7 @@ int main(int argc, char **argv) {
                               why, sizeof(why))) {
             port_Complain("--export: ", why);
         }
+        port_ExportSetRange(export_from, export_to);
         options->is_fast = 1;
         options->is_hidden = 1;
         no_fps = 1;

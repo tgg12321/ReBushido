@@ -27,6 +27,14 @@
  * strikes at a fighter who comes within his reach, which it then draws
  * out and punishes.
  *
+ * Its patience runs out (port_CpuPressure; docs/CPU.md, "Committing"):
+ * the longer nothing happens, the more it is behind, the later in the
+ * fight, the harder it presses, coming in to within its own reach and
+ * striking first, lunging in from just past it, feinting from the
+ * veteran up; and from the adept up it meets an opponent who walks into
+ * its reach with a blow. So two of it never stand off each other for a
+ * whole fight.
+ *
  * Everything here is the game's state (config/port_state.txt): the
  * memory of each fighter, its dice, what it saw. A memory is a fighter's,
  * not a place's: in two on two (port_duo.h) the four fighters pass through
@@ -72,6 +80,23 @@ typedef struct {
     u8 far_reach;
     /* TRUE: backs off from an attack coming while it waits to guard */
     u8 backs_off;
+    /* its patience: frames of nothing happening before it begins to press,
+     * and frames more till it presses all it will */
+    u16 patience;
+    u16 ramp;
+    /* of 1024, a frame, pressing all it will: what pressing adds to the
+     * chance to strike first, in range; the chance to step in from just
+     * past its reach and strike (a lunge); to step into his reach and out
+     * again, to draw him (a feint) */
+    u8 aggression;
+    u8 lunge;
+    u8 feint;
+    /* of 256: the chance to meet him with a blow as he is seen to walk
+     * into its reach */
+    u8 meet;
+    /* TRUE: pressing, it waits just outside his reach and goes in by
+     * lunges, not by walking into a blow */
+    u8 outside;
 } PortCpuLevel;
 
 static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
@@ -79,7 +104,9 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
     /* novice: slow, unsure of the distance, guesses its guards. A
      * beginner's reaction to an attack he must first make out: 11 to 14
      * frames, 0.37 to 0.47 s (at 9 the adept beat it 53% of 96 fights;
-     * at 11, 67% of 192: docs/CPU.md, "Measuring the levels") */
+     * at 11, 67% of 192: docs/CPU.md, "Measuring the levels"); and
+     * impatient, pressing after 1.3 s of nothing and swinging from too
+     * far, as a beginner does ("Committing") */
     {.reaction = 11,
      .jitter = 3,
      .read = 96,
@@ -91,7 +118,11 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .punish_frames = 3,
      .initiative = 22,
      .evade = 60,
-     .slack = 500},
+     .slack = 500,
+     .patience = 40,
+     .ramp = 120,
+     .aggression = 64,
+     .lunge = 24},
     /* adept: learns which of its attacks do */
     {.reaction = 8,
      .jitter = 2,
@@ -105,8 +136,14 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .initiative = 12,
      .evade = 130,
      .slack = 200,
-     .learns = TRUE},
-    /* veteran: reads the opponent's habits */
+     .learns = TRUE,
+     .patience = 100,
+     .ramp = 150,
+     .aggression = 48,
+     .lunge = 24,
+     .meet = 60},
+    /* veteran: reads the opponent's habits; waits 8 s for an opening
+     * before it presses, meets him as he walks in, feints */
     {.reaction = 7,
      .jitter = 2,
      .read = 200,
@@ -120,9 +157,16 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .evade = 190,
      .slack = 0,
      .learns = TRUE,
-     .reads_habits = TRUE},
+     .reads_habits = TRUE,
+     .patience = 240,
+     .ramp = 240,
+     .aggression = 56,
+     .lunge = 28,
+     .feint = 20,
+     .meet = 220},
     /* master: a quick player's reaction, never less; draws a hasty
-     * opponent out */
+     * opponent out; waits longest, and pressing stays outside his reach
+     * and lunges in */
     {.reaction = 6,
      .jitter = 1,
      .read = 230,
@@ -137,7 +181,14 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .slack = -300,
      .learns = TRUE,
      .reads_habits = TRUE,
-     .baits = TRUE},
+     .baits = TRUE,
+     .patience = 300,
+     .ramp = 240,
+     .aggression = 64,
+     .lunge = 32,
+     .feint = 32,
+     .meet = 250,
+     .outside = TRUE},
 };
 
 /* No level reacts quicker than this: a sixth of a second. */
@@ -172,6 +223,24 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
 #define HABIT_RATE_HASTY 16
 #define HABIT_RATE_PATIENT 6
 #define FRAMES_A_SECOND 30
+/* Pressing (port_CpuPressure): all it will is this; a wound it has more
+ * than he has seen to have adds this much; from this frame of the fight
+ * the clock adds to it, all by this frame (the tournament judges a fight
+ * of two CPUs at 5400: PORT_TOURNAMENT_JUDGE_FRAMES) */
+#define PRESSURE_ALL 256
+#define PRESSURE_A_WOUND 64
+#define PRESSURE_CLOCK_FROM 1800
+#define PRESSURE_CLOCK_ALL 4500
+/* a lunge is from no further than this past its own reach, and only
+ * pressing this much; a feint, from no further than this past his,
+ * pressing between these */
+#define LUNGE_DISTANCE 1500
+/* a level that presses from outside his reach waits this far past it */
+#define OUTSIDE_MARGIN 200
+#define LUNGE_PRESSURE 96
+#define FEINT_DISTANCE 1200
+#define FEINT_PRESSURE_LEAST 32
+#define FEINT_PRESSURE_MOST 224
 /* the place it likes is drawn again this often */
 #define MARGIN_FRAMES 60
 /* this far past where it likes to be it runs */
@@ -287,6 +356,19 @@ typedef struct {
     s8 own_attack;
     u8 own_wounds;
     u8 own_live;
+    /* frames since anything happened (a wound, an attack begun), as it
+     * saw them; the wounds and his attack it saw last */
+    u16 quiet;
+    u16 quiet_motion;
+    u8 quiet_mine;
+    u8 quiet_his;
+    /* a step begun to strike after it (a lunge), or to step back after it
+     * (a feint) */
+    u8 lunging;
+    u8 feinting;
+    /* TRUE once he has been seen out of its reach: his walking back into
+     * it may be met */
+    u8 meet_armed;
 } PortCpuMind;
 
 static PortCpuMind g_port_cpu[PORT_DUO_FIGHTERS];
@@ -333,6 +415,13 @@ s32 port_CpuTune(s32 level, const char *field, s32 value) {
     TUNE(baits)
     TUNE(far_reach)
     TUNE(backs_off)
+    TUNE(patience)
+    TUNE(ramp)
+    TUNE(aggression)
+    TUNE(lunge)
+    TUNE(feint)
+    TUNE(meet)
+    TUNE(outside)
 #undef TUNE
     return FALSE;
 }
@@ -396,6 +485,13 @@ void port_CpuInit(s32 fighter_index) {
     mind->margin_frames = 0;
     mind->own_live = 0;
     mind->habit_motion = 0xFFFF;
+    mind->quiet = 0;
+    mind->quiet_motion = 0xFFFF;
+    mind->quiet_mine = 0;
+    mind->quiet_his = 0;
+    mind->lunging = 0;
+    mind->feinting = 0;
+    mind->meet_armed = 0;
     /* what it learned of the opponent it keeps from fight to fight of the
      * match; another opponent (another fighter, another weapon), or
      * another fighter of its own, starts it afresh */
@@ -671,6 +767,18 @@ static u32 port_CpuWalk(Fighter *fighter, s32 x, s32 z, s32 distance, s32 want,
         return FIGHTER_PAD_SIDE_A;
     }
     if (distance > want + tolerance) {
+        s32 ahead = fighter->cpu_probes[CPU_PROBE_TOWARD];
+
+        if (ahead == CPU_FOUND_DROP || ahead == CPU_FOUND_BLOCKED_STEP) {
+            /* a height between them (a terrace, a step of the ground):
+             * down off it, or up it, R1 at its edge as the game's CPU
+             * climbs (cpu_SteerTo); sidling along it the two would circle
+             * for ever, one above the other */
+            s32 heading;
+
+            return FIGHTER_PAD_TOWARD |
+                   (fighter_FindLedge(fighter, &heading) ? PADR1 : 0);
+        }
         if (!port_CpuClear(fighter, CPU_PROBE_TOWARD)) {
             return port_CpuClear(fighter, CPU_PROBE_SIDE_A)
                        ? FIGHTER_PAD_SIDE_A
@@ -701,6 +809,71 @@ static u32 port_CpuWalk(Fighter *fighter, s32 x, s32 z, s32 distance, s32 want,
 
 enum { PICK_ANY, PICK_REACHES };
 
+/* An attack of the motion file's list that it may use (none of dirt or a
+ * thrown thing, none another character's, none needing the arm it has
+ * lost): its script, or NULL. */
+static u8 *port_CpuUsable(const Fighter *fighter, u8 *attack) {
+    u8 *script = attack + CPU_ATTACK_HEAD;
+    s32 kind = attack[CPU_ATTACK_FLAGS] & CPU_ATTACK_KIND;
+
+    if (script[0] == CPU_ATTACK_FOR_SOME) {
+        u32 mask = (u32)script[4] << 24 | (u32)script[3] << 16 |
+                   (u32)script[2] << 8 | script[1];
+
+        if (!(mask & (1U << fighter->cpu_profile))) {
+            return NULL;
+        }
+        script += CPU_ATTACK_MASK_BYTES;
+    }
+    if ((attack[CPU_ATTACK_FLAGS] & CPU_ATTACK_NEEDS_ARM) &&
+        fighter->off_arm_ok == 0) {
+        return NULL;
+    }
+    if (kind == CPU_ATTACK_KIND_DIRT || kind == CPU_ATTACK_KIND_THROW) {
+        return NULL;
+    }
+    return script;
+}
+
+/* The farthest an attack of the list is meant for (cpu.h, CPU_ATTACK_...):
+ * kinds 0 and 7 between their two distances, kinds 1 to 4 for an opponent
+ * nearer than the first; with the fighter's reach and the level's slack. */
+static s32 port_CpuAttackFar(
+    const Fighter *fighter, const PortCpuLevel *level, const u8 *attack) {
+    s32 kind = attack[CPU_ATTACK_FLAGS] & CPU_ATTACK_KIND;
+    s32 far = kind == 0 || kind == CPU_ATTACK_KIND_LAST
+                  ? attack[CPU_ATTACK_FAR]
+                  : attack[CPU_ATTACK_NEAR];
+
+    return far * MOTION_REACH_UNIT + fighter->reach_bonus + level->slack;
+}
+
+/* The farthest any attack of its stance's list is meant for: as far as it
+ * strikes from (the motion's own reach may be further). */
+static s32 port_CpuListReach(
+    const Fighter *fighter, const PortCpuLevel *level) {
+    u16 *list = fighter->cpu_stance_scripts[fighter->stance];
+    s32 most = 0;
+    s32 index;
+
+    if (list == NULL) {
+        return 0;
+    }
+    for (index = 0; list[index] != 0; index++) {
+        u8 *attack = (u8 *)fighter->cpu_scripts + list[index];
+        s32 far;
+
+        if (port_CpuUsable(fighter, attack) == NULL) {
+            continue;
+        }
+        far = port_CpuAttackFar(fighter, level, attack);
+        if (far > most) {
+            most = far;
+        }
+    }
+    return most;
+}
+
 /* An attack of its stance's list that suits the distance, picked at random
  * by how each has done (from the adept up): its offset in the list, or -1.
  * The list's attacks are the motion file's, each with the distances it is
@@ -718,38 +891,18 @@ static s32 port_CpuPickAttack(Fighter *fighter, PortCpuMind *mind, s32 distance,
     }
     for (index = 0; list[index] != 0; index++) {
         u8 *attack = (u8 *)fighter->cpu_scripts + list[index];
-        u8 *script = attack + CPU_ATTACK_HEAD;
+        u8 *script = port_CpuUsable(fighter, attack);
         s32 kind = attack[CPU_ATTACK_FLAGS] & CPU_ATTACK_KIND;
         s32 near = attack[CPU_ATTACK_NEAR] * MOTION_REACH_UNIT;
-        s32 far = attack[CPU_ATTACK_FAR] * MOTION_REACH_UNIT +
-                  fighter->reach_bonus + level->slack;
-        s32 fits;
+        s32 far;
         s32 score;
 
-        if (script[0] == CPU_ATTACK_FOR_SOME) {
-            u32 mask = (u32)script[4] << 24 | (u32)script[3] << 16 |
-                       (u32)script[2] << 8 | script[1];
-
-            if (!(mask & (1U << fighter->cpu_profile))) {
-                continue;
-            }
-            script += CPU_ATTACK_MASK_BYTES;
-        }
-        if ((attack[CPU_ATTACK_FLAGS] & CPU_ATTACK_NEEDS_ARM) &&
-            fighter->off_arm_ok == 0) {
+        if (script == NULL) {
             continue;
         }
-        if (kind == CPU_ATTACK_KIND_DIRT || kind == CPU_ATTACK_KIND_THROW) {
-            continue;
-        }
-        if (kind == 0 || kind == CPU_ATTACK_KIND_LAST) {
-            fits = near < distance && distance < far;
-        } else {
-            /* kinds 1 to 4: for an opponent nearer than its first
-             * distance */
-            fits = distance < near + fighter->reach_bonus + level->slack;
-        }
-        if (!fits) {
+        far = port_CpuAttackFar(fighter, level, attack);
+        if (distance >= far ||
+            ((kind == 0 || kind == CPU_ATTACK_KIND_LAST) && distance <= near)) {
             continue;
         }
         score = 1 + (s32)(port_CpuRandom(mind) & 0xFF);
@@ -765,9 +918,7 @@ static s32 port_CpuPickAttack(Fighter *fighter, PortCpuMind *mind, s32 distance,
             best_score = score;
             best = (s32)(script - (u8 *)fighter->cpu_scripts);
             *index_out = index;
-            *far_out = kind == 0 || kind == CPU_ATTACK_KIND_LAST
-                           ? far
-                           : near + fighter->reach_bonus + level->slack;
+            *far_out = far;
         }
     }
     return best;
@@ -790,6 +941,8 @@ static s32 port_CpuStrike(Fighter *fighter, PortCpuMind *mind, s32 distance) {
     mind->own_attack = (s8)index;
     mind->own_wounds = (u8)port_CpuWounds(fighter->other);
     mind->own_live = 1;
+    /* something happened: the less patience it has lost */
+    mind->quiet /= 2;
     if (fighter->stance < OWN_STANCES && index < OWN_ATTACKS &&
         mind->tried[fighter->stance][index] < 0xFF) {
         mind->tried[fighter->stance][index]++;
@@ -851,6 +1004,57 @@ static s32 port_CpuFramesTo(const PortCpuSeen *seen, s32 frame, s32 ago) {
     return (frame - seen->move_frame) * FIGHTER_SPEED_ONE / seen->speed - ago;
 }
 
+/* Once a frame: how long nothing has happened, as it saw it. A wound of
+ * either begins the count again; an attack he was seen to begin halves it
+ * (as one of its own does, port_CpuStrike), so that pokes from afar that
+ * draw no blood do not keep it patient for ever. */
+static void port_CpuNoteQuiet(Fighter *fighter, PortCpuMind *mind) {
+    const PortCpuSeen *seen = port_CpuSeenAgo(fighter, mind, mind->reaction);
+    s32 mine = port_CpuWounds(fighter);
+
+    if (mine != mind->quiet_mine || seen->wounds != mind->quiet_his) {
+        mind->quiet_mine = (u8)mine;
+        mind->quiet_his = seen->wounds;
+        mind->quiet = 0;
+    } else if (!MOVE_IS_ATTACK(seen->move_kind)) {
+        mind->quiet_motion = 0xFFFF;
+    } else if (mind->quiet_motion != seen->motion_index) {
+        mind->quiet_motion = seen->motion_index;
+        mind->quiet /= 2;
+    }
+    if (mind->quiet < S16_MOST) {
+        mind->quiet++;
+    }
+}
+
+/* How hard it presses, of PRESSURE_ALL: its patience run out (frames of
+ * nothing happening past its level's patience), in half the hurry if it
+ * is ahead and more for each wound it has more than it has seen him to
+ * have; and more as the fight goes on. All of it from what a player
+ * knows: his own wounds, what he saw of the other's, the time. */
+static s32 port_CpuPressure(
+    const Fighter *fighter, const PortCpuMind *mind, const PortCpuLevel *level,
+    const PortCpuSeen *seen) {
+    s32 behind = port_CpuWounds(fighter) - seen->wounds;
+    s32 ramp = level->ramp > 0 ? level->ramp : 1;
+    s32 pressure = 0;
+
+    if (mind->quiet > level->patience) {
+        pressure = (mind->quiet - level->patience) * PRESSURE_ALL / ramp;
+    }
+    if (behind < 0) {
+        pressure /= 2;
+    } else {
+        pressure += behind * PRESSURE_A_WOUND;
+    }
+    /* ahead or not: one who will not come to it is gone to in the end */
+    if (fighter->frames_alive > PRESSURE_CLOCK_FROM) {
+        pressure += (fighter->frames_alive - PRESSURE_CLOCK_FROM) *
+                    PRESSURE_ALL / (PRESSURE_CLOCK_ALL - PRESSURE_CLOCK_FROM);
+    }
+    return pressure < PRESSURE_ALL ? pressure : PRESSURE_ALL;
+}
+
 /* The frame's decision (the file's head says the order): the buttons to
  * hold, or 0 with a script begun. */
 static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
@@ -863,8 +1067,18 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
     s32 his_stance = seen->stance < 3 ? seen->stance : 0;
     s32 his_reach = level->far_reach ? other->attack_max_reach[his_stance]
                                      : other->attack_reach[his_stance];
+    /* as far as it strikes from: its stance's reach, or its list's
+     * farthest attack where that is nearer */
     s32 my_reach = fighter->attack_reach[fighter->stance];
+    s32 list_reach = port_CpuListReach(fighter, level);
+    s32 standing = fighter->move_kind == MOVE_KIND_STANCE;
     s32 want;
+    s32 pressure;
+    s32 pressed;
+
+    if (list_reach < my_reach) {
+        my_reach = list_reach;
+    }
 
     /* -- what it cannot help -- */
     if (other->is_defeated || seen->move_kind == MOVE_KIND_END_GAME ||
@@ -914,6 +1128,10 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
             PortCpuKnown *known = port_CpuKnown(mind, seen->motion_index);
             s32 read = level->read + level->read_gain * known->count;
             s32 kind = seen->attack_kind & 1;
+
+            /* a lunge or a feint under way is given up for it */
+            mind->lunging = 0;
+            mind->feinting = 0;
 
             /* time enough to be out of reach: a step back */
             if (to_hit >= 6 && distance + 1500 > seen->reach &&
@@ -978,6 +1196,39 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         }
     }
 
+    /* -- he walks into its reach: met with a blow -- */
+    if (distance > my_reach + OPENING_MARGIN) {
+        mind->meet_armed = 1;
+    } else if (mind->meet_armed && distance < my_reach &&
+               (seen->move_kind == MOVE_KIND_WALK ||
+                seen->move_kind == MOVE_KIND_RUN ||
+                seen->move_kind == MOVE_KIND_STEP) &&
+               (standing || fighter->move_kind == MOVE_KIND_WALK) &&
+               angle < ANGLE_TURN / 12) {
+        mind->meet_armed = 0;
+        if (port_CpuChance(mind, level->meet, CHANCE_BYTE) &&
+            port_CpuStrike(fighter, mind, distance)) {
+            return 0;
+        }
+    }
+
+    /* -- after a step: a lunge's blow, a feint's step back -- */
+    if (mind->lunging) {
+        mind->lunging = 0;
+        if (distance < my_reach + OPENING_MARGIN && angle < ANGLE_TURN / 12 &&
+            !MOVE_IS_ATTACK(seen->move_kind) &&
+            port_CpuStrike(fighter, mind, distance)) {
+            return 0;
+        }
+    }
+    if (mind->feinting) {
+        mind->feinting = 0;
+        if (port_CpuClear(fighter, CPU_PROBE_AWAY)) {
+            port_CpuStart(mind, SCRIPT_STEP_AWAY);
+            return 0;
+        }
+    }
+
     /* -- his habits -- */
     if (level->reads_habits) {
         if (distance < his_reach + HABIT_STANDING_MARGIN &&
@@ -1020,18 +1271,57 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
             want = my_reach - PRESS_DEPTH;
         }
     }
+    /* pressing: in, as far as within its own reach */
+    pressure = port_CpuPressure(fighter, mind, level, seen);
+    pressed = my_reach - PRESS_DEPTH;
+    if (level->outside && pressed < his_reach + OUTSIDE_MARGIN) {
+        pressed = his_reach + OUTSIDE_MARGIN;
+    }
+    if (pressure > 0 && want > pressed) {
+        want -= (want - pressed) * pressure / PRESSURE_ALL;
+    }
     if (want < NEAREST_WANTED) {
         want = NEAREST_WANTED;
     }
 
-    /* -- a strike of its own -- */
-    if (fighter->move_kind == MOVE_KIND_STANCE && distance < my_reach &&
+    /* -- a strike of its own: standing, or pressing and walking in -- */
+    /* (pressing, a lesser level swings from as far as it misjudges) */
+    if ((standing || (pressure > 0 && fighter->move_kind == MOVE_KIND_WALK)) &&
+        distance <
+            my_reach + (pressure > 0 && level->slack > 0 ? level->slack : 0) &&
         angle < ANGLE_TURN / 12 && !MOVE_IS_ATTACK(seen->move_kind) &&
-        port_CpuChance(mind, level->initiative * (seen->wounds != 0 ? 2 : 1),
+        port_CpuChance(mind,
+                       level->initiative * (seen->wounds != 0 ? 2 : 1) +
+                           level->aggression * pressure / PRESSURE_ALL,
                        CHANCE_FRAME)) {
         if (port_CpuStrike(fighter, mind, distance)) {
             return 0;
         }
+    }
+    /* a lunge: just past its reach, a step in and a blow */
+    if (pressure >= LUNGE_PRESSURE &&
+        (standing || fighter->move_kind == MOVE_KIND_WALK) &&
+        distance >= my_reach && distance < my_reach + LUNGE_DISTANCE &&
+        angle < ANGLE_TURN / 12 && !MOVE_IS_ATTACK(seen->move_kind) &&
+        port_CpuClear(fighter, CPU_PROBE_TOWARD) &&
+        port_CpuChance(
+            mind, level->lunge * pressure / PRESSURE_ALL, CHANCE_FRAME)) {
+        mind->lunging = 1;
+        port_CpuStart(mind, SCRIPT_STEP_TOWARD);
+        return 0;
+    }
+    /* a feint: a step into his reach and out again, to draw a blow that
+     * misses (an opening, above) */
+    if (level->feint != 0 && pressure >= FEINT_PRESSURE_LEAST &&
+        pressure <= FEINT_PRESSURE_MOST && standing && distance > his_reach &&
+        distance < his_reach + FEINT_DISTANCE && angle < ANGLE_TURN / 12 &&
+        (seen->move_kind == MOVE_KIND_STANCE ||
+         seen->move_kind == MOVE_KIND_WALK) &&
+        port_CpuClear(fighter, CPU_PROBE_TOWARD) &&
+        port_CpuChance(mind, level->feint, CHANCE_FRAME)) {
+        mind->feinting = 1;
+        port_CpuStart(mind, SCRIPT_STEP_TOWARD);
+        return 0;
     }
 
     /* -- standing where it likes -- */
@@ -1059,6 +1349,7 @@ void port_CpuBuildPad(s32 fighter_index, PadState *pad_out) {
     cpu_PortProbeGround(fighter);
     fighter->cpu_frames++;
     port_CpuOwnAttackDone(fighter, mind);
+    port_CpuNoteQuiet(fighter, mind);
     /* a new reaction time for each thing it answers */
     if (mind->frames % 32 == 0) {
         mind->reaction = (u8)(g_port_cpu_levels[mind->level].reaction +

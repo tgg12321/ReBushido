@@ -14,7 +14,8 @@ window programs on one PC (section 13). Then the lobby and its ways
 (section 14), sessions begun in the running program (15), rooms of several
 (16), the ranked ladder (17), two on two online, four players on four
 PCs among them (18), the CPU playing on for one of four who leaves
-(19), teams of four characters (20), and a resync where the machines part (21). What is left
+(19), teams of four characters (20), a resync where the machines part (21),
+and a tournament in a room (22). What is left
 is play between two real PCs,
 and what section 13 leaves to the owner.
 
@@ -2303,6 +2304,33 @@ four players is two on two with every fighter a player's: pad 1 and 3
 the first team, 2 and 4 the second (on two PCs, each PC a team); the
 host's rule, its match and its stage page hold as in a session of two.
 
+*A guest who gives up in the meeting* (2026-11-27). A guest the lobby
+let into a seat, whose way to the host was found, and who then went (his
+program closed or killed, his player giving up, before his first hello
+reached the host) had the host wait for that hello for ever, its other
+guests kept in and the lobby telling a newcomer that the room had all
+its players; and as nothing more was said of the seat, the lobby closed
+the whole room 30 s on as a meeting done (`--direct-timeout`). Now,
+while it waits for a guest the lobby sent, the host says the seat's
+hello again every second (`port_RelayStillHere`, no reset: the lobby
+keeps the room), and if no hello of that guest has come in 45 s
+(`MET_GIVE_UP_MS`) it lets the seat go: its log says `session: the
+player the lobby sent to link N never said hello in 45 seconds; letting
+the seat go and waiting for another`, its status *A player who came to
+the room gave up before joining. Still waiting: ...*, and its next
+hello for the seat is the reset one a leave in the meeting already sent
+(the lobby forgets that guest and the seat is free for the next). This
+is what a leave or a silence in the meeting already did (the seat waits
+for another; nothing is decided for the CPU before the match has begun,
+section 19); the guests already in are kept in meanwhile. 45 s, not
+less: a guest whose way was found directly said so a moment before and
+says hello at once, but one relayed may be a program held up opening its
+window inside its meeting, which took up to 30 s on a loaded machine.
+Nothing new is sent (a hello of the meeting's own kind) and nothing of
+the session changes: protocol 21 and the lobby's version 4 hold, and a
+host of before and a guest of now, or the other way, meet as before.
+The same holds for a host of two at the lobby.
+
 *Leaving.* A guest of four PCs who leaves a fight of four (the window's
 close, F1 twice, the plan's end) or stops answering gives his fighter to
 the CPU, and the others play on (protocol 16, section 19). Otherwise a
@@ -2353,6 +2381,7 @@ ping. The settings menu's Play online page hosts two only.
 | `four-leave` (protocol 15; since 16 the CPU plays on: section 19) | four headless | as `four`, the fourth player's program ending 400 frames into the fight | each of the others told `the other program ended after frame 1,799 (player 4)`, all four ending well; 59 hashes the same on all |
 | `port_net_lobby.py`: `four-punch` | four headless | a locked room of four at a local lobby, three guests by its code and its password, each at its own seat; 60 ms each way and 5% lost | every guest's way a punched hole to the host (the host's three); 183 hashes the same on all four, the last `13BE7CD212C83E90` (that of the session by address: the network decides when an input is known, never what it is); 1,030, 719, 681 and 741 rollbacks; 100 s |
 | `four-relay` | four headless | the same, `--net-paths relay`: each seat's pair passed on by the lobby | each the relay; the same 183 hashes, the same last; 109 s |
+| `four-gives-up`, `four-gives-up-win` (2026-11-27) | five headless | `four-punch`'s room; Bunta and Chie in, then Dai, killed the moment his program says the host is in the room (no hello to the host ever, no goodbye); Eiji asks for the room's code once the host has let the seat go | before the fix the host waited for ever (`3 of 4 players here`), Eiji was told the room had all its players, and the lobby closed the room 30 s on. Now: 45 s after the kill the host let the seat go, met Eiji there (link 3), and the session of four played with him: 143 hashes the same on all four, the last `A6A8B211828A9212` at frame 4,290; 611, 432, 397 and 437 rollbacks; 112 s (142 s in a loaded gate; Windows' headless programs 115 s) |
 | `rooms-four` (protocol 15; match 2 since 16: section 19) | five headless | a room of several, matches of four (`--room-size 4`, a fixed turn): Ayame, Bunta, Chie and Dai play, Sora watches; Dai leaves the second match at its frame 1,900, in the fight | match 1, Ayame and Chie against Bunta and Dai, each at the place the rotation gave: 182 hashes the same on all four, Sora holding 134 of them as she watched (from the fight's start), the second team's win told to the room. Match 2, the order turned (Bunta first, Bunta and Dai against Chie and Ayame): Dai's leave ended it on all, the others told `player 3` left, his team's loss the room's result, 63 hashes the same on all four, Sora 17; all back to their own games and the room; 169 s |
 | `pages-four` | four windows (hidden) | the host window's online pages: Host a room, *Room for: four players, a PC each*, Open; three windows of the command line join by its code; the host's Ready; at versus select the guests' Triangle (player 2's takes all back to the top menu) | the host met all three in turn and said go once all were ready; the session from power on to the select screen, where it ended on all (the host back at its own game, never started again); 17 hashes the same on all four; the Linux window, 19 s |
 | `four-punch-win` | four, Windows' headless program | `four-punch` on Windows | 183 hashes the same on all four, the last `6D260E838DC11965` (the Windows build's own, section 7); 1,049, 767, 710 and 735 rollbacks; 91 s |
@@ -2598,18 +2627,27 @@ host's, the host finds every parting a guest does.
 `netplay: DESYNC at frame F` (every test of a session still fails on
 it), and the program is *parted*: it holds no more hashes, and the
 session goes on. The window's line says *The game fell out of step with
-the other player's | F5: resync now | by itself in 3 s* (or *resync
-asked*, once F5 was pressed). F5 is the window's own key; a controller's
-player gets the resync by itself. F5 is heard only while parted.
+the other player's | F5 or hold Select: resync now | by itself in 3 s*
+(or *resync asked*, once asked). F5 is the window's own key; a
+controller's is Select held a second (RESYNC_HOLD_FRAMES, 60 of the
+local pad's frames, in `port_NetplayKeepLocal`). Both are heard only
+while parted. Parted, Select is the resync's and not the game's: every
+local pad's inputs are kept and sent without it (a Select pressed in a
+fight is the game's, a kaishaku among others), so that holding it cannot
+do anything in the fight, and it cannot be hit by accident where the
+machines have not parted. It is the pad's Select, so the remapping
+(`p1.select = ...`, PLAYING.md) moves it with the rest: Back on a
+controller, Right Shift on the keyboard, or whatever the player made it.
+Training's Select is training's own and never online.
 
 **When.** The host resyncs at the first of: a press of its own player
-(F5), a press of any guest's (each input datagram says so, `INPUT_ASK`),
-or 180 frames, three seconds, after it found the parting
-(`--resync-auto N`; 0 for only at a press). Recommended and the default
-both by itself and at a press: a parted fight is no fight, each player
-seeing his own (a cut on one screen is a miss on the other); a player
-with a controller has no key to reach for in the middle of a fight; and
-three seconds is long enough to read the line and short enough that
+(F5 or Select held), a press of any guest's (each input datagram says
+so, `INPUT_ASK`), or 180 frames, three seconds, after it found the
+parting (`--resync-auto N`; 0 for only at a press). Recommended and the
+default both by itself and at a press: a parted fight is no fight, each
+player seeing his own (a cut on one screen is a miss on the other); a
+second's hold of Select is long in the middle of a fight; and three
+seconds is long enough to read the line and short enough that
 little is played on a game that will be thrown away. A resync again
 within 1,200 frames (20 s) of the last is not made by itself, only at a
 press, so that a fault that parts the machines again at once does not
@@ -2693,9 +2731,41 @@ replaces its copy and sends it to the spectator who asks, who puts it in
 at its frame and watches on, every hash held again. A spectator who had
 not parted (a guest's fault) needs nothing. One whose state does not
 come for 30 seconds, or by 5 seconds after the match's end, stops on the
-desync as before. The lobby keeps a start of 1 MB at most: a fight of
-four's resync (1.09 MB measured) is not served, and its parted
-spectators stop as before.
+desync as before.
+
+**A fight of four's, told as a difference.** The lobby keeps a start of
+1 MB at most (1,024 chunks of 1 KB; `PORT_REPLAY_SERVED_MOST`), and a
+fight of four's resync is more (1.06 to 1.09 MB measured). Where the
+whole is more, the host gives the lobby instead the difference from its
+state of the frame every machine last held the same (the resync's
+*agreed*), which a spectator who parted has too: its hash agreed with
+the host's there, and it stopped running at the parting. Each program
+keeps for it the states of its last four hashed frames
+(`port_ReplayKeepBase`, replay.c): the host as each hash is made final
+(a copy of netplay's own save of that frame, while it feeds a room's
+spectators), a spectator as it runs each; the one of the agreed frame
+is held from the parting to the resync (`port_ReplayHoldBase`), the
+other three go round. The difference (`port_ReplayDiffMake`) is made of
+the host's state at the resync and the kept one, both with this run's
+own cleared, word by word: runs of so many words the same and so many
+new, with the new words' bytes (a run of the same shorter than eight
+words is among the new), deflated. It goes in a replay's chunks as the
+whole does: `SERV` (the input, the frame and the state's hash), `PIEC`,
+and `BASE` in place of `STRT` and `DISC` (the base's frame and hash, the
+difference's size, the state's size, then the deflated difference). A
+spectator puts it in (`port_ReplayUnpackDiff`) over its own kept state
+of that frame and hash, its own cleared as the host's was, and holds the
+result to the host's hash as it holds a whole one; the pieces must be
+this build's, as a resync's are. In the case below the whole was
+1.06 MB and the difference 320 KB (900 KB before deflating), 248 frames
+after the agreed frame. The guests are sent the whole state, as before
+(the link has no such limit). A spectator who comes into the match after
+the resync, and so has not the base, is not given a way in by it
+(`port_ReplayServedNeedsBase`): it waits for the next fight's start, as
+one who comes between two fights does. A spectator who keeps replays
+packs the state put in whole again for its fight's `RSYN` (a playback
+has no base of its own). The lobby is unchanged: what it keeps and
+sends is a start of a frame, of 1 MB at most, as before.
 
 **Ranked.** A ranked match's digest (section 17) is made of each final
 hash; on a resync both machines leave out those after the last the same
@@ -2705,27 +2775,33 @@ hash; on a resync both machines leave out those after the last the same
 input datagram carries the resyncs its sender has had, a resync asked
 for and the frame of the host's next, and the two kinds are new; 20 and
 21 do not meet. The lobby, its relay and its feed are unchanged (version
-4), and no build of it before is told apart.
+4), and no build of it before is told apart. A controller's press (Select
+held) and a fight of four's state for its spectators (`BASE`) changed
+neither: Select held is a resync asked, as F5's, in the same word; a
+start told as a difference is a start of the lobby's like any other,
+and only spectators of the same build put either in.
 
 **For tests.** `--net-part-at F` makes this program's state another's at
 its frame F: a word of the RAM the game never reads (below the stack's
 top the port gives the game and does not use) has a number added, after
 the frame's state is saved, so that a rollback past it makes it again;
 the hash parts there and nothing of the game does. `--resync-ask-at F`
-asks for a resync at frame F, once parted, as F5 does.
+asks for a resync at frame F, once parted, as F5 does; a play test's
+plan holds Select (`SELECT hold 75f`) as a controller's player does.
 
 **How it is proved.** At 60 ms each way and 5% lost (the lobby's cases
 as the lobby's are):
 
 | Case | Programs | What runs | Result |
 | --- | --- | --- | --- |
-| `tests/port/netplay.c` | none (the network made in the file) | the host parted at frame 30, a resync by itself said 20 frames on and sent in three chunks, one acknowledgement in two lost; a guest stopping at the host's frame, the chunks in another order and one twice, put in; another build's refused | the resync's frame, number and bytes; no hash of the state before it or of before its frame held, one after it held; the guest's acknowledgements, again for a chunk sent again; the session ending on the desync for another build's |
+| `tests/port/netplay.c` | none (the network made in the file) | the host parted at frame 30, a resync by itself said 20 frames on and sent in three chunks, one acknowledgement in two lost; a guest stopping at the host's frame, the chunks in another order and one twice, put in; another build's refused; the host parted, its player holding Select and Cross | the resync's frame, number and bytes; no hash of the state before it or of before its frame held, one after it held; the guest's acknowledgements, again for a chunk sent again; the session ending on the desync for another build's; no resync asked for 59 of the pad's frames of Select held, Cross alone in the inputs sent, the 60th asking |
 | `port_net.py resync`: `resync-guest` | two headless, each size, a session's Stock match | the guest parted at frame 1,450, in the fight; the host resyncs by itself | the desync found at 1,470; the resync at frame 1,687 (64-bit), 690 KB had in 2.5 s; 75 hashes the same on both but frames 1,470 to 1,686, 19 of them after; the fight's replay the same on both (inputs, views, the resync's state) and played back through the resync, every hash held |
-| `resync-host` | the same | the host parted at 1,450; neither resyncs by itself; the guest's player asks at 1,620 | the resync at 1,643 (64-bit), the guest given the host's parted state; 21 hashes the same after it; both replays played back |
+| `resync-host` | the same | the host parted at 1,450; neither resyncs by itself; the guest's player holds Select (the plan's `SELECT hold 75f`, from near 1,637) | the hold asks at 1,697 (64-bit), the resync at 1,728, the guest given the host's parted state; 18 hashes the same after it; both replays played back |
 | `resync-four` | four headless, each size | four players on four PCs, the third parted at 2,400 | the resync at 2,642 (64-bit), 1.09 MB had by the three guests in 3.6 s; 55 hashes the same on all four after it; the fight's replay the same on all four and played back |
 | `port_net_lobby.py`: `relay-resync` (`-win` on Windows) | two headless, the lobby's relay | the guest parted at 1,450 | 693 KB at the relay's pace, had in 5.0 s; 26 hashes the same after |
 | `rooms-resync` (`-win`) | three headless, a room of several | Ayame hosts the match and parts at 1,550; Bunta plays; Chie watches from the fight's start | Bunta and Chie part from Ayame; the resync at 1,652 on Bunta, and on Chie by the lobby; Chie runs 12 hashes after it, 17 held to the players' in all |
-| `win-resync` | two Windows windows (dummy drivers) | the guest parted at 1,450, neither resyncs by itself, the guest asks at 1,620 | the resync at 1,643; 28 hashes the same after; the window's replays the same on both |
+| `rooms-four-resync` (`-win`) | five headless, a room of several | Ayame hosts a match of four with Bunta, Chie and Dai, parts at 2,700 and resyncs by itself; Sora watches from the fight's start, keeping replays | the resync at 2,948, 1.06 MB whole to the three guests; the lobby given it as the difference from frame 2,700's, 320 KB (896 KB raw); Sora parts, puts it in, runs 49 hashes after it, 70 held in all; 49 hashes the same on the four after it; Sora's replay keeps the state whole and plays back through it |
+| `win-resync` | two Windows windows (dummy drivers) | the guest parted at 1,450, neither resyncs by itself, the guest holds Select (the plan's) | the hold asks at 1,697, the resync at 1,719; 25 hashes the same after; the window's replays the same on both |
 
 `port_net.py resync` is part of `make port-net` (`port_net.py all`) and
 so of the gate.
@@ -2733,8 +2809,93 @@ so of the gate.
 **What is left.** Two real PCs over the internet, and a desync that is
 one (no desync has been found between two machines of one build since
 section 12's "Under load"; the resync is proved on desyncs made on
-purpose). A spectator of a fight of four whose host parts (its state
-over the lobby's 1 MB; a start served as the difference from the fight's
-start, which every spectator has, would fit). A resync's three seconds
-are a guess to try with players. A press on a controller (the guide
-button leaves).
+purpose). A resync's three seconds and Select's one are guesses to try
+with players. A spectator who comes into a fight of four after its
+resync waits for the next fight.
+
+
+## 22. A tournament in a room
+
+ROADMAP 31's room half: a tournament of a room of several (section 16),
+its bracket run by the room's host, each match played by the two
+entrants whose turn it is while the rest of the room watches, CPUs among
+the entrants. The code and how a match's state carries it: PORT.md, "A
+tournament in a room"; how a player uses it: PLAYING.md, "A tournament
+in a room".
+
+**Nothing of the lobby changed**: it is version 4, as deployed. The
+bracket goes by what rooms already carry.
+
+- *The board.* The host opens a match beside the room's (`SIDE_OPEN`)
+  that nobody joins, and sends as its feed's settings (`FEED`, its
+  `SETTINGS` part, the 64 bytes a spectator is given of a match) the
+  tournament as it stands: a mark (`RBTN`), the tournament's number and
+  the board's version, the host's id, whether it is over, the entrants'
+  count, single or double, the rule and its number, the dice, the
+  entrant of each seed, each entrant (a member's id, or `0x80` and the
+  CPU's level; its fighter and weapon), the winners of the matches
+  decided in their order (a bit each) and which were walkovers, the
+  entrants who left, the two members who are to play next and the
+  room's match the pair comes after. The server keeps the settings as
+  last sent, and every member asks for them (`WATCH`, no start, no
+  frame) about once a second while the host has a match beside that
+  nobody joined; the newest version is taken and the bracket built again
+  from it. The server lets a match beside nobody joins go after two
+  minutes (`--side-timeout`): the host opens another, and the members ask
+  that one. A member's page offers no one the board to join.
+- *The rotation follows the bracket.* The host sets a fixed turn once
+  every member has read the first board (it names nobody: a player comes
+  into a room playing), and each member says it plays (the `ROOM`'s flag
+  that puts it in the rotation) only while the board names it, and only
+  once the board is newer than the last room's match it was in. The
+  server's first two free players are then always the board's two, and
+  it makes their match (its code, its ticket) as any rotation's. The two
+  who have just played say they do not before the host's next board, so
+  they are never paired again by mistake. Where the host is one of the
+  two, it lets its board go (`SIDE_DONE`) once the other says he plays: a
+  member in a match beside the room's is never free.
+- *A match* is a room's match (`ONE_MATCH`, its players telling the
+  result). Its session's host holds the tournament's rule and sends the
+  match's two entrants in its welcome (protocol 22, below); the host of
+  the room reads the result in the roster's last result, by the two who
+  played, and reports it into the bracket. A match not met, or a draw,
+  is played again.
+- *The CPU's side* is carried by a member: the room's host, or where the
+  host is the CPU's opponent another member; two CPUs by the host and
+  another. Both machines of the session compute the CPU (it is the
+  game's own, in the state); the carrier's pad plays nothing. Two CPUs
+  are judged after three minutes, as on one machine, and here a player
+  against the CPU as well (the CPU circles a player as it circles
+  another CPU; the room waits on the match); the session ends there. With nobody to carry the second CPU, the dice decide.
+- *A leaver* loses the match he is in (the server gives it to the other,
+  as in any room's match), and once he is out of the room each of his
+  later matches is a walkover. The CPU playing on for him is not chosen:
+  a room's match is a session of two PCs, and section 19's CPU for a
+  leaver is the host's of four. A match whose CPU's carrier left is
+  played again. The host's leave ends the tournament.
+
+**Protocol 22** (`SESSION_PROTOCOL`, setup codes `P22-...`): the welcome
+carries a room's tournament's match (`MEET_TOURNAMENT`, four words: on,
+the rule and its number; each entrant's pad, the host's 0 or the
+guest's 1 or the CPU, and the CPU's level; their fighters and weapons;
+the dice), put in the state of both machines as the session begins, and
+the session's result is by entrant. 21 and 22 do not meet; the lobby,
+its relay and its feed are unchanged.
+
+**Proved** on this PC, the server run here, every program headless
+(`tools/port_net_lobby.py`'s `rooms-tournament` and
+`rooms-tournament-leave`, in `make port-net` and the gate's
+`port-net-windows` as `-win`) or a hidden window with SDL's dummy drivers
+(`win-tournament`), 60 ms each way and 5% lost on every match's session:
+
+| Case | What runs | Result |
+| --- | --- | --- |
+| `rooms-tournament` | five headless programs: Ayame opens the room and begins the tournament (`--room-tournament single,order,one,seed:7,@Ayame,@Bunta,@Chie,@Dai`) once the four are in; Sora a spectator | the semifinals Ayame beat Dai and Bunta beat Chie, the final Ayame beat Bunta, each the room's rotation's match of the board's two (room matches 1 to 3), 61 hashes on its players, watched by the other three (18 or 19 of them each held to the players' as they came), the same on all; the champion Ayame on all five, the places 1 Ayame, 2 Bunta, 3 Chie and Dai; about two minutes |
+| `rooms-tournament-leave` | five headless programs: Bunta, Chie, Dai and a CPU (Master, Kannuki with a katana) in a double elimination run by Ayame, who is no entrant and carries the CPU's side; Sora watches; Dai leaves his first match (room match 2, against Chie) in its fight at frame 1,700, and the room (`--leave-at 2:1700 --room-quit-left`) | Bunta beat the CPU, Chie beat Dai (his leave), Bunta beat Chie in the winners' final, the CPU had Dai's losers' match as a walkover, Chie beat the CPU in the losers' final, then won the grand final, and Bunta the reset: seven matches of the bracket in six room matches, each the same on all who ran it (220 hashes for the two against the CPU, judged after three minutes, decided at frame 6,608; 56 to 61 for the others); the champion Bunta on the four who stayed; under six minutes |
+| `win-tournament` | four Windows windows (SDL's dummy drivers): the host opens a room of several from its pages, three windows of the command line come in, and the host begins the tournament on the room's page (its fifth row, the four players, single, one fight) | the host's page began it (seeded at random: Hostess against Chie and Bunta against Dai), the bracket's page up at once; the three room matches each played by its two and watched by the other two windows (the host from its pages), the hashes the same on all four; the champion Hostess on all four; the pages' pictures (the room, the bracket at the start, at the end) in the main checkout's `tmp/room-tournament/`; under three minutes |
+
+**What is left.** A room of real players on real networks. The board's version is the host's own count:
+a member who comes in after a tournament began reads it whole, but a
+member who comes in playing may be paired by the server with one of the
+board's two before his program has read the board (a second at most);
+the host then counts nothing of that match.

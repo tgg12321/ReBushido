@@ -229,6 +229,11 @@ static const char g_port_usage[] =
     "  --room-side open|join   ... open a match beside the room's, or join\n"
     "                 one, and end after it\n"
     "  --leave-at N:F for tests: leave match N of the room at its frame F\n"
+    "                 (--room-quit-left: and the room, and end)\n"
+    "  --room-tournament WORDS   ... the room's host begins a tournament\n"
+    "                 (docs/NETPLAY.md, section 22) once every member it\n"
+    "                 names is in: --tournament's words, @Name a member;\n"
+    "                 --room-until-champion leaves and ends once it is over\n"
     "  --ranked       with --lobby: play ranked (docs/NETPLAY.md, section\n"
     "                 17): into the queue, its matches played as they\n"
     "                 come, as --player; --ranked-matches N ends the\n"
@@ -290,6 +295,15 @@ static const char g_port_usage[] =
     "  --training-slot N  the slot, 1 to 4, recorded and played back\n"
     "  --training-random  playback plays a random slot of those recorded\n"
     "  --training-slow N  slow motion shows each frame N times, 2 to 8\n"
+    "  --tournament SPEC  a local tournament begun at the start: words split\n"
+    "                 by commas, single or double, random or order (the\n"
+    "                 seeding), one, first_to:N or stock:N, seed:N, and two\n"
+    "                 to eight entrants, pN (the PC's pad N) or\n"
+    "                 cpu:LEVEL[:FIGHTER[:WEAPON]], each perhaps /Name\n"
+    "                 (docs/PLAYING.md, \"Tournament\")\n"
+    "  --tournament-auto N  ... each match begun N inputs after the bracket is\n"
+    "                 up at the main menu, as if Play were pressed (a test's)\n"
+    "  --tournament-quit  ... and the program ended N inputs after it is over\n"
     "  --match single|stock:N|first_to:N|crew:N  the match rule the stage\n"
     "                 select starts at, N 1 to 9, a crew's 2 to 8 (five\n"
     "                 if not given; the window's match_rule and\n"
@@ -624,6 +638,12 @@ s32 port_Main(s32 argc, char **argv) {
             room_auto.lists = TRUE;
         } else if (port_TextsEqual(word, "--ranked-lie")) {
             room_auto.lie = TRUE;
+        } else if (port_TextsEqual(word, "--tournament-quit")) {
+            port_SetTournamentQuit();
+        } else if (port_TextsEqual(word, "--room-until-champion")) {
+            room_auto.until_champion = TRUE;
+        } else if (port_TextsEqual(word, "--room-quit-left")) {
+            room_auto.quit_left = TRUE;
         } else if (
             port_TextsEqual(word, "--help") || port_TextsEqual(word, "-h")) {
             port_Print("%s", g_port_usage);
@@ -752,6 +772,19 @@ s32 port_Main(s32 argc, char **argv) {
                                 value);
             }
             port_SetTrainingSwitches(&switches);
+        } else if (port_TextsEqual(word, "--tournament") && has_value) {
+            if (!port_AskTournamentWords(argv[++i])) {
+                port_UsageError("--tournament: not a tournament: ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--tournament-auto") && has_value) {
+            s32 steps;
+
+            if (!port_ParseNumber(argv[++i], &steps) || steps < 1) {
+                port_UsageError("--tournament-auto takes a number of steps, "
+                                "not ",
+                                argv[i]);
+            }
+            port_SetTournamentAuto(steps);
         } else if (port_TextsEqual(word, "--training-random")) {
             PortTrainingSwitches switches = *port_GetTrainingSwitches();
 
@@ -940,6 +973,16 @@ s32 port_Main(s32 argc, char **argv) {
             if (room_auto.side == 0) {
                 port_UsageError(
                     "--room-side takes open or join, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--room-tournament")) {
+            PortTournamentSetup setup;
+
+            port_KeepWord(
+                room_auto.tournament, PORT_ONLINE_SPEC_BYTES, argv[++i]);
+            if (!port_RoomTournamentParse(argv[i], &setup)) {
+                port_UsageError("--room-tournament takes --tournament's "
+                                "words, @Name a member, not ",
+                                argv[i]);
             }
         } else if (port_TextsEqual(word, "--leave-at")) {
             s32 match = 0;
@@ -1350,6 +1393,9 @@ s32 port_Main(s32 argc, char **argv) {
          * boundary of the step that asked, before anything else of the
          * host's there (the rollback self-test's save or load) */
         port_TrainingBoundary();
+        /* a local tournament's asks put in, its record written
+         * (port_tournament.h): between two steps, never in one */
+        port_TournamentBoundary();
         port_OnRollbackFrame();
         port_OnlineBoundary();
     }

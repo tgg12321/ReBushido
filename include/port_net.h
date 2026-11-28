@@ -312,6 +312,11 @@ extern void port_SetSessionSeed(u32 seed);
  * in the state (port_SessionResult). */
 #define PORT_SESSION_RULE_ONE_MATCH 2U
 extern void port_SetSessionRules(u32 rules);
+/* A room's tournament's match (protocol 22; port_tournament.h): its two
+ * entrants, sent in the host's welcome and put in the state of both as
+ * the session begins; NULL for none. The host's, before the meeting. */
+struct PortTournamentForm;
+extern void port_SetSessionTournament(const struct PortTournamentForm *form);
 /* The host's --players: pads 2 or 4, on pcs PCs (4 with 4: a PC each,
  * the host meeting three guests and passing each one's inputs to the
  * others; 4 with 2: two players on each of two PCs, each PC a team;
@@ -526,6 +531,11 @@ extern const char *port_GetRelayCode(void);
  * (port_SessionFail). `again`: the host lets the guest it had go and
  * waits for another in the same room. */
 extern s32 port_RelayMeet(s32 role, s32 again);
+/* The host, its way to a guest found, while it waits for that guest's
+ * first hello (session.c): the lobby told that the seat is still the
+ * host's (a hello as the meeting's), so that it does not close the room
+ * as a meeting done while the host waits. */
+extern void port_RelayStillHere(void);
 
 /* A room of the lobby's list. */
 typedef struct {

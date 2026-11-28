@@ -53,6 +53,15 @@ typedef struct {
      * `menu_shots` */
     s32 online_at;
     const char *online_keys;
+    /* the replay theatre and photo mode (sdl_theatre.c): a test's words
+     * (port_TheatreWord: presses, at:FRAME, wait:N, still:PATH, hash, ...),
+     * and the view a run begins with (--theatre-view, the words
+     * port_TheatreViewWords makes: a clip's film run is given its own),
+     * and the free camera's path it follows (--theatre-path, the keys as
+     * port_TheatrePathWords makes them) */
+    const char *theatre_keys;
+    const char *theatre_view;
+    const char *theatre_path;
     /* Escape pressed at these blanks ("1500,4000") and let go a few after,
      * as SDL's events of the key (port_EscapeButton) */
     const char *escape_at;
@@ -228,6 +237,44 @@ extern s32 port_ReplayWindowEvent(const union SDL_Event *event);
  * `out` ("" for none), and their colour. */
 extern u32 port_ReplayWords(char *out, u32 room);
 
+/* ---- the replay theatre and photo mode (sdl_theatre.c) ---- */
+
+/* The run's start: the view --theatre-view asks for, a test's words. */
+extern void port_StartTheatre(void);
+/* Each frame's boundary, before the theatre's look (sdl_window.c's
+ * boundary hook): whether looks are run, the free camera moved by what is
+ * held, a test's words, and photo mode's wait while it is on. */
+extern void port_TheatreBoundary(void);
+/* While a replay's playback waits (paused, or slower than played): the
+ * same, and the frame on show looked at again where the view changed. */
+extern void port_TheatrePausedTick(void);
+/* An event of the window's: TRUE where it was the theatre's (its keys,
+ * the mouse and sticks of the free camera, F4 for photo mode). */
+extern s32 port_TheatreWindowEvent(const union SDL_Event *event);
+/* Whether the window's own lettering over the fight is left out with the
+ * game's HUD. */
+extern s32 port_TheatreHidesOverlays(void);
+/* What the line says of the theatre while a replay plays, or of photo
+ * mode, into `out` ("" for nothing); FALSE where the line is hidden. */
+extern s32 port_TheatreWords(char *out, u32 room);
+/* The theatre's still: the picture alone at the window's size, a PNG at
+ * `path` or in screenshots/ (sdl_window.c); the file's path in
+ * `written`. */
+extern s32 port_WriteWindowStill(
+    const char *path, char *written, u32 room, s32 *w, s32 *h);
+/* For a test and the eye: the window as it is shown, the picture with
+ * what is laid over it (the seek bar, the pages), a PNG at `path`. */
+extern s32 port_WriteWindowShown(const char *path);
+/* Where the game's 4:3 area is in the window, in its pixels: what the
+ * pages and the seek bar are placed in. */
+extern void port_GetLookArea(PortRect *area);
+/* A point of the mouse's (SDL's, in the window's own units) in the
+ * window's pixels. */
+extern void port_MouseToPixels(s32 *x, s32 *y);
+/* The theatre's seek bar over the picture, where it is shown
+ * (sdl_theatre.c; port_DrawCounter). */
+extern void port_TheatreDrawBar(void);
+
 /* ---- a replay as a film (sdl_export.c; film.h) ---- */
 
 /* The run that makes one (--replay FILE --export OUT): the film's file,
@@ -274,6 +321,23 @@ typedef struct {
  * the reason, where it cannot be. */
 extern s32 port_ExportBegin(
     const char *replay, const char *name, char *why, u32 room);
+
+/* ... and a clip of the replay theatre's (sdl_theatre.c): its frames, the
+ * theatre's view as --theatre-view words, and a GIF or a film */
+typedef struct {
+    u32 from;
+    u32 to;
+    const char *view;
+    const char *path; /* the camera's keys (--theatre-path), or NULL */
+    s32 is_gif;
+} PortExportClip;
+
+extern s32 port_ExportClip(const char *replay, const char *name,
+                           const PortExportClip *clip, char *why, u32 room);
+/* The run that makes one: the replay's frames it is of, `to` 0 for its
+ * end (--export-from, --export-to). */
+extern void port_ExportSetRange(u32 from, u32 to);
+extern u32 port_ExportFrom(void);
 /* ... stopped, its file taken away */
 extern void port_ExportStop(void);
 /* ... and the last one's words no longer shown */

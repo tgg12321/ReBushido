@@ -47,6 +47,7 @@ state    src/port/sound.c       libsnd's tick and the mixer
 state    src/port/spu.c         the sound chip and its memory
 state    src/port/stage_choice.c  the kinds of stage chosen on the stage pages, and the arena in play
 state    src/port/top_menu.c      ReBushido's top menu: its page, its cursor, the settings menu asked for
+state    src/port/tournament.c    a local tournament: its setup, its bracket, the match in play
 state    src/port/training.c      the training mode: its fight, the dummy's place in its slot, the freeze, the presses shown
 state    src/port/stream.c      the movie's ring of sectors
 state    src/port/stub.c        the counts of what the port does not do yet
@@ -73,6 +74,8 @@ outside  src/port/arenas.c      the mods' arenas, read once as the program start
 outside  src/port/weapons.c     the mods' weapons, read once as the program starts and only read after
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/paint.c       the software GPU's painter: its settings, its ring and its thread
+outside  src/port/tournament_ask.c  a local tournament's asks from the window, the record written, --tournament's own play
+outside  src/port/bracket.c     a bracket's arithmetic: no variable of its own
 outside  src/port/training_kept.c  training's switches the run asked for, the dummy's recorded slots, the moment kept
 outside  src/port/play_switches.c  the gameplay switches the run asked for (unlock_all, stage_select_everywhere, menu, bugfixes, the game's options, the CPU's levels)
 outside  src/port/cpu_run.c     the port's CPU's seed asked for (--cpu-seed) and its log (--cpu-log)
@@ -80,6 +83,7 @@ outside  src/port/picture.c     the pictures a run writes
 outside  src/port/profile.c    where a blank's time goes, for --profile
 outside  src/port/relay.c       the lobby's client: the room, its key, the ways tried
 outside  src/port/room.c        a room of several's client: its socket, its members and matches as the lobby says
+outside  src/port/room_tournament.c  a room's tournament: the host's bracket and board, a member's copy of it
 outside  src/port/ranked.c      the ranked ladder's client: the identity, its socket, the match's digest and replays
 outside  src/port/vendor/monocypher/monocypher.c          Monocypher, as shipped: no variable of its own
 outside  src/port/vendor/monocypher/monocypher-ed25519.c  ... its Ed25519
@@ -93,6 +97,7 @@ outside  src/port/remaster.c    the remastered picture's side channel: its epoch
 outside  src/port/remix.c       the sound remastered: its voices' copies, its reverb and the head, for the ears alone
 outside  src/port/state.c       the snapshot's own bookkeeping, which must survive a load
 outside  src/port/step.c        the host's count of steps and whether a step is run again
+outside  src/port/theatre.c     the replay theatre's and photo mode's view, and the states and inputs its looks run from
 outside  src/port/text.c        the output buffer
 outside  src/port/vorbis.c      the Ogg decoder (stb_vorbis), whose memory music.c gives it
 outside  src/port/wav.c         the sound file
@@ -108,3 +113,4 @@ outside  src/port/window/scale.c     the window's scaling
 outside  src/port/window/choices.c   the settings menu's choices
 outside  src/port/window/settext.c   rebushido.cfg changed a line at a time
 outside  src/port/window/cpus.c       which processors the step prefers
+outside  src/port/window/theatre_path.c the replay theatre's camera path and seek bar, as arithmetic
