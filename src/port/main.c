@@ -501,6 +501,7 @@ s32 port_Main(s32 argc, char **argv) {
     s32 rollback_frames = 0;
     s32 rollback_every = ROLLBACK_EVERY;
     s32 rollback_quiet = 0;
+    PortFight asked_fight;
     PortNetAddress net_bind;
     PortNetAddress net_peer;
     s32 net_addresses = 0;
@@ -612,6 +613,10 @@ s32 port_Main(s32 argc, char **argv) {
             if (!port_ChooseFight(argv[i + 1], argv[i + 2], argv[i + 3])) {
                 /* it has said what the names are */
                 port_Quit(PORT_EXIT_USAGE);
+            }
+            if (port_FightAsked(&asked_fight) && asked_fight.stage < 0) {
+                /* a mod's arena (fight.c): no lead-in, as with --arena */
+                port_ReplayLeadBreak("a mod's arena (--fight)");
             }
             i += 3;
         } else if (port_TextsEqual(word, "--partners")) {

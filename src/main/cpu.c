@@ -1063,6 +1063,7 @@ s32 cpu_PortBlowReach(struct Fighter *attacker) {
     return cpu_ReachOf(attacker, attacker->move_is_common);
 }
 #else
+/* (as above, in one) */
 static s32 cpu_AttackReach(Fighter *fighter) {
     Fighter *other = fighter->other;
     s32 base = other->motion_head[MOTION_HEAD_REACH] * MOTION_REACH_UNIT;

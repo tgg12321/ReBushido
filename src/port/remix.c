@@ -1155,6 +1155,7 @@ static void port_RemixCopy(void *to, const void *from, u32 bytes) {
     }
 }
 
+/* The mix's running state into its place (port_remix.h). */
 void port_RemixKeep(u32 place) {
     PortRemixKept *kept;
 
@@ -1189,6 +1190,7 @@ void port_RemixKeep(u32 place) {
     port_RemixCopy(&kept->reverb, g_remix.reverb, sizeof(kept->reverb));
 }
 
+/* ... and back out of it, where it was kept with the setting on. */
 void port_RemixPutBack(u32 place) {
     const PortRemixKept *kept;
 

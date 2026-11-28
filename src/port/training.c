@@ -367,58 +367,81 @@ void port_TrainingNoteSweep(void) {
 }
 
 /* The corners of a sweep's triangles, as fight_TestBladesOnBodies takes
- * them: 0 and 1 the segment now, 2 and 3 the frame before, 4 and 5 the
- * halves between (SWEEP_HALFWAY); four where the far end moved this far,
- * and two otherwise. */
+ * them: the segment now, the frame before, and the halves between
+ * (SWEEP_HALFWAY); four triangles where the far end moved this far, and
+ * two otherwise. */
+enum {
+    CORNER_NEAR,
+    CORNER_FAR,
+    CORNER_NEAR_BEFORE,
+    CORNER_FAR_BEFORE,
+    CORNER_NEAR_HALF,
+    CORNER_FAR_HALF,
+    CORNERS
+};
+
 #define SWEEP_SPLIT_DISTANCE 2500
-static const u8 g_sweep_two[2][3] = {{2, 3, 1}, {0, 1, 2}};
-static const u8 g_sweep_four[4][3] = {
-    {3, 2, 5}, {5, 4, 2}, {5, 4, 1}, {1, 0, 4}};
+#define SWEEP_FEW 2
+#define SWEEP_MANY 4
+static const u8 g_sweep_two[SWEEP_FEW][3] = {
+    {CORNER_NEAR_BEFORE, CORNER_FAR_BEFORE, CORNER_FAR},
+    {CORNER_NEAR, CORNER_FAR, CORNER_NEAR_BEFORE}};
+static const u8 g_sweep_four[SWEEP_MANY][3] = {
+    {CORNER_FAR_BEFORE, CORNER_NEAR_BEFORE, CORNER_FAR_HALF},
+    {CORNER_FAR_HALF, CORNER_NEAR_HALF, CORNER_NEAR_BEFORE},
+    {CORNER_FAR_HALF, CORNER_NEAR_HALF, CORNER_FAR},
+    {CORNER_FAR, CORNER_NEAR, CORNER_NEAR_HALF}};
+
+/* Halfway between two places, as the hit test rounds it (towards zero). */
+static void port_TrainingHalfway(const Vec3 *from, const Vec3 *to, Vec3 *out) {
+    out->x = (from->x + to->x) / 2;
+    out->y = (from->y + to->y) / 2;
+    out->z = (from->z + to->z) / 2;
+}
 
 /* A segment's sweep, from `near` to `far` of the weapon's points, into
  * the window's triangles. */
 static void port_TrainingNoteSegment(s32 side, s32 segment, s32 near, s32 far) {
     PortTrainingAreas *areas = &g_port_training_areas;
-    Vec3 corner[6];
-    s16 x[6];
-    s16 y[6];
-    u8 seen[6];
+    Vec3 corner[CORNERS];
+    s16 x[CORNERS];
+    s16 y[CORNERS];
+    u8 seen[CORNERS];
     s32 dx;
     s32 dy;
     s32 dz;
     s32 count;
-    s32 t;
+    s32 triangle;
     s32 k;
 
-    corner[0] = SPAD->weapon_points[side][near];
-    corner[1] = SPAD->weapon_points[side][far];
-    corner[2] = areas->sweep_last[side][near];
-    corner[3] = areas->sweep_last[side][far];
-    corner[4].x = (corner[0].x + corner[2].x) / 2;
-    corner[4].y = (corner[0].y + corner[2].y) / 2;
-    corner[4].z = (corner[0].z + corner[2].z) / 2;
-    corner[5].x = (corner[1].x + corner[3].x) / 2;
-    corner[5].y = (corner[1].y + corner[3].y) / 2;
-    corner[5].z = (corner[1].z + corner[3].z) / 2;
-    dx = corner[1].x - corner[3].x;
-    dy = corner[1].y - corner[3].y;
-    dz = corner[1].z - corner[3].z;
+    corner[CORNER_NEAR] = SPAD->weapon_points[side][near];
+    corner[CORNER_FAR] = SPAD->weapon_points[side][far];
+    corner[CORNER_NEAR_BEFORE] = areas->sweep_last[side][near];
+    corner[CORNER_FAR_BEFORE] = areas->sweep_last[side][far];
+    port_TrainingHalfway(&corner[CORNER_NEAR], &corner[CORNER_NEAR_BEFORE],
+                         &corner[CORNER_NEAR_HALF]);
+    port_TrainingHalfway(&corner[CORNER_FAR], &corner[CORNER_FAR_BEFORE],
+                         &corner[CORNER_FAR_HALF]);
+    dx = corner[CORNER_FAR].x - corner[CORNER_FAR_BEFORE].x;
+    dy = corner[CORNER_FAR].y - corner[CORNER_FAR_BEFORE].y;
+    dz = corner[CORNER_FAR].z - corner[CORNER_FAR_BEFORE].z;
     count = dx * dx + dy * dy + dz * dz >=
                     SWEEP_SPLIT_DISTANCE * SWEEP_SPLIT_DISTANCE
-                ? 4
-                : 2;
-    for (k = 0; k < 6; k++) {
+                ? SWEEP_MANY
+                : SWEEP_FEW;
+    for (k = 0; k < CORNERS; k++) {
         seen[k] = (u8)port_TrainingProject(&corner[k], 0, &x[k], &y[k], NULL);
     }
     areas->sweep_triangles[side][segment] = (u8)count;
-    for (t = 0; t < count; t++) {
-        const u8 *tri = count == 2 ? g_sweep_two[t] : g_sweep_four[t];
+    for (triangle = 0; triangle < count; triangle++) {
+        const u8 *tri =
+            count == SWEEP_FEW ? g_sweep_two[triangle] : g_sweep_four[triangle];
 
-        areas->sweep_seen[side][segment][t] =
+        areas->sweep_seen[side][segment][triangle] =
             (u8)(seen[tri[0]] && seen[tri[1]] && seen[tri[2]]);
         for (k = 0; k < 3; k++) {
-            areas->sweep[side][segment][t][k][0] = x[tri[k]];
-            areas->sweep[side][segment][t][k][1] = y[tri[k]];
+            areas->sweep[side][segment][triangle][k][0] = x[tri[k]];
+            areas->sweep[side][segment][triangle][k][1] = y[tri[k]];
         }
     }
 }
