@@ -10772,8 +10772,67 @@ after the program closes (the choice made: a tournament is an evening's,
 and nothing of the game's state is saved beside a session).
 
 **Not in a session.** The Tournament row is dark in a session, and the
-lobby and the session protocol are as they were (protocol 21, lobby 4):
-a tournament of a room of several (ROADMAP 22) is left for later.
+window's asks are never taken in one (they are one machine's). A
+tournament of a room of several is the next section's: there the state
+of each match's session carries that match alone.
+
+### A tournament in a room
+
+ROADMAP 31's room half, on ROADMAP 22's rooms; how it goes on the
+network, NETPLAY.md, section 22; how a player uses it, PLAYING.md, "A
+tournament in a room". The code: `src/port/room_tournament.c` (outside
+the state: the host's bracket and board, each member's copy, the pair it
+says plays), with `port_room.h`'s `port_RoomTournament...`; the match's
+form in the session (`port_tournament.h`'s `PortTournamentForm`,
+session.c's `MEET_TOURNAMENT`, protocol 22); the room's page and the
+bracket's page in `src/port/window/online_pages.c`, drawn by
+`tournament_page.c`'s `port_TournamentDrawShown`.
+
+- **The bracket is the host's**, a `PortBracket` as the local
+  tournament's, outside the state (it is the room's, not any session's).
+  The host shows it to the room on a **board**: the 64 bytes of settings
+  of a match beside the room's that it opens and nobody joins, which the
+  server keeps and gives any member who asks (`WATCH`): the setup (each
+  entrant a member's id or the CPU at a level, its fighter and weapon),
+  the seeds, the winners in their order and the walkovers, who left, and
+  the two members who are to play next. Every member rebuilds the
+  bracket from it (`port_BracketBuild` and each result reported again),
+  so every bracket is the host's.
+- **The rotation follows it**: the host sets a fixed turn, and each
+  member says it plays only while the board names it, once the room's
+  matches it was in are older than the board (so the two who just played
+  are not paired again before the next board). The server's two free
+  players are then the board's, and it makes their match as any.
+- **A match** is a room's match, a session of two (`ONE_MATCH`), whose
+  host holds the tournament's rule (`port_KeepMatch`, as a ranked match)
+  and sends its two entrants in the welcome: each the host's pad, the
+  guest's or the CPU, at a level, with a fighter and weapon. Both
+  machines put them in the state as the session begins
+  (`port_TournamentSessionBegin`): a local tournament of two whose one
+  match is asked for at once, `online` set (no bracket of its own shown,
+  no ask of the window's). So the game's own tournament code seats the
+  sides (a player first against the CPU, `port_TournamentSessionEntrant`
+  to tell the result by entrant), picks for the CPU at the select screen,
+  sends two CPUs straight to their fight and judges them after three
+  minutes (`port_TournamentSessionDecided`, where the session ends too),
+  and spectators, who take the fight's start, have it as well. In a
+  room a fight of a player against the CPU is judged after three minutes
+  too (`port_TournamentJudge`, `online`): the CPU circles a player as it
+  circles another CPU, and in the first proofs a player who attacked for
+  two minutes was never met, while the whole room waited.
+- **The CPU's side** is carried by the host where it is not the CPU's
+  opponent, else by another member; both CPUs by the host and another.
+  Nothing of the CPU is the carrier's: both machines compute it.
+- **A leaver**: the server gives his match in the middle to the other,
+  as any room's; the host sees him gone and gives each later match of his
+  to the other (a walkover). The choice is the forfeit, not the CPU
+  playing on: a room's matches are of two PCs, and the CPU for a leaver
+  is four PCs' (NETPLAY.md, section 19). A match not met is played
+  again, and one whose CPU's carrier left too.
+- **The command line** for tests: `--room-tournament WORDS` (the host's:
+  `--tournament`'s words, `@Name` a member, begun once all are in),
+  `--room-until-champion` (leave and end once it is over),
+  `--room-quit-left` (with `--leave-at`, leave the room as well).
 
 **How it is proved.** `tests/port/bracket.c` (`python3 tests/run.py
 --rebushido port/bracket`, both sizes): every count from two to eight,
@@ -10808,11 +10867,20 @@ level, with the tournament's date; `rollback`, byes' tournament under the
 rollback self-test (`--rollback-test 8 --rollback-every 24`) and
 run-ahead 2, the same matches, places and record as without.
 
-**What is left.** A tournament of a room of several (ROADMAP 22's rooms;
-the lobby would carry the bracket); a tournament resumed after the
-program closes; the owner's eye on `tmp/tournament/`; two on two and
-Crew are not offered as a tournament's rule (Crew's picks of a whole
-crew at the select screen for each match, two on two's partners).
+**What is left.** A tournament resumed after the program closes; the
+owner's eye on `tmp/tournament/` and `tmp/room-tournament/`; two on two
+and Crew are not offered as a tournament's rule. They do not fit as the
+tournament is: a CPU entrant picks one fighter and weapon at the select
+screen (`select_PortTournamentCpu`), where a Crew match needs a whole
+crew picked place by place with no character twice, and a match of two
+CPUs goes to its fight with no grid at all, so its crews would have to
+be drawn and put in the match's by hand; a Crew match whose crews run
+out together has no winner, which a bracket needs. Two on two needs an
+entrant that is two pads (or a CPU pair), which the page, the bracket's
+names, the record's line and the pads' mapping (one pad an entrant) do
+not have, and the partners' second grid has no CPU pick. In a room:
+replays of a room's tournament's fight across builds (the lead-in plays
+the session from power on without its form).
 
 ## ReBushido's main menu
 
@@ -11981,6 +12049,9 @@ in `session.c` (`PORT_SESSION_RULE_ONE_MATCH`) and the room's page in
   is its teams' (the first and third players against the second and
   fourth, `port_OnlineMatchEnds`), and a player who leaves it loses it for
   his team (`port_NetplayLeftPad`).
+- **A tournament** in the room ("A local tournament", "A tournament in a
+  room"): the host's bracket on a board the room's members read, the
+  rotation following it (`src/port/room_tournament.c`).
 
 ## 64 bits
 

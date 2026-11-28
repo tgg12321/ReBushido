@@ -130,7 +130,7 @@ s32 port_TournamentTopMenu(void) {
         /* back with no result (the select screen left, the pause's Return
          * to Main Menu): the match is not played, the bracket again */
         tournament->phase = PORT_TOURNAMENT_BETWEEN;
-        tournament->ask_bracket = TRUE;
+        tournament->ask_bracket = !tournament->online;
     }
     if (tournament->ask_bracket) {
         tournament->ask_bracket = FALSE;
@@ -250,7 +250,8 @@ static void port_TournamentDecide(PortTournament *tournament, s32 winner) {
     tournament->phase = port_BracketIsDone(&tournament->bracket)
                             ? PORT_TOURNAMENT_DONE
                             : PORT_TOURNAMENT_BETWEEN;
-    tournament->ask_bracket = TRUE;
+    /* (a room's match: its session ends here, the room's bracket told) */
+    tournament->ask_bracket = !tournament->online;
 }
 
 /* The match decided at its result's card: the bracket told, the
@@ -287,10 +288,15 @@ s32 port_TournamentJudge(void) {
     s32 second;
     s32 winner;
 
+    s32 cpus = port_TournamentIsCpu(tournament, tournament->side_entrant[0]) +
+               port_TournamentIsCpu(tournament, tournament->side_entrant[1]);
+
+    /* two CPUs; and in a room's match (online) a player against the CPU
+     * too: the CPU circles him as it can circle another for ever, and the
+     * whole room waits on the match */
     if (tournament->phase != PORT_TOURNAMENT_PLAYING ||
-        !port_TournamentIsCpu(tournament, tournament->side_entrant[0]) ||
-        !port_TournamentIsCpu(tournament, tournament->side_entrant[1]) ||
-        g_fighters[0].is_defeated || g_fighters[1].is_defeated ||
+        cpus < (tournament->online ? 1 : 2) || g_fighters[0].is_defeated ||
+        g_fighters[1].is_defeated ||
         (g_fighters[0].frames_alive < PORT_TOURNAMENT_JUDGE_FRAMES &&
          g_fighters[1].frames_alive < PORT_TOURNAMENT_JUDGE_FRAMES)) {
         return FALSE;
@@ -408,7 +414,10 @@ void port_TournamentTakeInput(struct PortInput *input) {
         /* (a replay's input was taken as it was given to the sides) */
         return;
     }
-    port_TournamentTakeAsks(tournament);
+    if (!port_SessionIsOn()) {
+        /* (the window's asks are one machine's: never in a session) */
+        port_TournamentTakeAsks(tournament);
+    }
     if (tournament->phase != PORT_TOURNAMENT_PLAYING) {
         return;
     }
@@ -431,4 +440,56 @@ void port_TournamentTakeInput(struct PortInput *input) {
          * Main Menu leaves the match unplayed) */
         input->buttons[0] = start;
     }
+}
+
+/* ---- a room's tournament's match in a session ---- */
+
+/* The match of `form` (port_tournament.h): a tournament of two in order,
+ * the session's host's entrant first, its match asked for at once. */
+void port_TournamentSessionBegin(const PortTournamentForm *form) {
+    PortTournamentSetup setup;
+    s32 i;
+    u32 byte;
+
+    for (byte = 0; byte < sizeof(setup); byte++) {
+        ((u8 *)&setup)[byte] = 0;
+    }
+    setup.count = 2;
+    setup.seeding = PORT_TOURNAMENT_SEED_ORDER;
+    setup.rule = form->rule;
+    setup.rule_count = form->rule_count;
+    setup.seed = form->dice;
+    for (i = 0; i < 2; i++) {
+        setup.entrant[i].pad = form->pad[i];
+        setup.entrant[i].cpu = form->cpu[i];
+        setup.entrant[i].fighter = form->fighter[i];
+        setup.entrant[i].weapon = form->weapon[i];
+    }
+    port_TournamentBegin(&setup);
+    g_port_tournament.online = TRUE;
+    g_port_tournament.ask_bracket = FALSE;
+    if (g_port_tournament.phase == PORT_TOURNAMENT_BETWEEN) {
+        g_port_tournament.phase = PORT_TOURNAMENT_STARTING;
+    }
+}
+
+s32 port_TournamentSessionEntrant(s32 side) {
+    const PortTournament *tournament = &g_port_tournament;
+
+    if (!tournament->online || tournament->phase == PORT_TOURNAMENT_OFF ||
+        side < 0 || side > 1) {
+        return side;
+    }
+    return tournament->side_entrant[side];
+}
+
+s32 port_TournamentSessionDecided(s32 *entrant) {
+    const PortTournament *tournament = &g_port_tournament;
+
+    if (!tournament->online || tournament->decided == 0 ||
+        tournament->bracket.champion >= PORT_BRACKET_MOST) {
+        return FALSE;
+    }
+    *entrant = tournament->bracket.champion;
+    return TRUE;
 }

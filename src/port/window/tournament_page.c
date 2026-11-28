@@ -152,9 +152,18 @@ u32 port_TournamentPageGeneration(void) {
            (u32)tournament->number << (2 * ITEM_SHIFT);
 }
 
+/* The tournament the bracket is drawn of: the local one's, or a room's
+ * for the online pages (port_TournamentDrawShown); and its keys' line. */
+static const PortTournament *g_tour_of;
+static const char *g_tour_keys;
+
+static const PortTournament *port_TourOf(void) {
+    return g_tour_of != NULL ? g_tour_of : &g_port_tournament;
+}
+
 /* An entrant's name as the bracket shows it. */
 static void port_TourName(s32 entrant, char *out, u32 room) {
-    const PortTournament *tournament = &g_port_tournament;
+    const PortTournament *tournament = port_TourOf();
 
     if (entrant == PORT_BRACKET_BYE) {
         snprintf(out, room, "bye");
@@ -686,7 +695,7 @@ static void port_TourDrawChampion(PortLook *look, const PortBracket *bracket) {
 
 /* The line under the rows: the next match, or the places. */
 static void port_TourStatusText(char *out, u32 room) {
-    const PortTournament *tournament = &g_port_tournament;
+    const PortTournament *tournament = port_TourOf();
     const PortBracket *bracket = &tournament->bracket;
     s32 next = port_BracketNext(bracket);
     u32 at = 0;
@@ -725,7 +734,7 @@ static void port_TourStatusText(char *out, u32 room) {
 
 void port_TournamentDrawBracket(PortLook *look, const s32 *items, s32 count,
                                 s32 cursor, s32 pulse, const char *note) {
-    const PortTournament *tournament = &g_port_tournament;
+    const PortTournament *tournament = port_TourOf();
     const PortBracket *bracket = &tournament->bracket;
     s32 next = port_BracketNext(bracket);
     s32 columns = bracket->rounds + 1;
@@ -807,14 +816,27 @@ void port_TournamentDrawBracket(PortLook *look, const s32 *items, s32 count,
     }
     port_LookFit(look, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT, text,
                  BRACKET_RIGHT - BRACKET_LEFT);
-    port_LookText(
-        look, BRACKET_LEFT + NAME_INSET, HELP_Y, PORT_LOOK_SIZE_NOTE,
-        PORT_FACE_TEXT, text,
-        note != NULL && note[0] != 0 ? PORT_LOOK_WARN : PORT_LOOK_GREY,
-        PORT_LOOK_LEFT);
+    port_LookText(look, BRACKET_LEFT + NAME_INSET, HELP_Y, PORT_LOOK_SIZE_NOTE,
+                  PORT_FACE_TEXT, text,
+                  note != NULL && note[0] != 0 && g_tour_of == NULL
+                      ? PORT_LOOK_WARN
+                      : PORT_LOOK_GREY,
+                  PORT_LOOK_LEFT);
     port_LookText(
         look, PORT_LOOK_GAME_W / 2, KEYS_Y, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
-        "Cross / Enter: choose    Circle / Escape: the main menu "
-        "(its Tournament comes back here)",
+        g_tour_keys != NULL ? g_tour_keys
+                            : "Cross / Enter: choose    Circle / Escape: the "
+                              "main menu (its Tournament comes back here)",
         PORT_LOOK_GREY, PORT_LOOK_CENTRE);
+}
+
+/* A room's tournament's bracket (the online pages; port_room.h): drawn as
+ * the local one's, of `shown`, with `status` under it and `keys` below. */
+void port_TournamentDrawShown(PortLook *look, const PortTournament *shown,
+                              s32 pulse, const char *status, const char *keys) {
+    g_tour_of = shown;
+    g_tour_keys = keys;
+    port_TournamentDrawBracket(look, NULL, 0, -1, pulse, status);
+    g_tour_of = NULL;
+    g_tour_keys = NULL;
 }

@@ -19,6 +19,7 @@
 
 #include "common.h"
 #include "port_net.h"
+#include "port_tournament.h"
 
 #define PORT_ROOM_MEMBERS 8
 #define PORT_ROOM_SIDES 4
@@ -199,5 +200,66 @@ extern s32 port_WatchEnd(u32 *frame, s32 *winner);
 extern u32 port_WatchQuietMs(void);
 /* Why there is nothing to watch: the server's word (0: there may be). */
 extern s32 port_WatchNothing(void);
+
+/* ---- a tournament in the room (room_tournament.c; docs/NETPLAY.md,
+ * section 22) ---- */
+
+/* The room's host runs the bracket (port_bracket.h) and shows it to every
+ * member on a board: the settings of a match beside the room's that
+ * nobody joins, which every member asks the server for. The rotation
+ * follows it: only the board's next two say they play, so the server
+ * makes their match; each match is a session of two (protocol 22) whose
+ * state carries the match alone (port_tournament.h's PortTournamentForm),
+ * a CPU's side carried by the host or another member. A leaver's matches
+ * are forfeited. The lobby is version 4 as it was. */
+
+/* An entrant who is a member of the room: PortTournamentEntrant's pad,
+ * its name the member's. */
+#define PORT_ROOM_TOURNAMENT_MEMBER 0xFE
+
+struct PortTournamentForm;
+
+typedef struct {
+    s32 on;       /* a tournament of the room's, under way or over */
+    s32 done;     /* over: the champion known (or ended by its host) */
+    s32 finished; /* ... and its board let go: a test may leave */
+    s32 is_host;  /* this program runs it */
+    s32 host;     /* the member who runs it */
+    u32 number;
+    PortTournamentSetup setup;    /* the members' entrants named */
+    u8 member[PORT_BRACKET_MOST]; /* each entrant's member, or NOBODY */
+    u32 gone;                     /* entrants who left the room, a bit each */
+    u32 walkovers; /* the results that were walkovers, by their order */
+    s32 results;
+    PortBracket bracket;
+    s32 next;    /* the bracket's match to play, or -1 */
+    s32 pair[2]; /* the members who play it, or PORT_ROOM_NOBODY */
+} PortRoomTournamentView;
+
+/* The room's host begins a tournament of `setup` (entrants that are
+ * members by PORT_ROOM_TOURNAMENT_MEMBER and their names, CPUs as a local
+ * tournament's): 1, or 0 with why in a player's words. */
+extern s32 port_RoomTournamentBegin(
+    const PortTournamentSetup *setup, char *why, u32 room);
+/* --room-tournament's words: port_TournamentParse's, `@Name` a member. */
+extern s32 port_RoomTournamentParse(const char *spec, PortTournamentSetup *out);
+/* The host ends it before its champion. */
+extern void port_RoomTournamentEnd(void);
+extern void port_RoomTournamentGet(PortRoomTournamentView *out);
+/* room.c's: each of the room's turns; a SCENE or FEED_ACK that is the
+ * board's (TRUE: taken); the room left. */
+extern void port_RoomTournamentTick(void);
+extern s32 port_RoomTournamentTake(const u8 *in, s32 bytes);
+extern void port_RoomTournamentForget(void);
+/* online.c's: the room's match `next` to play is the tournament's: TRUE,
+ * its form for the session (its host's) and the rule's bits to hold
+ * (port_match.h's port_HoldMatch). */
+extern s32 port_RoomTournamentMatch(
+    const PortRoomNext *next, struct PortTournamentForm *form);
+extern u32 port_RoomTournamentRule(void);
+/* The tournament's date, as a fight of it is kept with ("" none). */
+extern const char *port_RoomTournamentDate(void);
+/* A match beside the room's let go by its opener (said until taken). */
+extern void port_RoomSideDone(s32 number);
 
 #endif /* PORT_ROOM_H */

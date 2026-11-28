@@ -26,6 +26,7 @@
  * pad's buttons; and Play online. */
 
 #include "common.h"
+#include "port_tournament.h"
 #include "window.h"
 
 /* ---- the lettering (font.c; docs/PORT.md, "The port's lettering") ---- */
@@ -339,6 +340,10 @@ extern void port_TournamentPageOpened(void);
 extern void port_TournamentDrawBracket(
     PortLook *look, const s32 *items, s32 count, s32 cursor, s32 pulse,
     const char *note);
+/* ... a room's tournament's, of `shown` (the online pages' room) */
+extern void port_TournamentDrawShown(
+    PortLook *look, const PortTournament *shown, s32 pulse, const char *status,
+    const char *keys);
 /* A test's picture of the bracket (--menu-shots) due: once each time the
  * bracket's page has come up and faded in. */
 extern s32 port_MenuBracketShotDue(void);

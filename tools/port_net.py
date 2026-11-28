@@ -599,14 +599,36 @@ shot = false
 name = "after_fight"''')
 
 
-def write_room_plan(program, folder, crew=False, duo=False, four=False):
+def tournament_fight():
+    """A room's tournament's fight, each pad's: port_game's (a fight of two
+    players, over by frame 600 or so), then from frame 900 port_game's
+    first side's presses (toward the other, the two blows by turns) on
+    both pads for three minutes more, so that a player whose match is
+    against the CPU attacks it whichever pad of the session is his (he is
+    the first side against the CPU: docs/NETPLAY.md, section 22) and the
+    CPU, who circles a player who stands, is met."""
+    out = port_game_fight()
+    for pad in ('', 'P2 '):
+        for start in range(900, 9000, 600):
+            out.append('fight+%df %sRIGHT hold 20f' % (start, pad))
+            for k, at in enumerate(range(start + 22, start + 590, 30)):
+                out.append('fight+%df %s%s' % (at, pad, 'CIRCLE' if k % 2 == 0 else 'CROSS'))
+    return out
+
+
+def write_room_plan(program, folder, crew=False, duo=False, four=False, tournament=False):
     """The plan of every member of a room for `program`: its path. `crew`:
     a Crew 2 match's (ROOM_CREW_CHECKPOINTS). `duo`: a fight of two on two,
     on the stage page's next stage (as the session's, SESSION_MATCHES).
-    `four`: a match of four players' (four_presses), every pad's."""
+    `four`: a match of four players' (four_presses), every pad's.
+    `tournament`: a room's tournament's (docs/NETPLAY.md, section 22),
+    whose player against the CPU is the first side whichever pad he has:
+    the stage's Cross on the second pad too."""
     toml = os.path.join(folder, 'room.toml')
     fight = port_game_fight()
     presses = SESSION_SELECT + fight
+    if tournament:
+        presses = SESSION_SELECT + ['select+1180 P2 CROSS'] + tournament_fight()
     if duo:
         presses = SESSION_SELECT[:-1] + PARTNER_PRESSES + STAGE_AFTER_PARTNERS + fight
     if crew:
