@@ -252,7 +252,10 @@ distances), pressed as the list's pad script; from the adept up, picked by
 how each has done in the match. From the veteran up it counts how often
 the opponent strikes when it stands within his reach; the master stands at
 the edge of a hasty opponent's reach to draw him, and goes in on a patient
-one.
+one. Since 2026-11-28 the master also knows its attacks' speeds, weighs
+its ways in and reads how he answers ("The master's better choices"), and
+every level uses the game's means from afar and at an edge ("From afar,
+and at an edge").
 
 ### Committing (2026-11-28)
 
@@ -318,6 +321,131 @@ quicker or sees more.
 Its pad is a pad's: the fighter's own directions and buttons, held,
 pressed and released as a thumb does them; the stick buttons as the game's
 reader turns them into R1 and the first attack; never Start or Select.
+
+### The master's better choices (2026-11-28)
+
+After committing, the master beat the veteran 56% of 288 fights, about
+the noise. The log says why each script began now (`--cpu-log`'s last
+field, cpu.c's `WHY_...`: an opening, meeting him, a lunge, a strike of
+its own, a guard, a step back, a feint, a dodge, a throw, dirt, a leap, a
+shot), and read with it (288 fights, the master against the veteran) the
+master's wounds came mostly while an attack of its own was under way and
+the veteran's guard met it: of its 223 blows meeting him as he walked in,
+30 landed and 51 got it hurt; of its 387 strikes of its own, 73 and 59;
+of its 1,437 blows at an opening, 306 and 78. The veteran's guard is
+pressed as the blade comes, a reaction time after he saw the attack
+begin, so what lands on a man free to answer is what comes too quickly
+to be seen and answered; and the list's attacks are of two speeds. One
+that crouches first (R2 in its pad script: a crouching step in, then the
+blow) brings its blade some 24 frames after the press, the others 16 to
+23. Into a free opponent the slow ones landed 11 to 16% and got the
+master hurt as often; the quick ones 30% and more, hurt a third as
+often.
+
+So the master knows its moves, and chooses by what it sees of him:
+
+- **Quick blows at a man free to answer** (`quick`, 22 frames): meeting
+  him, striking first and the blow after a lunge's step are made only
+  with an attack whose blade comes within that, as the master has seen
+  each of its own do in the match (`PortCpuMind.blade_frames`, counted
+  from the press to the blade's first frame as the attack begins), or,
+  before it has used one, by its buttons (`port_CpuBladeFrames`: one that
+  crouches first is taken as 24, the others as 16). A player knows which
+  of his moves are slow. It stands off him by the reach of all its blows,
+  and pressing goes in to where its quick ones reach (`port_CpuListReach`
+  with the limit); pressing hard (three quarters and more), it strikes
+  first with any blow that reaches, and no longer waits outside his reach
+  (`outside`): before that, two masters each just outside the other's
+  reach, by blows they would not use, stood off each other to the limit
+  in half their fights.
+- **Its ways in weighed** (`weighs_tactics`): meeting him, striking first,
+  lunging and an opening each keep what they came to against him in the
+  match (landed, or hurt in it: `tactic_tried`, `tactic_landed`,
+  `tactic_hurt`), and each one's chance is weighed by (landed + 1) /
+  (hurt + 1), from a quarter to twice.
+- **How he answers it** (`reads_answers`, `port_CpuReadAnswers`): whether
+  he strikes at it as it comes into his reach (more often than not, of
+  two or more: he "meets"; then it feints at him four times as readily,
+  stepping in and back out to make him miss, at any pressure), and
+  whether he goes on from an attack that missed straight into another (he
+  "follows"; then his miss is struck at only with six frames more of it
+  to go).
+- **Its record of what lands**, for every level that learns: an attack
+  that crouches first was counted as over as the crouching step began
+  (its script ends there), before its blade was out, so that none of
+  them was ever counted landed. Now an attack is waited for (30 frames)
+  to begin, and counted as it ends.
+
+Tried and left off (each 288 fights, the master against the veteran):
+letting an attack go by that it judged would fall short, ready to punish
+the miss (`holds`), 39%: the reach as seen is not close enough to stand
+in front of a blade on; striking at an opening only with an attack whose
+blade it knows to come before he is over it (`times_openings`), 56 to
+59% against the same without: a little worse. Its lunges (a step in, the
+blow after it), pressing or at an opening just out of its reach (the
+master's, `rushes`), seldom land on a man who sees the step (of 28 in 105
+fights, none, and 13 got it hurt), but taken out (with the master's dirt
+and throws changed as well) the master came to 59% of the same 105
+fights against 65% with them: within the noise, they stay.
+
+### From afar, and at an edge (2026-11-28)
+
+The game's other means, as a player uses them (`port_CpuFromAfar`,
+`port_CpuDodge`), from what it sees, a reaction time late:
+
+- **A sub-weapon thrown** (`throws`, of 1,024 a frame; the game's
+  `g_cpu_script_throw`, R2 and the frontal button, with a walk let go of
+  first, since R2 crouches only from a stand): standing or walking, facing
+  him within an eighth of a quarter turn, on his level, nothing of the
+  stage between, from between 2,500 and 7,000 off where none of its own
+  blows reaches, at a man standing, walking or seen busy (an opening, or
+  a miss with 12 frames to go); not a second sword it fights with (the
+  game's rule), not sheathed, not with a hanging arm. The levels that
+  rush throw eight times as readily at one busy. A thrown blade is deadly
+  in this game (`g_object_kinds`: most of them reach a core): between the
+  veteran and the master some three in five thrown hit.
+- **Dirt** (`dirt`; `g_cpu_script_throw_dirt`): on loose ground, from
+  2,000 to 4,500 off, at a man standing or walking. It staggers him; the
+  levels that rush go in on him after it. Between two CPUs it comes to
+  little (of the master's 25 handfuls in 288 fights against the veteran,
+  none was followed by a wound within two seconds): a trick, as a player
+  plays it now and then.
+- **The leap** (`leap`; `g_cpu_script_leap`, a jump forward): from the
+  game's own distances (3,000 to 5,000), facing him, ground ahead; the
+  lesser levels when pressing (and now and then, as a beginner leaps in),
+  the levels that rush only at a man seen busy for 24 frames more.
+- **A gun** (the gun-carrying weapons): it fires from any distance, as the
+  game's CPU has its gun, standing or walking, facing him within an
+  eighth of a quarter turn, nothing between, from out of his reach (at
+  once at a man seen busy), keeps 2,000 past his reach, and reloads with
+  the stance button out of his reach when it is empty.
+- **Dodging** (`dodge`, of 256): a thing thrown seen coming straight at it
+  (a sub-weapon in flight that has touched nothing, or a handful of dirt,
+  near its height: `PortCpuSeen.projectile`, the frames till it arrives,
+  less the frames since it was seen), a throw seen begun from 2,500 off
+  or further, or a gun seen raised at it: a step aside to whichever side
+  is clear if there are four frames or more; a thrown thing that is
+  nearly there is met with the guard (an attack just begun beats a thrown
+  thing aside).
+- **Rushing** (`rushes`, the master): an opening seen just out of its
+  reach with 14 frames or more of it to go, a step in and the blow after
+  it; one further off (a miss far off, his stagger at its dirt, a reload,
+  getting up) run in on, so that the opening's blow can be struck there;
+  and, pressing, one just out of its reach run in on as well: before that
+  an opponent who swung at it from too far, over and over, stood off a
+  master that never came in for the blow (one fight of 288 to the limit).
+- **An edge** (`circles`, from the adept up): crowded, in his reach with
+  the ground behind it gone or walled (a drop, no floor, a wall to a side),
+  it circles round him for 24 frames along whichever side is clear, as
+  the game's CPU plans its circling (`cpu_PlanCircling`), so that it is
+  not the one left with its back to the drop; and with his back to a drop
+  or a wall (`CPU_PROBE_PAST_OPPONENT`) it goes in on him, where he
+  cannot step back from a blow.
+
+The levels: the novice throws (4), throws dirt (3) and leaps (6) the most
+readily and dodges least (40 of 256), as a beginner does; the adept 3, 2,
+4 and 100; the veteran 2, 2, 2 and 170; the master 2, 3, 1 and 220, and
+rushes.
 
 ### The state
 
@@ -492,17 +620,91 @@ after (the port's CPU is never set up there: `port_CpuInit` returns at
 (`--check`, the master against the veteran) and the rollback self-test
 of the tournament's `rollback` case pass.
 
+### The master's choices, and the means from afar, measured (2026-11-28)
+
+The same bench, every level with the means from afar and the edge
+(above), the master with its better choices: 288 fights of the master
+against the veteran, 96 of the steps below it and of the master against
+the original, 48 of the rest (a rate is good to about six points with
+288, ten with 96, fourteen with 48). The pairings without the master
+were played by the build before the master's last three changes (which
+touch no other level: the same fights came out the same, fight for
+fight, by both). Before: "Fights to the clock"'s 96-fight table and its
+288 of the master against the veteran.
+
+| A against B | before: A's rate | after: A won, B won | A's rate | past three minutes |
+|---|---|---|---|---|
+| Novice against the original | 39% | 17, 31 (48) | 35% | 0 |
+| Adept against the original | 40% | 22, 26 (48) | 46% | 0 |
+| Veteran against the original | 53% | 49, 47 | 51% | 0 |
+| Master against the original | 60% | 55, 41 | 57% | 1 |
+| Adept against Novice | 59% | 62, 34 | 65% | 0 |
+| Veteran against Adept | 59% | 58, 38 | 60% | 0 |
+| Master against Veteran | 56% (288) | 174, 114 (288) | 60% | 0 |
+| Veteran against Novice | 65% | 63, 33 | 66% | 0 |
+| Master against Adept | 69% | 31, 17 (48) | 65% | 0 |
+| Master against Novice | 68% | 37, 11 (48) | 77% | 0 |
+| Novice against Novice | | 22, 26 (48) | 46% | 0 |
+| Adept against Adept | | 25, 23 (48) | 52% | 0 |
+| Veteran against Veteran | | 20, 28 (48) | 42% | 0 |
+| Master against Master | | 27, 21 (48) | 56% | 0 |
+
+Each level beats the one below it and every level below by more the
+further down it is; the master over the veteran went from 56% to 60%
+(174 to 114: 54% to 66% at two standard errors), short of the 65% asked
+for. None of the fights of the port's levels went past three minutes;
+one of the master against the game's own CPU did. The master's fights
+are longer than before (against the veteran a median of 839 frames, 612
+before; of two masters 1,127): it waits for what it can take.
+
+The master's blows came to (288 fights against the veteran, before and
+after): meeting him as he walked in, 223 blows (30 landed, 51 hurt it)
+before, 23 (4, 3) after; striking first, 387 (73, 59) and 241 (33, 23);
+at an opening, 1,437 (306, 78) and 1,439 (336, 75); its guards, 967 (105,
+41) and 1,435 (128, 55); after, its lunges' steps 25 (three followed by
+a wound of his within two seconds, 12 by one of its own), its throws 43
+(16 of them hit) and 23 steps aside from his. Hurt in its own blows 236
+times before, 171 after; it landed 549 before, 553 after, and it fell 126
+times before, 116 after, the veteran 162 and 174. What it no longer
+gives away is most of the step; the rest is the veteran's guard and his
+first strikes (a sixth of the master's wounds came standing or walking at
+a strike of his it did not answer in time), both as quick as a reaction
+allows on either side, against a veteran whose own record of what lands
+was mended too and who has the means from afar as well.
+
+On stages with edges (snake cliff, castle rooftop, building rooftop,
+lighthouse, lost bridge, water tower dam; 24 fights, the master against
+the veteran, 12 to 12) the crowded fighter circled off an edge 370 times
+(`WHY_CIRCLE`, some 15 a fight) and nobody dropped from a height: those
+stages' edges are walls or rails to a fighter, not drops. With a gun on
+one side and a blade on the other (`--weapons long-gun short-gun
+--second-weapons katana nodachi yari`, 32 fights), the gun won 29 of 31
+decided, fights of a median 162 frames; the blade side stepped aside from
+a shot 24 times. The game's own CPUs the same way: the gun 15 of 16. A
+gun is that game's strongest weapon whoever holds it.
+
+The determinism check (`--check`, the master against the veteran) passes
+on both sizes; the game's own CPU's fights (`--cpu original`: both places
+the game's, and a person pressing nothing against it, four of the bench's
+fights each) are the same, frame by frame (positions, moves, wounds, both
+pads) and in their traces, by the program before and after
+(`tools/port_cpu_bench.py 0 0 --fights 4 --same-as OLD --person`, OLD a
+copy of the program from before the change).
+
 ## 4. What is left
 
-- Getting about: it walks round the stage's obstacles to him (since
-  2026-11-27) and on over a drop or a step between them (2026-11-28),
-  but the original's circling of an opponent at an edge, and its leaps,
-  are not used.
-- The master over the veteran is the thinnest step since the CPU
-  commits (56%, "Fights to the clock"): none of the master's own numbers
-  tried moved it (feints, patience, aggression, meeting him).
-- Dirt, thrown sub-weapons and guns, which it neither uses nor answers
-  better than by its guard.
+- Getting about: it walks round the stage's obstacles, on over a drop or
+  a step between them, circles off an edge that crowds it and goes in on
+  a man with his back to one (2026-11-28); none of the bench's stages
+  drops a fighter from an edge, so what a fall would do is not measured.
+- The master over the veteran: 60% of 288 (56% before), still the
+  thinnest step. What might move it, not tried: a master that reads where
+  and when his first strikes come (the distance, the time standing still
+  before them) and steps back before they come rather than after; a level
+  learned from replays of real players.
+- Dirt between two CPUs comes to little; a gun wins nearly every fight
+  against a blade, for the game's CPU too: a gun's fight is another game,
+  as the bench's comment had it.
 - Levels learned from replays of real players (item 23's files hold every
   input of a fight).
 - A person's hands on it: the bench measures CPU against CPU; how each
