@@ -227,6 +227,11 @@ static const char g_port_usage[] =
     "  --room-side open|join   ... open a match beside the room's, or join\n"
     "                 one, and end after it\n"
     "  --leave-at N:F for tests: leave match N of the room at its frame F\n"
+    "                 (--room-quit-left: and the room, and end)\n"
+    "  --room-tournament WORDS   ... the room's host begins a tournament\n"
+    "                 (docs/NETPLAY.md, section 22) once every member it\n"
+    "                 names is in: --tournament's words, @Name a member;\n"
+    "                 --room-until-champion leaves and ends once it is over\n"
     "  --ranked       with --lobby: play ranked (docs/NETPLAY.md, section\n"
     "                 17): into the queue, its matches played as they\n"
     "                 come, as --player; --ranked-matches N ends the\n"
@@ -627,6 +632,10 @@ s32 port_Main(s32 argc, char **argv) {
             room_auto.lie = TRUE;
         } else if (port_TextsEqual(word, "--tournament-quit")) {
             port_SetTournamentQuit();
+        } else if (port_TextsEqual(word, "--room-until-champion")) {
+            room_auto.until_champion = TRUE;
+        } else if (port_TextsEqual(word, "--room-quit-left")) {
+            room_auto.quit_left = TRUE;
         } else if (
             port_TextsEqual(word, "--help") || port_TextsEqual(word, "-h")) {
             port_Print("%s", g_port_usage);
@@ -939,6 +948,16 @@ s32 port_Main(s32 argc, char **argv) {
             if (room_auto.side == 0) {
                 port_UsageError(
                     "--room-side takes open or join, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--room-tournament")) {
+            PortTournamentSetup setup;
+
+            port_KeepWord(
+                room_auto.tournament, PORT_ONLINE_SPEC_BYTES, argv[++i]);
+            if (!port_RoomTournamentParse(argv[i], &setup)) {
+                port_UsageError("--room-tournament takes --tournament's "
+                                "words, @Name a member, not ",
+                                argv[i]);
             }
         } else if (port_TextsEqual(word, "--leave-at")) {
             s32 match = 0;

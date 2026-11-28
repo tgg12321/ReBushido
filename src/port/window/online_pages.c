@@ -33,6 +33,8 @@
 #include <time.h>
 
 #include "menu.h"
+#include "port_cpu.h"
+#include "port_match.h"
 #include "port_net.h"
 #include "port_online.h"
 #include "port_ranked.h"
@@ -102,6 +104,8 @@ enum {
      * its lists */
     PAGE_RANKED,
     PAGE_LADDER,
+    /* a room's tournament's bracket (port_room.h) */
+    PAGE_ROOM_BRACKET,
     /* while the two meet (drawn by the session's waits) */
     PAGE_MEETING,
 };
@@ -200,7 +204,32 @@ enum {
 };
 
 /* The room of several's page. */
-enum { ROOM_WATCH, ROOM_PLAY, ROOM_RULE, ROOM_SIDE, ROOM_LEAVE, ROOM_ROWS };
+enum {
+    ROOM_WATCH,
+    ROOM_PLAY,
+    ROOM_RULE,
+    ROOM_SIDE,
+    ROOM_TOURNAMENT,
+    ROOM_TOURNAMENT_RULES,
+    ROOM_TOURNAMENT_CPUS,
+    ROOM_LEAVE,
+    ROOM_ROWS
+};
+
+/* ... its rows shown at once, under its members and matches */
+#define ROOM_ROWS_SHOWN 5
+
+/* A room's tournament as its host begins it from the page: its kinds of
+ * elimination and match, and the CPUs beside the room's players (each
+ * at Adept, its fighter and weapon drawn each match). */
+enum {
+    TOUR_SINGLE_ONE,
+    TOUR_SINGLE_FIRST_TO_2,
+    TOUR_SINGLE_STOCK_2,
+    TOUR_DOUBLE_ONE,
+    TOUR_DOUBLE_FIRST_TO_2,
+    TOUR_KINDS
+};
 
 /* A room's match begins this long after the page says so. */
 #define ROOM_NOTICE_MS 2000
@@ -212,6 +241,9 @@ enum { ROOM_WATCH, ROOM_PLAY, ROOM_RULE, ROOM_SIDE, ROOM_LEAVE, ROOM_ROWS };
 #define ROOM_ROWS_Y 128
 /* --online-keys' `until:room`: the room's page up, with another member */
 #define UNTIL_ROOM 100
+/* ... `until:room4`: with four members (a tournament's test) */
+#define UNTIL_ROOM_FOUR 105
+#define ROOM_FOUR 4
 /* ... `until:message`: a message up */
 #define UNTIL_MESSAGE 101
 
@@ -257,6 +289,9 @@ static struct {
     PortRoomNext room_next;
     u32 room_due;
     s32 room_waiting;
+    /* a room's tournament to begin (its host's): TOUR_..., its CPUs */
+    s32 tour_kind;
+    s32 tour_cpus;
     /* the ranked ladder: a match the lobby gave, and when it begins; the
      * list shown, and the last list a test waited for */
     PortRoomNext ranked_next;
@@ -426,6 +461,8 @@ static s32 port_PageRowCount(void) {
         return 1;
     case PAGE_ROOM:
         return ROOM_ROWS;
+    case PAGE_ROOM_BRACKET:
+        return 1;
     case PAGE_RANKED:
         return RANKED_ROWS;
     case PAGE_LADDER:
@@ -440,11 +477,15 @@ static s32 port_PageRowCount(void) {
 /* The open match beside the room's that this member may join: its place
  * among the sides, or -1. */
 static s32 port_PageOpenSide(const PortRoomView *view) {
+    PortRoomTournamentView tour;
     s32 i;
 
+    port_RoomTournamentGet(&tour);
     for (i = 0; i < view->side_count; i++) {
         if (view->sides[i].b == PORT_ROOM_NOBODY &&
-            view->sides[i].a != view->you) {
+            view->sides[i].a != view->you &&
+            /* (a tournament's host's: its board, nobody's to join) */
+            !(tour.on && view->sides[i].a == tour.host)) {
             return i;
         }
     }
@@ -463,13 +504,77 @@ static s32 port_PageIsBusy(const PortRoomView *view) {
     return FALSE;
 }
 
+/* A room's tournament's kind, as its row says it. */
+static const char *port_TourKindText(s32 kind) {
+    switch (kind) {
+    case TOUR_SINGLE_FIRST_TO_2:
+        return "single elimination, first to 2";
+    case TOUR_SINGLE_STOCK_2:
+        return "single elimination, stock 2";
+    case TOUR_DOUBLE_ONE:
+        return "double elimination, one fight";
+    case TOUR_DOUBLE_FIRST_TO_2:
+        return "double elimination, first to 2";
+    default:
+        return "single elimination, one fight";
+    }
+}
+
+/* The room's members who play, as a tournament's entrants are counted. */
+static s32 port_TourPlayers(const PortRoomView *view) {
+    s32 count = 0;
+    s32 i;
+
+    for (i = 0; i < view->count; i++) {
+        count += (view->members[i].flags & PORT_ROOM_PLAYS) != 0;
+    }
+    return count;
+}
+
+/* The room's tournament as a line: the next match, or its champion. */
+static void port_TourLine(char *out, u32 room) {
+    PortRoomTournamentView tour;
+    char names[2][PORT_TOURNAMENT_NAME_BYTES + 8];
+    s32 slot;
+
+    port_RoomTournamentGet(&tour);
+    if (!tour.on) {
+        snprintf(out, room, "none");
+        return;
+    }
+    if (tour.done) {
+        if (tour.bracket.champion < PORT_BRACKET_MOST) {
+            port_TournamentName(
+                &tour.setup.entrant[tour.bracket.champion],
+                tour.bracket.champion, names[0], sizeof(names[0]));
+            snprintf(out, room, "over: %s is the champion", names[0]);
+        } else {
+            snprintf(out, room, "ended by its host");
+        }
+        return;
+    }
+    if (tour.next < 0) {
+        snprintf(out, room, "under way");
+        return;
+    }
+    for (slot = 0; slot < 2; slot++) {
+        s32 who = tour.bracket.match[tour.next].who[slot];
+
+        port_TournamentName(
+            &tour.setup.entrant[who], who, names[slot], sizeof(names[slot]));
+    }
+    snprintf(out, room, "next %s vs %s", names[0], names[1]);
+}
+
 /* A row of the room of several's page. */
 static void port_PageRoomRow(s32 row, char *name, u32 name_room, char *value,
                              u32 value_room, const char **help) {
     PortRoomView view;
+    PortRoomTournamentView tour;
     s32 side;
 
     port_RoomGet(&view);
+    port_RoomTournamentGet(&tour);
     side = port_PageOpenSide(&view);
     switch (row) {
     case ROOM_WATCH:
@@ -510,6 +615,37 @@ static void port_PageRoomRow(s32 row, char *name, u32 name_room, char *value,
         if (port_PageIsBusy(&view)) {
             snprintf(value, value_room, "(you are in a match)");
         }
+        break;
+    case ROOM_TOURNAMENT:
+        if (tour.on) {
+            snprintf(name, name_room, "Tournament");
+            port_TourLine(value, value_room);
+            *help = "Its bracket, as the room's host runs it";
+        } else if (view.you == view.host) {
+            snprintf(name, name_room, "Begin a tournament");
+            snprintf(value, value_room, "%d players and %d CPUs",
+                     port_TourPlayers(&view), g_pages.tour_cpus);
+            *help = "The room's players (and CPUs) in a bracket; each match "
+                    "the next two's, the rest watching";
+        } else {
+            snprintf(name, name_room, "Tournament");
+            snprintf(value, value_room, "none   (the host's)");
+            *help = "Only the room's host begins one";
+        }
+        break;
+    case ROOM_TOURNAMENT_RULES:
+        snprintf(name, name_room, "Its bracket");
+        snprintf(value, value_room, "%s%s",
+                 port_TourKindText(g_pages.tour_kind),
+                 view.you == view.host ? "" : "   (the host's)");
+        *help = "The tournament's elimination and each match's rule";
+        break;
+    case ROOM_TOURNAMENT_CPUS:
+        snprintf(name, name_room, "Its CPUs");
+        snprintf(value, value_room, "%d%s", g_pages.tour_cpus,
+                 view.you == view.host ? "   (Adept, played by the host)"
+                                       : "   (the host's)");
+        *help = "CPU entrants beside the players: the host's PC plays them";
         break;
     default:
         snprintf(name, name_room, "Leave the room");
@@ -778,10 +914,12 @@ static void port_PageDrawRows(void) {
     s32 i;
     const char *help = "";
 
-    if (g_pages.cursor[g_pages.page] >= ROWS_SHOWN) {
-        first = g_pages.cursor[g_pages.page] - ROWS_SHOWN + 1;
+    s32 shown = g_pages.page == PAGE_ROOM ? ROOM_ROWS_SHOWN : ROWS_SHOWN;
+
+    if (g_pages.cursor[g_pages.page] >= shown) {
+        first = g_pages.cursor[g_pages.page] - shown + 1;
     }
-    for (i = first; i < rows && i < first + ROWS_SHOWN; i++) {
+    for (i = first; i < rows && i < first + shown; i++) {
         char name[TEXT_BYTES];
         char value[TEXT_BYTES];
         const char *row_help;
@@ -954,6 +1092,49 @@ static void port_PageRoom(void) {
     port_PageText(GAME_W / 2, ROOM_MATCH_Y + ROOM_MEMBER_PITCH + 2, SIZE_NOTE,
                   line, COLOR_DIM, ALIGN_CENTRE);
     port_PageDrawRows();
+}
+
+/* The room's tournament's bracket, drawn as the local one's. */
+static void port_PageRoomBracket(void) {
+    static PortTournament shown;
+    PortRoomTournamentView tour;
+    char line[TEXT_BYTES];
+    char keys[TEXT_BYTES];
+
+    port_RoomTournamentGet(&tour);
+    memset(&shown, 0, sizeof(shown));
+    shown.phase = !tour.on    ? PORT_TOURNAMENT_OFF
+                  : tour.done ? PORT_TOURNAMENT_DONE
+                              : PORT_TOURNAMENT_BETWEEN;
+    shown.setup = tour.setup;
+    shown.bracket = tour.bracket;
+    memset(
+        shown.last_fighter, PORT_TOURNAMENT_RANDOM, sizeof(shown.last_fighter));
+    memset(
+        shown.last_weapon, PORT_TOURNAMENT_RANDOM, sizeof(shown.last_weapon));
+    line[0] = 0;
+    if (tour.on && !tour.done && tour.pair[0] != PORT_ROOM_NOBODY) {
+        char next[TEXT_BYTES];
+
+        port_TourLine(next, sizeof(next));
+        snprintf(line, sizeof(line), "Match %d, %s: played by %s and %s",
+                 tour.bracket.played + 1, next + 5,
+                 port_RoomPlayer(tour.pair[0]), port_RoomPlayer(tour.pair[1]));
+    } else if (!tour.on) {
+        snprintf(line, sizeof(line), "No tournament in the room");
+    } else if (tour.done) {
+        port_TourLine(line, sizeof(line));
+        line[0] = (char)(line[0] - 'a' + 'A');
+    } else {
+        snprintf(line, sizeof(line),
+                 "The room's members reading the bracket: the next match in a "
+                 "moment");
+    }
+    snprintf(keys, sizeof(keys),
+             "Cross / Enter or Circle / Escape: back to "
+             "the room (its matches begin from here too)");
+    port_TournamentDrawShown(
+        g_pages.look, &shown, g_pages.pulse, line[0] != 0 ? line : NULL, keys);
 }
 
 /* What the ranked page says of the queue, the match and its result:
@@ -1295,6 +1476,9 @@ static void port_PageDraw(void) {
         port_PageRoom();
         port_PageFoot("A room of several: players and spectators");
         break;
+    case PAGE_ROOM_BRACKET:
+        port_PageRoomBracket();
+        break;
     case PAGE_RANKED:
         port_PageRanked();
         port_PageFoot("The ladder: Glicko-2, both players' reports agreeing");
@@ -1547,12 +1731,74 @@ static s32 port_PagesRoom(const char *code, const char *password) {
     return TRUE;
 }
 
+/* The tournament's row chosen: its bracket where one is on (its host's
+ * second Cross there ends it), else the host begins one of the room's
+ * players and the CPUs asked for. */
+static void port_PagesTournamentAccept(const PortRoomView *view) {
+    PortRoomTournamentView tour;
+    PortTournamentSetup setup;
+    char why[TEXT_BYTES];
+    s32 i;
+
+    port_RoomTournamentGet(&tour);
+    if (tour.on) {
+        port_PageGo(PAGE_ROOM_BRACKET);
+        return;
+    }
+    if (view->you != view->host) {
+        port_PageNote("Only the room's host begins a tournament.", COLOR_WARN);
+        return;
+    }
+    memset(&setup, 0, sizeof(setup));
+    for (i = 0; i < view->count && setup.count < PORT_BRACKET_MOST; i++) {
+        PortTournamentEntrant *entrant = &setup.entrant[setup.count];
+
+        if (!(view->members[i].flags & PORT_ROOM_PLAYS)) {
+            continue;
+        }
+        entrant->pad = PORT_ROOM_TOURNAMENT_MEMBER;
+        snprintf(entrant->name, sizeof(entrant->name), "%s",
+                 view->members[i].player);
+        setup.count++;
+    }
+    for (i = 0; i < g_pages.tour_cpus && setup.count < PORT_BRACKET_MOST; i++) {
+        PortTournamentEntrant *entrant = &setup.entrant[setup.count++];
+
+        entrant->pad = PORT_TOURNAMENT_CPU;
+        entrant->cpu = PORT_CPU_ADEPT;
+        entrant->fighter = PORT_TOURNAMENT_RANDOM;
+        entrant->weapon = PORT_TOURNAMENT_RANDOM;
+    }
+    setup.is_double = g_pages.tour_kind >= TOUR_DOUBLE_ONE;
+    setup.seeding = PORT_TOURNAMENT_SEED_RANDOM;
+    setup.rule = g_pages.tour_kind == TOUR_SINGLE_STOCK_2 ? PORT_MATCH_STOCK
+                                                          : PORT_MATCH_FIRST_TO;
+    setup.rule_count =
+        g_pages.tour_kind == TOUR_SINGLE_ONE ||
+                g_pages.tour_kind == TOUR_DOUBLE_ONE
+            ? 1
+            : 2;
+    setup.seed = (u32)time(NULL) ^ SDL_GetTicks();
+    if (!port_RoomTournamentBegin(&setup, why, sizeof(why))) {
+        port_PageNote(why, COLOR_WARN);
+        return;
+    }
+    port_PageGo(PAGE_ROOM_BRACKET);
+}
+
 /* What is chosen on the room's page. */
 static void port_PagesRoomAccept(s32 row) {
     PortRoomView view;
+    PortRoomTournamentView tour;
     s32 side;
 
     port_RoomGet(&view);
+    port_RoomTournamentGet(&tour);
+    if (tour.on && !tour.done && (row == ROOM_PLAY || row == ROOM_RULE)) {
+        /* (the rotation follows the tournament's bracket meanwhile) */
+        port_PageNote("The tournament says who plays now.", COLOR_WARN);
+        return;
+    }
     switch (row) {
     case ROOM_WATCH:
         port_RoomSetWatching(!view.watching);
@@ -1584,6 +1830,23 @@ static void port_PagesRoomAccept(s32 row) {
                           COLOR_GOOD);
         }
         break;
+    case ROOM_TOURNAMENT:
+        port_PagesTournamentAccept(&view);
+        break;
+    case ROOM_TOURNAMENT_RULES:
+        if (view.you == view.host) {
+            g_pages.tour_kind = (g_pages.tour_kind + 1) % TOUR_KINDS;
+        }
+        break;
+    case ROOM_TOURNAMENT_CPUS:
+        if (view.you == view.host) {
+            s32 room = PORT_BRACKET_MOST - port_TourPlayers(&view);
+
+            /* none to as many as fill the bracket's eight */
+            g_pages.tour_cpus =
+                room > 0 ? (g_pages.tour_cpus + 1) % (room + 1) : 0;
+        }
+        break;
     default:
         port_RoomLeave();
         port_PageGo(PAGE_MAIN);
@@ -1613,7 +1876,7 @@ static void port_PagesRoomTurn(void) {
         g_pages.back_to = PAGE_MAIN;
         return;
     }
-    if (g_pages.page != PAGE_ROOM) {
+    if (g_pages.page != PAGE_ROOM && g_pages.page != PAGE_ROOM_BRACKET) {
         return;
     }
     if (!g_pages.room_waiting) {
@@ -2125,6 +2388,9 @@ static void port_PagesAccept(void) {
     case PAGE_ROOM:
         port_PagesRoomAccept(row);
         break;
+    case PAGE_ROOM_BRACKET:
+        port_PageGo(PAGE_ROOM);
+        break;
     case PAGE_RANKED:
     case PAGE_LADDER:
         port_PagesRankedAccept(row);
@@ -2206,6 +2472,8 @@ static void port_PagesPress(s32 press) {
         } else if (g_pages.page == PAGE_ROOM) {
             /* nobody leaves a room by a slip: Back goes to its Leave row */
             *cursor = ROOM_LEAVE;
+        } else if (g_pages.page == PAGE_ROOM_BRACKET) {
+            port_PageGo(PAGE_ROOM);
         } else if (g_pages.page == PAGE_LADDER) {
             port_PageGo(PAGE_RANKED);
         } else if (g_pages.page == PAGE_RANKED) {
@@ -2427,12 +2695,15 @@ static s32 port_PagesWord(s32 *is_shot) {
             return PRESS_NONE;
         }
         g_pages.until = -1;
-    } else if (g_pages.until == UNTIL_ROOM) {
-        /* a room of several's page up, with someone else in the room */
+    } else if (
+        g_pages.until == UNTIL_ROOM || g_pages.until == UNTIL_ROOM_FOUR) {
+        /* a room of several's page up, with someone else in the room (or
+         * three others) */
         PortRoomView view;
 
         port_RoomGet(&view);
-        if (g_pages.page != PAGE_ROOM || !g_pages.is_open || view.count < 2) {
+        if (g_pages.page != PAGE_ROOM || !g_pages.is_open ||
+            view.count < (g_pages.until == UNTIL_ROOM ? 2 : ROOM_FOUR)) {
             return PRESS_NONE;
         }
         g_pages.until = -1;
@@ -2498,6 +2769,7 @@ static s32 port_PagesWord(s32 *is_shot) {
             strcmp(word + 6, "lobby") == 0     ? PORT_SESSION_PHASE_READY
             : strcmp(word + 6, "cards") == 0   ? PORT_SESSION_PHASE_CARDS
             : strcmp(word + 6, "room") == 0    ? UNTIL_ROOM
+            : strcmp(word + 6, "room4") == 0   ? UNTIL_ROOM_FOUR
             : strcmp(word + 6, "message") == 0 ? UNTIL_MESSAGE
             : strcmp(word + 6, "ranked") == 0  ? UNTIL_RANKED
             : strcmp(word + 6, "list") == 0    ? UNTIL_LIST

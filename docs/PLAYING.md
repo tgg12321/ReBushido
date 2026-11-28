@@ -941,8 +941,38 @@ your record as any versus fight does (also under **By mode**,
 of the tournament's result. A tournament left is not kept, and one is
 never resumed after the program closes.
 
-Not online: a tournament is one PC's (the rooms of several have their
-rotation instead).
+### A tournament in a room
+
+A **room of several** (Online Play, below) can hold a tournament too.
+Its host chooses, on the room's page:
+
+| Row | What it does |
+|---|---|
+| Begin a tournament | the room's players (everyone in it who plays, not the spectators) and the CPUs below, seeded at random, in a bracket; the bracket's page comes up |
+| Its bracket | single elimination with one fight a match, First to 2 or Stock 2; or double elimination with one fight or First to 2 |
+| Its CPUs | none, or as many as fill the bracket's eight: each at Adept, its fighter and weapon drawn for each match |
+
+Once it is on, the row is **Tournament** for everyone, and shows the next
+match or the champion; Cross on it shows the bracket (the same page as a
+local tournament's). Each match is played by its two entrants, one
+after another, while everyone else in the room watches it, live, as the
+room's spectators watch any match; nothing has to be pressed between
+matches. A match against a CPU is played against the host's PC, which
+plays the CPU (or another member's, where the host is the CPU's
+opponent); you pick your fighter and the stage as against the CPU on one
+PC. A fight with the CPU in it that goes on three minutes with neither
+fallen is judged (the less wounded wins), as two CPUs' are on one PC:
+the room waits on each match.
+
+**Leaving**: a player who leaves his match in the middle (F1 or Escape
+twice), or the room, loses that match; one who has left the room is out
+of the tournament, and each of his later matches is won by the other
+without a fight. A match that could not be met is played again. If the
+host leaves the room, the tournament ends there.
+
+When it is over, the champion is shown on the room's page and the
+bracket's, and the tournament is kept in each player's record, as a
+local one is.
 
 ## Everything unlocked
 
@@ -1387,6 +1417,12 @@ their round trip to the lobby), the match now and the last result.
   opens one of your own, and another member who is not playing takes it
   with *Join a match beside*. It is played as the rotation's are, while
   the rotation goes on, and can be watched too.
+- **A tournament**: the host's *Begin a tournament* puts the room's
+  players (and CPUs) in a bracket, and the rotation follows it until its
+  champion ("Tournament", "A tournament in a room"). Meanwhile the
+  rotation's own choice and *Play in the rotation* are the tournament's,
+  and the host's page shows a match beside the room's of its own,
+  waiting: that is the bracket's board, which nobody joins.
 - *Leave the room* takes you back to the online pages; Escape on the
   room's page goes to that row, so that nobody leaves by a slip.
 

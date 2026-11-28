@@ -83,6 +83,7 @@ outside  src/port/picture.c     the pictures a run writes
 outside  src/port/profile.c    where a blank's time goes, for --profile
 outside  src/port/relay.c       the lobby's client: the room, its key, the ways tried
 outside  src/port/room.c        a room of several's client: its socket, its members and matches as the lobby says
+outside  src/port/room_tournament.c  a room's tournament: the host's bracket and board, a member's copy of it
 outside  src/port/ranked.c      the ranked ladder's client: the identity, its socket, the match's digest and replays
 outside  src/port/vendor/monocypher/monocypher.c          Monocypher, as shipped: no variable of its own
 outside  src/port/vendor/monocypher/monocypher-ed25519.c  ... its Ed25519

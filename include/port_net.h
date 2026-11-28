@@ -312,6 +312,11 @@ extern void port_SetSessionSeed(u32 seed);
  * in the state (port_SessionResult). */
 #define PORT_SESSION_RULE_ONE_MATCH 2U
 extern void port_SetSessionRules(u32 rules);
+/* A room's tournament's match (protocol 22; port_tournament.h): its two
+ * entrants, sent in the host's welcome and put in the state of both as
+ * the session begins; NULL for none. The host's, before the meeting. */
+struct PortTournamentForm;
+extern void port_SetSessionTournament(const struct PortTournamentForm *form);
 /* The host's --players: pads 2 or 4, on pcs PCs (4 with 4: a PC each,
  * the host meeting three guests and passing each one's inputs to the
  * others; 4 with 2: two players on each of two PCs, each PC a team;

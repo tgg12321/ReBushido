@@ -844,13 +844,31 @@ the stage").
     window's program begun from its page, the same on both sizes of the
     headless port, byes, a person's match at the select screen, the
     rollback self-test with run-ahead; pictures in `tmp/tournament/`).
-    Left: **in a room** (item 22) -- not done: the lobby and the session
-    stay as they are (protocol 21, lobby 4); a room's tournament needs the
-    lobby to carry the bracket and the rotation to follow it, a change of
-    both, so it waits for its own work; a tournament resumed after the
-    program closes; Crew and two on two as a tournament's rule; about a
-    third of the matches of two CPUs go to the judges (item 27's circling);
-    the owner's eye on the pages.
+    **In a room** (2026-11-28; [`NETPLAY.md`](NETPLAY.md), section 22;
+    [`PORT.md`](PORT.md), "A tournament in a room"; [`PLAYING.md`](PLAYING.md),
+    "A tournament in a room"): the room's host begins one on the room's
+    page (its players and up to eight with CPUs, single or double, one
+    fight, First to 2 or Stock 2) and runs the bracket; with the lobby
+    unchanged (version 4): the host shows it on a board, the settings of
+    a match beside the room's nobody joins, which every member reads, and
+    the rotation follows it, only the board's next two saying they play.
+    Each match a room's match, its session (protocol 22) carrying the
+    match's two entrants into the state of both machines, so the game's
+    own tournament seats the sides, picks for the CPU and judges a fight
+    with a CPU after three minutes (a player against it too, online);
+    the CPU's side carried by the host (or another member); the rest of
+    the room watching. A leaver forfeits (his match in the middle, then
+    walkovers), the CPU not playing on for him. Proved by
+    `port_net_lobby.py`'s `rooms-tournament` (four players and a
+    spectator, to the champion), `rooms-tournament-leave` (double
+    elimination with a CPU, a leave in a fight, a walkover, the grand
+    final's reset) and `win-tournament` (begun from a window's pages).
+    Left: a tournament resumed after the program closes; Crew and two on
+    two as a tournament's rule, which do not fit as it is (PORT.md, "A
+    local tournament", "What is left": a CPU's crew picked place by place
+    and two CPUs' crews with no grid; an entrant of two pads); about a third of the matches of two CPUs go to
+    the judges (item 27's circling); real players in a room; the owner's
+    eye on the pages (`tmp/tournament/`, `tmp/room-tournament/`).
 32. **The sound remastered**, as a setting (the original's sound stays):
     a reverb of each stage's own (the dojo, the cave, the open), sound
     placed for headphones (HRTF), and better resampling of the game's

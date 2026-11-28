@@ -47,7 +47,9 @@
  * again takes it at the same input, a frame run ahead takes it and gives
  * it back. The log's lines and the record are written at the host's
  * boundary between two steps (port_TournamentBoundary), once. Never in a
- * session of netplay. The PlayStation builds never see this header. */
+ * session of netplay, but as a room's tournament's one match
+ * (PortTournamentForm, below). The PlayStation builds never see this
+ * header. */
 
 #include "common.h"
 #include "port_bracket.h"
@@ -132,11 +134,36 @@ typedef struct {
     u16 judged;
     /* the window's asks taken in so far, each kind's count */
     u16 taken[PORT_TOURNAMENT_ASKS];
+    /* a room's tournament's match, played as a session (the form below):
+     * no bracket of its own shown, no ask of the window's taken */
+    u8 online;
 } PortTournament;
+
+/* A room's tournament's match in a session (docs/NETPLAY.md, section 22;
+ * src/port/room_tournament.c runs the bracket, outside the state): the
+ * match alone, as a tournament of two in the state of both machines, put
+ * in as the session begins (port_ApplySession) from the host's welcome.
+ * Its first entrant is the session's host's, its second the guest's; each
+ * is the pad of the program that plays it (0 the host's, 1 the guest's)
+ * or the CPU, at a level, with a fighter and weapon set or drawn by
+ * `dice`. So the game's own tournament seats the sides (a player first
+ * where the other is the CPU), picks for the CPU at the select screen,
+ * judges two CPUs after three minutes, and both machines compute it. */
+typedef struct PortTournamentForm {
+    u8 on;
+    u8 rule;       /* PORT_MATCH_FIRST_TO or PORT_MATCH_STOCK */
+    u8 rule_count; /* its number */
+    u8 pad[2];     /* 0, 1, or PORT_TOURNAMENT_CPU */
+    u8 cpu[2];
+    u8 fighter[2];
+    u8 weapon[2];
+    u32 dice;
+} PortTournamentForm;
 
 /* A fight of two CPUs that has gone on three minutes of the game's time
  * (thirty frames a second) with neither fallen is judged: the one less
- * wounded wins the match, or the tournament's dice where they are alike. */
+ * wounded wins the match, or the tournament's dice where they are alike.
+ * In a room's match (online) a fight of a player against the CPU too. */
 #define PORT_TOURNAMENT_JUDGE_FRAMES 5400
 
 extern PortTournament g_port_tournament;
@@ -181,6 +208,19 @@ extern void port_TournamentTakeInput(struct PortInput *input);
  * screen's rule the window's again). */
 extern void port_TournamentBegin(const PortTournamentSetup *setup);
 extern void port_TournamentEnd(void);
+
+/* ---- a room's tournament's match in a session (session.c) ---- */
+
+/* The match of `form` put in the state as the session begins: its two
+ * entrants, its bracket of one match, asked for at the main menu. */
+extern void port_TournamentSessionBegin(const PortTournamentForm *form);
+/* The entrant (0 the session host's, 1 the guest's) of the game's side
+ * `side`: the sides are seated a player first. `side` itself where no
+ * room's match is in play. */
+extern s32 port_TournamentSessionEntrant(s32 side);
+/* Its match decided out of a fight (two CPUs judged): TRUE and the
+ * entrant who won. */
+extern s32 port_TournamentSessionDecided(s32 *entrant);
 
 /* ---- the window's asks and the host's boundary (tournament_ask.c) ---- */
 

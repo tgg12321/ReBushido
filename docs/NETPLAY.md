@@ -14,7 +14,8 @@ window programs on one PC (section 13). Then the lobby and its ways
 (section 14), sessions begun in the running program (15), rooms of several
 (16), the ranked ladder (17), two on two online, four players on four
 PCs among them (18), the CPU playing on for one of four who leaves
-(19), teams of four characters (20), and a resync where the machines part (21). What is left
+(19), teams of four characters (20), a resync where the machines part (21),
+and a tournament in a room (22). What is left
 is play between two real PCs,
 and what section 13 leaves to the owner.
 
@@ -2811,3 +2812,90 @@ section 12's "Under load"; the resync is proved on desyncs made on
 purpose). A resync's three seconds and Select's one are guesses to try
 with players. A spectator who comes into a fight of four after its
 resync waits for the next fight.
+
+
+## 22. A tournament in a room
+
+ROADMAP 31's room half: a tournament of a room of several (section 16),
+its bracket run by the room's host, each match played by the two
+entrants whose turn it is while the rest of the room watches, CPUs among
+the entrants. The code and how a match's state carries it: PORT.md, "A
+tournament in a room"; how a player uses it: PLAYING.md, "A tournament
+in a room".
+
+**Nothing of the lobby changed**: it is version 4, as deployed. The
+bracket goes by what rooms already carry.
+
+- *The board.* The host opens a match beside the room's (`SIDE_OPEN`)
+  that nobody joins, and sends as its feed's settings (`FEED`, its
+  `SETTINGS` part, the 64 bytes a spectator is given of a match) the
+  tournament as it stands: a mark (`RBTN`), the tournament's number and
+  the board's version, the host's id, whether it is over, the entrants'
+  count, single or double, the rule and its number, the dice, the
+  entrant of each seed, each entrant (a member's id, or `0x80` and the
+  CPU's level; its fighter and weapon), the winners of the matches
+  decided in their order (a bit each) and which were walkovers, the
+  entrants who left, the two members who are to play next and the
+  room's match the pair comes after. The server keeps the settings as
+  last sent, and every member asks for them (`WATCH`, no start, no
+  frame) about once a second while the host has a match beside that
+  nobody joined; the newest version is taken and the bracket built again
+  from it. The server lets a match beside nobody joins go after two
+  minutes (`--side-timeout`): the host opens another, and the members ask
+  that one. A member's page offers no one the board to join.
+- *The rotation follows the bracket.* The host sets a fixed turn once
+  every member has read the first board (it names nobody: a player comes
+  into a room playing), and each member says it plays (the `ROOM`'s flag
+  that puts it in the rotation) only while the board names it, and only
+  once the board is newer than the last room's match it was in. The
+  server's first two free players are then always the board's two, and
+  it makes their match (its code, its ticket) as any rotation's. The two
+  who have just played say they do not before the host's next board, so
+  they are never paired again by mistake. Where the host is one of the
+  two, it lets its board go (`SIDE_DONE`) once the other says he plays: a
+  member in a match beside the room's is never free.
+- *A match* is a room's match (`ONE_MATCH`, its players telling the
+  result). Its session's host holds the tournament's rule and sends the
+  match's two entrants in its welcome (protocol 22, below); the host of
+  the room reads the result in the roster's last result, by the two who
+  played, and reports it into the bracket. A match not met, or a draw,
+  is played again.
+- *The CPU's side* is carried by a member: the room's host, or where the
+  host is the CPU's opponent another member; two CPUs by the host and
+  another. Both machines of the session compute the CPU (it is the
+  game's own, in the state); the carrier's pad plays nothing. Two CPUs
+  are judged after three minutes, as on one machine, and here a player
+  against the CPU as well (the CPU circles a player as it circles
+  another CPU; the room waits on the match); the session ends there. With nobody to carry the second CPU, the dice decide.
+- *A leaver* loses the match he is in (the server gives it to the other,
+  as in any room's match), and once he is out of the room each of his
+  later matches is a walkover. The CPU playing on for him is not chosen:
+  a room's match is a session of two PCs, and section 19's CPU for a
+  leaver is the host's of four. A match whose CPU's carrier left is
+  played again. The host's leave ends the tournament.
+
+**Protocol 22** (`SESSION_PROTOCOL`, setup codes `P22-...`): the welcome
+carries a room's tournament's match (`MEET_TOURNAMENT`, four words: on,
+the rule and its number; each entrant's pad, the host's 0 or the
+guest's 1 or the CPU, and the CPU's level; their fighters and weapons;
+the dice), put in the state of both machines as the session begins, and
+the session's result is by entrant. 21 and 22 do not meet; the lobby,
+its relay and its feed are unchanged.
+
+**Proved** on this PC, the server run here, every program headless
+(`tools/port_net_lobby.py`'s `rooms-tournament` and
+`rooms-tournament-leave`, in `make port-net` and the gate's
+`port-net-windows` as `-win`) or a hidden window with SDL's dummy drivers
+(`win-tournament`), 60 ms each way and 5% lost on every match's session:
+
+| Case | What runs | Result |
+| --- | --- | --- |
+| `rooms-tournament` | five headless programs: Ayame opens the room and begins the tournament (`--room-tournament single,order,one,seed:7,@Ayame,@Bunta,@Chie,@Dai`) once the four are in; Sora a spectator | the semifinals Ayame beat Dai and Bunta beat Chie, the final Ayame beat Bunta, each the room's rotation's match of the board's two (room matches 1 to 3), 61 hashes on its players, watched by the other three (18 or 19 of them each held to the players' as they came), the same on all; the champion Ayame on all five, the places 1 Ayame, 2 Bunta, 3 Chie and Dai; about two minutes |
+| `rooms-tournament-leave` | five headless programs: Bunta, Chie, Dai and a CPU (Master, Kannuki with a katana) in a double elimination run by Ayame, who is no entrant and carries the CPU's side; Sora watches; Dai leaves his first match (room match 2, against Chie) in its fight at frame 1,700, and the room (`--leave-at 2:1700 --room-quit-left`) | Bunta beat the CPU, Chie beat Dai (his leave), Bunta beat Chie in the winners' final, the CPU had Dai's losers' match as a walkover, Chie beat the CPU in the losers' final, then won the grand final, and Bunta the reset: seven matches of the bracket in six room matches, each the same on all who ran it (220 hashes for the two against the CPU, judged after three minutes, decided at frame 6,608; 56 to 61 for the others); the champion Bunta on the four who stayed; under six minutes |
+| `win-tournament` | four Windows windows (SDL's dummy drivers): the host opens a room of several from its pages, three windows of the command line come in, and the host begins the tournament on the room's page (its fifth row, the four players, single, one fight) | the host's page began it (seeded at random: Hostess against Chie and Bunta against Dai), the bracket's page up at once; the three room matches each played by its two and watched by the other two windows (the host from its pages), the hashes the same on all four; the champion Hostess on all four; the pages' pictures (the room, the bracket at the start, at the end) in the main checkout's `tmp/room-tournament/`; under three minutes |
+
+**What is left.** A room of real players on real networks. The board's version is the host's own count:
+a member who comes in after a tournament began reads it whole, but a
+member who comes in playing may be paired by the server with one of the
+board's two before his program has read the board (a second at most);
+the host then counts nothing of that match.

@@ -16,6 +16,8 @@ struct PortDisc;
 /* What a session is asked to be: what --host, --join and the lobby's
  * options say on the command line, or the window's online pages. */
 #define PORT_ONLINE_TEXT_BYTES 64
+/* --room-tournament's words */
+#define PORT_ONLINE_SPEC_BYTES 256
 
 typedef struct {
     s32 role;                          /* PORT_SESSION_HOST or _JOIN */
@@ -75,6 +77,14 @@ typedef struct {
     s32 ranked;
     s32 lists;
     s32 lie;
+    /* a tournament in the room (docs/NETPLAY.md, section 22): the host's
+     * words (--room-tournament), begun once every member it names is in;
+     * the program leaves the room and ends once it is over
+     * (--room-until-champion), or once it has left its match
+     * (--leave-at's, --room-quit-left: the room left too) */
+    char tournament[PORT_ONLINE_SPEC_BYTES];
+    s32 until_champion;
+    s32 quit_left;
 } PortOnlineRoom;
 
 extern void port_OnlineRoomAuto(const PortOnlineRoom *room);

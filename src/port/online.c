@@ -84,6 +84,11 @@ static struct {
     s32 room_opened;
     s32 side_joined;
     s32 side_played;
+    /* the room's tournament (room_tournament.c): this match is one of
+     * its; the command line's begun, and why not yet */
+    s32 tournament;
+    s32 tournament_begun;
+    char tournament_why[WHY_BYTES];
 } g_online;
 
 void port_OnlineWanted(void) { g_online.wanted = 1; }
@@ -825,6 +830,33 @@ static void port_OnlineRoomTurn(void) {
             }
         }
     }
+    if (room->tournament[0] != 0 && !g_online.tournament_begun) {
+        PortTournamentSetup setup;
+
+        if (!port_RoomTournamentParse(room->tournament, &setup)) {
+            port_SessionFail("--room-tournament: its words are not a "
+                             "tournament");
+            port_Quit(PORT_EXIT_FAILED);
+        }
+        if (port_RoomTournamentBegin(&setup, why, sizeof(why))) {
+            g_online.tournament_begun = TRUE;
+        } else if (!port_TextsEqual(why, g_online.tournament_why)) {
+            port_OnlineKeepWord(
+                g_online.tournament_why, sizeof(g_online.tournament_why), why);
+            port_Log("room: the tournament waits: %s\n", why);
+        }
+    }
+    if (room->until_champion) {
+        PortRoomTournamentView tournament;
+
+        port_RoomTournamentGet(&tournament);
+        if (tournament.on && tournament.finished) {
+            port_Log("room: the room's tournament is over; this program "
+                     "leaves and ends\n");
+            port_RoomLeave();
+            port_Quit(PORT_EXIT_OK);
+        }
+    }
     if ((room->matches != 0 && view.last_number >= (s32)room->matches &&
          (view.match.number == 0 ||
           (view.match.a != view.you && view.match.b != view.you) ||
@@ -854,6 +886,7 @@ static void port_OnlineRoomTurn(void) {
 /* The room's match asked for, played or watched here. */
 static void port_OnlineRoomRun(void) {
     PortOnlineAsk ask;
+    PortTournamentForm form;
     const PortOnlineRoom *room = &g_online.room;
 
     g_online.room_asked = FALSE;
@@ -875,10 +908,31 @@ static void port_OnlineRoomRun(void) {
         port_KeepMatch();
         port_HoldMatch(port_RankedRule());
     }
+    g_online.tournament =
+        !g_online.ranked && port_RoomTournamentMatch(&g_online.next, &form);
+    if (g_online.tournament) {
+        /* a room's tournament's match: its rule held, and its two entrants
+         * in the host's welcome (port_tournament.h) */
+        port_KeepMatch();
+        port_HoldMatch(port_RoomTournamentRule());
+        port_SetSessionTournament(
+            g_online.next.role == PORT_SESSION_HOST ? &form : NULL);
+    }
     port_OnlineRun();
     if (g_online.ranked) {
         port_RestoreMatch();
         g_online.ranked = FALSE;
+    }
+    if (g_online.tournament) {
+        port_RestoreMatch();
+        g_online.tournament = FALSE;
+    }
+    if (room->on && room->quit_left && room->leave_match != 0 &&
+        (s32)room->leave_match == g_online.next.match.number) {
+        port_Log("room: this program left its match: it leaves the room "
+                 "and ends\n");
+        port_RoomLeave();
+        port_Quit(PORT_EXIT_OK);
     }
 }
 
