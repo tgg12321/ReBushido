@@ -1203,19 +1203,24 @@ PORT_SETTING(tournament_seeding,
     .shown = {"Drawn", "In order"})
 
 /* Each match's rule (include/port_match.h): one fight (First to 1, a
- * draw fought again), First to N or Stock N. */
+ * draw fought again), First to N, Stock N or Crew N (crews of N, a CPU's
+ * drawn place by place; both crews out at once fight again). */
 PORT_SETTING(tournament_match,
     .name = "tournament_match", .value = "one",
-    .note = "one, first_to_2, first_to_3, stock_2 or\n"
-            "stock_3: each match's rule",
+    .note = "one, first_to_2, first_to_3, stock_2,\n"
+            "stock_3, crew_2, crew_3 or crew_5: each\n"
+            "match's rule",
     .read = PORT_READ_WORDS,
-    .words = {"one", "first_to_2", "first_to_3", "stock_2", "stock_3"},
-    .is = "one, first_to_2, first_to_3, stock_2 or stock_3",
+    .words = {"one", "first_to_2", "first_to_3", "stock_2", "stock_3",
+              "crew_2", "crew_3", "crew_5"},
+    .is = "one, first_to_2, first_to_3, stock_2, stock_3, crew_2, crew_3 "
+          "or crew_5",
     .menu = PORT_MENU_TOURNAMENT, .rank = 40, .takes = PORT_TAKES_NOW,
     .label = "Each match",
-    .help = "One fight (a draw is fought again), First to N or Stock N",
+    .help = "One fight (a draw is fought again), First to N, Stock N, or "
+            "Crew N (crews of N fighters)",
     .shown = {"One fight", "First to 2", "First to 3", "Stock 2",
-              "Stock 3"})
+              "Stock 3", "Crew 2", "Crew 3", "Crew 5"})
 
 /* ---- the controls ---- */
 

@@ -13,7 +13,8 @@
  *   the setup to the game; between the matches the window shows the
  *   bracket (src/port/window/tournament_page.c), whose Play starts the
  *   next match and whose Leave ends it there. A tournament left is not
- *   kept: there is nothing to come back to.
+ *   kept; one not finished is kept in a file as each match is decided
+ *   (PortTournamentKept), and the page's Resume begins it again.
  * - A match with a player in it goes to versus mode's select screen: each
  *   player picks his fighter and weapon with his own pad (the pads are
  *   given to the sides the match's entrants have: a player is always the
@@ -62,13 +63,18 @@ struct PortInput; /* port_platform.h */
 #define PORT_TOURNAMENT_CPU 0xFF
 /* a CPU's fighter or weapon drawn for each match */
 #define PORT_TOURNAMENT_RANDOM 0xFF
+/* the largest crew a tournament's Crew match has (its rules: Crew 2, 3
+ * and 5), and the room for a tournament's date */
+#define PORT_TOURNAMENT_CREW_MOST 5
+#define PORT_TOURNAMENT_DATE_BYTES 24
 
 /* The window's asks, in the order they are taken. */
 enum {
     PORT_TOURNAMENT_ASK_LEAVE = 0,
     PORT_TOURNAMENT_ASK_BEGIN = 1,
     PORT_TOURNAMENT_ASK_PLAY = 2,
-    PORT_TOURNAMENT_ASKS = 3,
+    PORT_TOURNAMENT_ASK_RESUME = 3, /* one kept, begun again from its file */
+    PORT_TOURNAMENT_ASKS = 4,
 };
 
 enum {
@@ -137,7 +143,34 @@ typedef struct {
     /* a room's tournament's match, played as a session (the form below):
      * no bracket of its own shown, no ask of the window's taken */
     u8 online;
+    /* the dice as the last match was decided (or the tournament begun):
+     * what its file keeps, so that the matches after it are seated alike
+     * when it is resumed */
+    u32 dice_kept;
+    /* begun again from its file (port_TournamentResume) */
+    u8 resumed;
+    /* Crew (PORT_MATCH_CREW): each side's crew for the match, drawn as it
+     * is seated (a CPU's; a player's picks are the select screen's), a
+     * place at a time, no character twice */
+    u8 crew_fighter[2][PORT_TOURNAMENT_CREW_MOST];
+    u8 crew_weapon[2][PORT_TOURNAMENT_CREW_MOST];
 } PortTournament;
+
+/* A tournament kept between two runs of the program (docs/PORT.md, "A
+ * local tournament", "Kept and resumed"): its setup, the matches decided
+ * in the order they were (each the bracket's match << 1 | the slot that
+ * won), the dice as the last was decided, and what the window shows. A
+ * match that was being played is not among them: it is played again. */
+typedef struct {
+    PortTournamentSetup setup;
+    u32 dice;
+    u16 judged;
+    u8 results;
+    u8 result[PORT_BRACKET_MATCHES];
+    u8 last_fighter[PORT_BRACKET_MOST];
+    u8 last_weapon[PORT_BRACKET_MOST];
+    char date[PORT_TOURNAMENT_DATE_BYTES];
+} PortTournamentKept;
 
 /* A room's tournament's match in a session (docs/NETPLAY.md, section 22;
  * src/port/room_tournament.c runs the bracket, outside the state): the
@@ -208,6 +241,21 @@ extern void port_TournamentTakeInput(struct PortInput *input);
  * screen's rule the window's again). */
 extern void port_TournamentBegin(const PortTournamentSetup *setup);
 extern void port_TournamentEnd(void);
+/* One kept begun again: its bracket, its results, its dice (FALSE, and
+ * nothing begun, where a result is not one its bracket can take). */
+extern s32 port_TournamentResume(const PortTournamentKept *kept);
+/* The fight's dice (fight_Init, before the CPUs are set up): a local
+ * tournament's fight seeds the game's rand() and its own generator from
+ * the tournament's dice, so that a match is the same match whatever came
+ * before it in the run (a tournament resumed plays as one not stopped). */
+extern void port_TournamentFightSeed(void);
+/* Crew: side `side`'s pick for its crew's place `place`, where the
+ * tournament has drawn it (the CPU's). */
+extern s32 port_TournamentCrewPick(
+    s32 side, s32 place, s32 *fighter, s32 *weapon);
+/* Crew: a match of two CPUs, whose crews are put in the match as it
+ * begins (port_MatchBegin): TRUE where the tournament gives both. */
+extern s32 port_TournamentGivesCrews(void);
 
 /* ---- a room's tournament's match in a session (session.c) ---- */
 
@@ -232,12 +280,27 @@ extern const u8 *port_TournamentFighters(s32 *count);
  * begin asked. */
 extern s32 port_TournamentAsked(s32 kind, u16 *count);
 extern const PortTournamentSetup *port_TournamentAskedSetup(void);
+/* ... and the tournament of the last resume asked, as its file had it. */
+extern const PortTournamentKept *port_TournamentAskedKept(void);
 
 /* A tournament begun, the next match played, the tournament left: asked
  * now, done at the host's next boundary. */
 extern void port_AskTournamentStart(const PortTournamentSetup *setup);
 extern void port_AskTournamentPlay(void);
 extern void port_AskTournamentLeave(void);
+/* The tournament kept in its file begun again: FALSE, said in the log,
+ * where there is none or it cannot be read. */
+extern s32 port_AskTournamentResume(void);
+/* Where a tournament is kept between runs (beside the settings in a
+ * player's run; --tournament-file): NULL or "" keeps none. */
+extern void port_SetTournamentFile(const char *path);
+/* The tournament kept there, read: FALSE where there is none. */
+extern s32 port_TournamentKeptRead(PortTournamentKept *kept);
+/* A test's: the program ended a while into the fight of the match after
+ * `decided` matches (--tournament-quit-in), and the kept one begun at the
+ * first boundary (--tournament-resume). */
+extern void port_SetTournamentQuitIn(s32 decided);
+extern void port_SetTournamentResumeAtStart(void);
 /* Between two steps (main.c): the log's lines, the record written when
  * it is over, a test's own play asked (--tournament-auto). */
 extern void port_TournamentBoundary(void);

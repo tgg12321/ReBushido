@@ -10920,9 +10920,74 @@ played in order (`mN=part:round:first:second:winner`). The file's
 version is 2 (a program of version 1 keeps a file of 2 aside, as it
 keeps any later one's; this one reads both). The Stats page's last list,
 **Tournaments**, has each, newest first, its line under the rows every
-entrant's place. A tournament left is not kept, and none is resumed
-after the program closes (the choice made: a tournament is an evening's,
-and nothing of the game's state is saved beside a session).
+entrant's place. A tournament left is not kept; one the program closed
+on is resumed (below).
+
+**Kept and resumed** (2026-11-28). A local tournament not finished is
+kept in a file beside the settings, `rebushido-tournament.txt` (a
+player's run; `--tournament-file FILE` headless, and none in a test's
+run that does not name one), written whole into `FILE.part` and renamed
+over it as the record is, at the host's boundary each time a match is
+decided and when one is begun (`port_TournamentKeep`, tournament_ask.c,
+outside the state). It is text, a key a line: `rebushido-tournament 1`,
+the date begun, the setup's numbers (count, elimination, seeding, rule
+and its number, the seed), the dice as the last match was decided
+(`dice_kept`, in the state: set in `port_TournamentDecide`, so the file
+holds them whatever the boundary sees after), the judged matches' bits,
+an `entrant=` line each (pad, level, fighter, weapon, last fighter and
+weapon, the name as %XX) and a `result=MATCH:SLOT` line for each match
+decided, in the order played. A match that was being played is not
+among them: it is played again from its start. The Tournament page
+offers **Resume** (above its entrants, with its
+count, the matches played and the date) where there is one and no
+tournament is on; it is an ask as Begin is (`PORT_TOURNAMENT_ASK_RESUME`,
+`port_TournamentResume`): the tournament begun from its setup (the same
+seeds: the shuffle is the seed's), each result reported again to the
+bracket in its order (a result the bracket would not take as its next
+match begins nothing), the dice, the judged bits and the window's last
+picks put back, `resumed` set so that the log says `resumed` and the
+record's `begun` and the fights' `tournament=` keep the first date. The
+file is taken away when the tournament is over and its line written,
+and when it is left (Leave, another mode chosen); Begin writes a new one
+over a kept one. A room's tournament is never kept (it is the room's).
+
+**A match plays alike whatever came before it.** So that a tournament
+resumed after a close plays as it would have, each fight of a local
+tournament seeds the game's `rand()` and its own generator
+(`rng_SetSeed`) from the tournament's dice before the CPUs are set up
+(`port_TournamentFightSeed`, from `fight_Init` before
+`cpu_InitFighters`, as link play seeds its fights at the end of
+`fight_Init`): the port's CPU takes its dice from `rand()` there
+(`port_CpuInit`), so a fight of two CPUs is a function of its setup and
+the tournament's dice alone, not of the frames the menus took before it.
+A room's match is left to its session's seed.
+
+**Crew as a tournament's rule** (2026-11-28; "Crew", above). `Each
+match` offers Crew 2, 3 and 5 (`crew_2`, `crew_3`, `crew_5`; `crew:N`,
+2 to 5, in `--tournament`'s words); five at most, since an empty save's
+grid has six fighters and every place is a different character. As a
+match is seated each CPU side's crew is drawn place by place
+(`port_TournamentDrawCrews`, the tournament's dice): its first place the
+fighter and weapon of the match (set or drawn, as for one fight), the
+rest from the six of a new save with none twice, a set weapon in every
+place or one drawn for each; the second side's place never the first's
+character at the same place. A match with a player goes to the select
+screen with the rule chosen before the grid (`port_MatchRuleTaken`, as a
+room's: the places picked from the first); the CPU's side is picked for
+it place by place on the grid (`port_TournamentCpuPick` gives the place
+being picked, `port_MatchCrewPlace`; `select_PortTournamentCpu` never
+moves to a character its crew has). A match of two CPUs goes straight to
+its fights as before, with no grid: `port_MatchCrewBegin` takes both
+drawn crews (`port_TournamentGivesCrews`, `port_TournamentCrewPick`).
+**Both crews out at once** (the choice made): in a tournament a draw
+that would leave neither crew a fighter takes nobody out, and the two
+last fighters fight again, unhurt, as often as it takes, as Stock's last
+lives do (`port_MatchFightOver`), so a crew match always has a winner;
+outside a tournament such a match is still drawn. A fight of two CPUs
+judged after three minutes decides the match, as it does under the other
+rules. The log says each match's sides as its first fight comes up
+(`tournament: match N's fight: A (kannuki/katana mikado/yari ...)
+against B (...)`).
 
 **Not in a session.** The Tournament row is dark in a session, and the
 window's asks are never taken in one (they are one machine's). A
@@ -11019,19 +11084,52 @@ CPU winning; his fight in the record, lost to the CPU at the winner's
 level, with the tournament's date; `rollback`, byes' tournament under the
 rollback self-test (`--rollback-test 8 --rollback-every 24`) and
 run-ahead 2, the same matches, places and record as without.
+`resume`: four CPUs, double elimination, kept in a file: played through
+once; again, the program ended 300 frames into the fight of the fourth
+match (`--tournament-quit-in 3`), the file holding the three decided and
+not the fourth; a third run begun from the file alone
+(`--tournament-resume`): the fourth match played again from its start,
+and every match after the resume with the sides, the winner, the places,
+the champion and the record (but the dates) of the run not stopped, the
+file taken away at the end. `windowresume`: the same stopped run, then
+the window's program resumed from its Tournament page's Resume row (the
+page pictured in `tmp/tournament/resume/`): the same champion. `crew`:
+four CPUs, Crew 3, on both sizes alike: each match straight to its
+fights, each crew three different characters, the entrant set to
+Kannuki and the katana led by them in each of its matches. `crewdraw`:
+two CPUs, Crew 2, the first two fights made draws (both fighters
+written fallen, a `poke`): after the second both crews are on their
+last and run out together, nobody out (lives 1 and 1, not over), and a
+third fight decides. `crewperson`: Player 1 against the CPU (Gengoro
+and the yari), Crew 2, at versus mode's select screen: his two places at
+the grid, the CPU's crew picked for it place by place, Gengoro and the
+yari first and another character second, a stage, the fights.
 
-**What is left.** A tournament resumed after the program closes; the
-owner's eye on `tmp/tournament/` and `tmp/room-tournament/`; two on two
-and Crew are not offered as a tournament's rule. They do not fit as the
-tournament is: a CPU entrant picks one fighter and weapon at the select
-screen (`select_PortTournamentCpu`), where a Crew match needs a whole
-crew picked place by place with no character twice, and a match of two
-CPUs goes to its fight with no grid at all, so its crews would have to
-be drawn and put in the match's by hand; a Crew match whose crews run
-out together has no winner, which a bracket needs. Two on two needs an
-entrant that is two pads (or a CPU pair), which the page, the bracket's
-names, the record's line and the pads' mapping (one pad an entrant) do
-not have, and the partners' second grid has no CPU pick. In a room:
+**What is left.** The owner's eye on `tmp/tournament/` and
+`tmp/room-tournament/`. **Two on two as a tournament's rule** is not
+offered (the tournament's page and match are one on one,
+`port_MatchTournamentPage` sets `page_teams` to one on one). What it
+needs, as measured against the code: (1) an entrant that is a team, a
+first and a partner each a pad or the CPU (`PortTournamentEntrant` a
+partner's pad, level, fighter and weapon; the page's entrant rows and
+its own page a Partner row; `--tournament`'s words a `+` for a partner;
+the kept file and the record's `eN=` a partner's field, the record's
+version 3); (2) the pads mapped to four places (`port_TournamentTakeInput`
+gives the pads of the two firsts to pads 1 and 2 and the partners' to 3
+and 4, which `port_MatchPartnerPads` and the duo read); (3) a partner of
+each team the CPU's or a pad's on its own: the duo's
+`port_DuoPartnerIsCpu` reads one `teams` for both teams, and a team of a
+pad and a CPU against a team of two pads needs it by slot; (4) the
+partners' second pick: the second place is picked as a Crew's second
+place is (`port_MatchPlaces` is two for teams), so the CPU's partner is
+the tournament's `crew_fighter[side][1]` through
+`port_TournamentCpuPick`, as Crew's places are now, but for a pad's
+team with a CPU partner the select screen's second place would have to
+be the CPU's alone; (5) a match of two CPU teams straight to its fight
+with both partners put in (`port_MatchSetPartner`); (6) the judges of a
+fight of four (wounds of four fighters, the duo's own end of the fight);
+(7) the bracket's and the log's names "A and B". The Crew work above
+gives (4) and (5) their pattern. In a room:
 replays of a room's tournament's fight across builds (the lead-in plays
 the session from power on without its form).
 

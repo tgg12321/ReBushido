@@ -926,9 +926,10 @@ settings and then a row for each entrant:
 | Entrants | 2 to 8 | how many (`tournament_entrants`); where they do not fill the bracket (3, 5, 6, 7) the top seeds have byes, a first round they do not play |
 | Elimination | Single, Double | out at the first loss, or at the second (`tournament_elimination`) |
 | Seeding | Drawn, In order | the seeds drawn at random, or the entrants' order, the first the top seed (`tournament_seeding`) |
-| Each match | One fight, First to 2, First to 3, Stock 2, Stock 3 | each match's rule (`tournament_match`); "One fight" is fought again on a draw, so every match has a winner |
+| Each match | One fight, First to 2, First to 3, Stock 2, Stock 3, Crew 2, Crew 3, Crew 5 | each match's rule (`tournament_match`); "One fight" is fought again on a draw, so every match has a winner; Crew N is a crew battle of N fighters a side (below) |
 | 1. ..., 2. ... | | each entrant: **Left** and **Right** say who plays it (Player 1's to Player 4's pad, or the CPU: the game's own, Novice, Adept, Veteran, Master); **Cross** opens its own page |
-| Begin the tournament | | draws the bracket |
+| Begin the tournament | | draws the bracket (a tournament kept, below, is let go) |
+| Resume | | only where one was left unfinished when the program closed: its bracket as it was (above the entrants) |
 
 An entrant's page has its **Name** (Cross, then type; Enter keeps it),
 **Played by**, and for a CPU its **Fighter** and **Weapon**: one of the
@@ -942,7 +943,8 @@ winners in white, the next match lit, the line from each match to where
 its winner goes, and the champion's box; with double elimination the
 winners' bracket on top with the grand finals beside it, the losers'
 bracket under it. **Play the next match** plays it; **Leave the
-tournament** (press it twice) ends it there, and nothing of it is kept.
+tournament** (press it twice) ends it there, and nothing of it is kept
+(closing the program instead keeps it, to be resumed).
 Escape or Circle goes to the main menu, whose Tournament brings the
 bracket back; choosing another mode there leaves the tournament.
 
@@ -955,6 +957,23 @@ the pause menu's Return to Main Menu leaves the match unplayed (it is
 offered again). Each match is a match of the rule chosen (the lives or
 the score over the fight, the card between fights), and when it is
 decided the game goes back to the main menu and the bracket.
+
+**Crew** (Crew 2, 3 or 5): each match is a crew battle (Match rules,
+"Crew"). A player picks his crew at the select screen, place by place,
+no character twice; the CPU's crew is picked for it on the same screen,
+its set fighter and weapon first and the rest drawn, no character twice.
+A match of two CPUs goes straight to its fights with both crews drawn.
+Where both crews' last fighters fall together, nobody is out: the two
+fight again, as often as it takes (sudden death), so a crew match always
+has a winner.
+
+**Kept and resumed**: a tournament not finished is kept in
+`rebushido-tournament.txt` beside your settings each time a match is
+decided. Close the program in the middle (even in a fight) and the
+Tournament page offers **Resume** the next time: the
+bracket, the results, the entrants and the dice as they were; a match
+that was being played is played again from its start. Leaving the
+tournament, finishing it or beginning a new one lets the kept one go.
 
 **Double elimination**: a first loss sends an entrant to the losers'
 bracket, a second loss is out. The grand final is the winners' bracket's
@@ -972,8 +991,8 @@ fourth, then fifth and seventh in pairs.
 champion, and every entrant's place. The fights you play in it count in
 your record as any versus fight does (also under **By mode**,
 *Tournament*); a match of two CPUs counts nothing there, but is a match
-of the tournament's result. A tournament left is not kept, and one is
-never resumed after the program closes.
+of the tournament's result. A tournament left (Leave) is not kept; one
+the program closed on is (above, "Kept and resumed").
 
 ### A tournament in a room
 

@@ -874,10 +874,27 @@ the stage").
     spectator, to the champion), `rooms-tournament-leave` (double
     elimination with a CPU, a leave in a fight, a walkover, the grand
     final's reset) and `win-tournament` (begun from a window's pages).
-    Left: a tournament resumed after the program closes; Crew and two on
-    two as a tournament's rule, which do not fit as it is (PORT.md, "A
-    local tournament", "What is left": a CPU's crew picked place by place
-    and two CPUs' crews with no grid; an entrant of two pads); about a third of the matches of two CPUs go to
+    **Kept and resumed, and Crew** (2026-11-28; PORT.md, "A local
+    tournament", "Kept and resumed", "Crew as a tournament's rule";
+    PLAYING.md, "Tournament"): a tournament not finished is kept in
+    `rebushido-tournament.txt` beside the settings (through a `.part`
+    and a rename, as the record), written as each match is decided, and
+    offered on the Tournament page as **Resume** (the bracket, results,
+    entrants, seeds and dice; a match interrupted played again); each
+    tournament fight seeds the game's dice from the tournament's, so a
+    match plays alike whatever came before it. Crew 2, 3 or 5 is a
+    tournament's rule: a CPU's crew drawn and picked for it place by
+    place on the grid, no character twice; two CPUs' crews drawn and
+    straight to their fights; both crews out at once fight again
+    (sudden death, the choice made). Proved by `tools/port_tournament.py`'s
+    `resume` (stopped in the fourth match's fight and resumed: the same
+    matches, sides, champion and record as a run not stopped),
+    `windowresume` (resumed from the window's page), `crew`, `crewdraw`
+    and `crewperson`.
+    Left: two on two as a tournament's rule (PORT.md, "A local
+    tournament", "What is left": an entrant of two, the pads of four, a
+    partner the CPU's by team, the CPU partner's pick at the grid);
+    about a third of the matches of two CPUs go to
     the judges (item 27's circling); real players in a room; the owner's
     eye on the pages (`tmp/tournament/`, `tmp/room-tournament/`).
 32. **The sound remastered**, as a setting (the original's sound stays):

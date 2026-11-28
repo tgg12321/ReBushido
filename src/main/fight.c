@@ -1003,6 +1003,11 @@ void fight_Init(void) {
     motion_OpenStreams();
     motion_AttachFighter(0);
     motion_AttachFighter(1);
+#if RB_PORT
+    /* a local tournament's fight: its dice the tournament's, so that a
+     * match plays alike whatever came before it (port_tournament.h) */
+    port_TournamentFightSeed();
+#endif
     cpu_InitFighters();
     if (g_fight_mode == FIGHT_MODE_PRACTICE ||
         g_fight_mode == FIGHT_MODE_TEAM) {
