@@ -149,6 +149,9 @@
 #define RESYNC_LEAD (NETPLAY_DELAY_MAX + NETPLAY_PREDICT_MAX + 4)
 #define RESYNC_AUTO_FRAMES 180
 #define RESYNC_AGAIN_FRAMES 1200
+/* A controller's press for a resync: Select held a second while parted
+ * (Select is the game's no more, then: port_NetplayKeepLocal) */
+#define RESYNC_HOLD_FRAMES 60
 #define PERCENT 100
 #define DECIMAL 10
 #define RESYNC_LINE_BYTES 96
@@ -383,6 +386,8 @@ static u32 g_np_parted_frame;
 static u32 g_np_parted_clock;
 static s32 g_np_resync_asked;
 static u32 g_np_resync_ask_at;
+/* the local frames Select has been held in, parted */
+static u32 g_np_select_held;
 static s32 g_np_resync_wanted;
 static u32 g_np_resync_auto = RESYNC_AUTO_FRAMES;
 /* the frame the next resync is at, the host's word (0: none) */
@@ -627,6 +632,7 @@ void port_ResetNetplay(void) {
     g_np_resync_asked = FALSE;
     g_np_resync_wanted = FALSE;
     g_np_resync_at = 0;
+    g_np_select_held = 0;
     g_np_part_done = FALSE;
     g_np_resyncs_at_last = 0;
     g_np_rs.coming = FALSE;
@@ -773,6 +779,8 @@ static void port_NetplayCompareHash(s32 link, u32 frame) {
         g_np_parted_hash = frame;
         g_np_parted_frame = g_np_frame;
         g_np_parted_clock = port_NetClock();
+        /* the state the spectators are told the resync's from (replay.c) */
+        port_ReplayHoldBase(port_NetplayAgreed());
         port_Log("netplay: the machines' games parted after frame %u; a "
                  "resync puts the host's state on each (%s)\n",
                  port_NetplayAgreed(),
@@ -1453,6 +1461,12 @@ static void port_NetplayFinalHashes(void) {
         g_np_last_final = *hash;
         port_Log("netplay: frame %u hash %08X%08X\n", frame,
                  (u32)(hash->hash >> WORD_BITS), (u32)hash->hash);
+        if (port_FeedIsOn() &&
+            g_np_save_frames[frame % NETPLAY_SAVES] == frame) {
+            /* a state a resync's for the spectators may be told from */
+            port_ReplayKeepBase(
+                frame, hash->hash, g_np_saves[frame % NETPLAY_SAVES]);
+        }
         port_FeedHash(frame, hash->hash);
         port_RankedHash(frame, hash->hash);
         port_NetplayCompareAll(frame);
@@ -1472,6 +1486,7 @@ static void port_NetplayKeepLocal(void) {
 
     while (g_np_local_count <= g_np_frame + g_np_delay) {
         s32 nth = 0;
+        s32 select = FALSE;
         s32 pad;
 
         read.buttons[0] = read.buttons[1] = 0;
@@ -1507,8 +1522,21 @@ static void port_NetplayKeepLocal(void) {
             if (buttons == INPUT_CPU) {
                 buttons = (u16)(buttons & ~PADselect);
             }
+            if (g_np_parted) {
+                /* parted, Select is the resync's (whatever key or button
+                 * the player's settings make it), not the game's: held a
+                 * second, it asks for one as F5 does (docs/NETPLAY.md,
+                 * section 21) */
+                select |= (buttons & PADselect) != 0;
+                buttons = (u16)(buttons & ~PADselect);
+            }
             g_np_inputs[pad][g_np_local_count & NETPLAY_INPUT_MASK] = buttons;
             g_np_count[pad] = g_np_local_count + 1;
+        }
+        g_np_select_held = select ? g_np_select_held + 1 : 0;
+        if (g_np_select_held == RESYNC_HOLD_FRAMES) {
+            port_Log("netplay: Select held a second\n");
+            port_NetplayAskResync();
         }
         g_np_local_count++;
     }
@@ -1804,6 +1832,7 @@ static void port_NetplayResynced(u32 epoch, u32 frame, u32 agreed) {
     g_np_resync_asked = FALSE;
     g_np_resync_wanted = FALSE;
     g_np_resync_at = 0;
+    port_ReplayHoldBase((u32)-1);
     for (i = 0; i < NETPLAY_HASHES; i++) {
         g_np_hashes[i].frame = (u32)-1;
     }
@@ -1966,7 +1995,7 @@ static void port_NetplayResyncSend(void) {
     }
     port_NetplayFinalHashes();
     g_np_rs.agreed = port_NetplayAgreed();
-    if (!port_ReplayResyncPack(frame, &blob, &size) ||
+    if (!port_ReplayResyncPack(frame, g_np_rs.agreed, &blob, &size) ||
         size > RESYNC_CHUNKS_MAX * RESYNC_CHUNK_BYTES) {
         port_Log("netplay: the host's state could not be packed for the "
                  "resync\n");
@@ -2255,14 +2284,26 @@ static s32 port_WatchResync(void) {
     s32 i;
 
     if (port_WatchStart(&blob, &size)) {
+        if (port_ReplayServedNeedsBase(blob, size, &frame)) {
+            /* the difference from a state this spectator has not: a later
+             * start is waited for (docs/NETPLAY.md, section 21) */
+            port_Log("watch: the start of frame %u is a resync's told from a "
+                     "state this spectator has not; a later one is waited "
+                     "for\n",
+                     frame);
+            port_WatchAskStart(frame + 1);
+            return 0;
+        }
         if (!port_ReplayResyncLoad(blob, size, &frame)) {
             port_Log("watch: the host's state of the resync could not be put "
                      "in\n");
             return -1;
         }
+        port_ReplayHoldBase((u32)-1);
         g_np_frame = frame;
         g_np_watch_parted = FALSE;
         g_np_epoch++;
+        g_np_resync_frame = frame;
         g_np_resynced_at = port_NetClock();
         for (i = 0; i < NETPLAY_HASHES; i++) {
             g_np_watch_hashes[i].frame = (u32)-1;
@@ -2357,6 +2398,7 @@ s32 port_RunWatch(u32 frame) {
                 g_np_watch_parted = TRUE;
                 g_np_watch_parted_frame = parted;
                 g_np_watch_parted_at = port_NetClock();
+                port_ReplayHoldBase(g_np_watch_agreed);
                 port_WatchAskStart(parted);
                 port_Log("watch: parted from the players' game after frame "
                          "%u: waiting for their host's resync\n",
@@ -2417,6 +2459,8 @@ s32 port_RunWatch(u32 frame) {
 
             mine->frame = g_np_frame;
             mine->hash = port_StateHash();
+            /* a state a resync may be told from (replay.c) */
+            port_ReplayKeepBase(g_np_frame, mine->hash, NULL);
             port_Log("netplay: frame %u hash %08X%08X\n", g_np_frame,
                      (u32)(mine->hash >> WORD_BITS), (u32)mine->hash);
         }

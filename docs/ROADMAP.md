@@ -740,7 +740,9 @@ the stage").
     the replay, so a replay of a resynced fight still plays.
     **Done on the port** ([`NETPLAY.md`](NETPLAY.md), section 21;
     [`PLAYING.md`](PLAYING.md), "Playing online"): a parting found, the
-    session goes on and the line says so; F5, any player's, or by itself
+    session goes on and the line says so; F5 or Select held a second
+    (a controller's, through the remapping; Select the resync's alone
+    while parted), any player's, or by itself
     three seconds on (`--resync-auto`), the host says a frame 20 ahead,
     every machine stops there, the host's state packed as a spectator's
     start (0.69 MB in a fight of two, 1.09 MB of four) goes to every
@@ -748,11 +750,13 @@ the stage").
     put in; the hashes held again from there (session protocol 21). Each
     machine's replay keeps it (`RSYN`) and plays through it; a parted
     spectator is given it by the lobby as the match's newest start; a
-    ranked digest leaves the parted hashes out. Proved on desyncs made
-    on purpose (`--net-part-at`): two and four players, a press and by
-    itself, the relay, a room's spectator, Windows' windows (NETPLAY.md,
-    "How it is proved"). Left: two real PCs; a spectator of a fight of
-    four whose host parts (over the lobby's 1 MB); a controller's press.
+    ranked digest leaves the parted hashes out; a fight of four's state,
+    over the lobby's 1 MB, is given its spectators as the difference from
+    the state of the frame all last held the same (320 KB of 1.06 MB).
+    Proved on desyncs made on purpose (`--net-part-at`): two and four
+    players, a press, Select held and by itself, the relay, a room's
+    spectator of two and of four, Windows' windows (NETPLAY.md, "How it
+    is proved"). Left: two real PCs.
 29. **A replay theatre and photo mode**: a replay played with a free
     camera, paused, slowed or stepped, from any frame; the picture
     without the HUD; a still saved at full size, and a clip saved as a

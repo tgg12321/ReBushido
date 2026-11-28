@@ -147,6 +147,10 @@
  * the same, then the state put in, as a spectator's start is (SERV, PIEC,
  * STRT, DISC, END); one chunk each, in their order */
 #define TAG_RESYNC TAG('R', 'S', 'Y', 'N')
+/* a spectators' start told as the difference from a state they have
+ * (docs/NETPLAY.md, section 21): its frame, hash and the difference */
+#define TAG_BASE TAG('B', 'A', 'S', 'E')
+#define BASE_HEAD_WORDS 5
 #define RESYNC_HEAD_BYTES (2 * WORD_BYTES)
 
 static const char g_magic[MAGIC_BYTES] = {
@@ -425,6 +429,37 @@ static struct {
     u32 kept_size[RESYNCS_MAX];
     u32 kept_room[RESYNCS_MAX];
 } g_resync;
+
+/* The states a resync's state for the spectators may be told as the
+ * difference from (docs/NETPLAY.md, section 21): the last few hashed
+ * frames' (the host's as they became final, a spectator's as it ran
+ * them), one of them held from where the machines parted to the resync;
+ * and the host's difference, raw, deflated and in a replay's chunks.
+ * A difference is runs of words: so many the same, then so many new and
+ * their bytes; a run of the same shorter than BASE_SAME_LEAST words is
+ * among the new. */
+#define BASES_KEPT 4
+#define BASE_SAME_LEAST 8
+#define BASE_PAIR_MOST 10
+
+static struct {
+    u8 *state[BASES_KEPT];
+    u32 frame[BASES_KEPT];
+    u64 hash[BASES_KEPT];
+    s32 had[BASES_KEPT];
+    s32 held; /* the one kept for the resync to come, or -1 */
+    u32 next;
+    u8 *raw;
+    u32 raw_room;
+    u32 raw_size;
+    u32 frame_of; /* the base the raw difference is from */
+    u64 hash_of;
+    u8 *packed;
+    u32 packed_room;
+    PortDeflate deflate;
+    u8 *blob;
+    u32 blob_size;
+} g_base = {.held = -1};
 
 static struct {
     u32 index;
@@ -2379,23 +2414,14 @@ void port_ReplayServe(s32 on) {
     g_serve.state = SERVE_NONE;
 }
 
-/* A state compressed (`packed`, `packed_bytes`, its runs of the disc
- * `matches`) into a replay's own chunks, SERV, PIEC, STRT, DISC and END,
- * at `out`: its input's number, netplay's frame it is of and its hash in
- * SERV. The bytes, or 0 where `room` is too small. The spectators' start
- * and a resync's state (port_replay.h) are each one. */
-static u32 port_ReplayStateBlob(
-    u8 *out, u32 room, u32 count, u32 frame, u64 hash, const u8 *packed,
-    u32 packed_bytes, const ReplayMatch *matches, u32 match_count) {
+/* A served state's first chunks at `out`: the file's head, SERV (its
+ * input's number, netplay's frame it is of and its hash) and PIEC. The
+ * bytes written. */
+static u32 port_ReplayServeHead(u8 *out, u32 count, u32 frame, u64 hash) {
     u32 at;
     u32 k;
     s32 i;
 
-    if (packed_bytes + match_count * MATCH_BYTES + KILOBYTE +
-            PIECES_MAX * (PIECE_NAME_BYTES + WORD_BYTES) >
-        room) {
-        return 0;
-    }
     port_CopyBytes(out, g_magic, MAGIC_BYTES);
     port_PutWord(out + MAGIC_BYTES, FORMAT_VERSION);
     at = HEAD_BYTES;
@@ -2425,6 +2451,26 @@ static u32 port_ReplayStateBlob(
         port_PutWord(out + at + PIECE_NAME_BYTES, piece.bytes);
         at += PIECE_NAME_BYTES + WORD_BYTES;
     }
+    return at;
+}
+
+/* A state compressed (`packed`, `packed_bytes`, its runs of the disc
+ * `matches`) into a replay's own chunks, SERV, PIEC, STRT, DISC and END,
+ * at `out`: its input's number, netplay's frame it is of and its hash in
+ * SERV. The bytes, or 0 where `room` is too small. The spectators' start
+ * and a resync's state (port_replay.h) are each one. */
+static u32 port_ReplayStateBlob(
+    u8 *out, u32 room, u32 count, u32 frame, u64 hash, const u8 *packed,
+    u32 packed_bytes, const ReplayMatch *matches, u32 match_count) {
+    u32 at;
+    u32 k;
+
+    if (packed_bytes + match_count * MATCH_BYTES + KILOBYTE +
+            PIECES_MAX * (PIECE_NAME_BYTES + WORD_BYTES) >
+        room) {
+        return 0;
+    }
+    at = port_ReplayServeHead(out, count, frame, hash);
     port_PutWord(out + at, TAG_START);
     port_PutWord(out + at + WORD_BYTES, WORD_BYTES + packed_bytes);
     port_PutWord(out + at + CHUNK_HEAD_BYTES, port_StateSize());
@@ -2536,9 +2582,13 @@ static void port_ReplayServeBoundary(void) {
 s32 port_ReplayServedStart(const u8 **blob, u32 *size, u32 *frame, u32 *made) {
     if (g_serve.on && g_serve.resync) {
         /* a resync's state: the spectators who parted from the players
-         * put it in (netplay.c) */
-        *blob = g_resync.blob;
-        *size = g_resync.size;
+         * put it in (netplay.c); as the difference from a state they have
+         * where the whole is more than the lobby keeps */
+        s32 told =
+            g_resync.size > PORT_REPLAY_SERVED_MOST && g_base.blob_size != 0;
+
+        *blob = told ? g_base.blob : g_resync.blob;
+        *size = told ? g_base.blob_size : g_resync.size;
         *frame = g_resync.frame;
         *made = g_serve.made;
         return TRUE;
@@ -2557,6 +2607,9 @@ static s32 port_ReplayPlayRoom(void);
 static s32 port_FindChunk(
     const u8 *bytes, u32 size, u32 tag, const u8 **found, u32 *found_size);
 static s32 port_ReplayUnpackStart(const u8 *bytes, u32 size);
+static s32 port_ReplayUnpackDiff(
+    const u8 *bytes, u32 size, const u8 *base, u32 base_size);
+static u32 port_GetVarint(const u8 *in, u32 size, u32 *at);
 static void port_ReplayKeep(s32 out);
 
 /* A match's start, as its host served it, put into the state, this run's
@@ -2567,11 +2620,17 @@ s32 port_ReplayLoadServed(const u8 *blob, u32 size, u32 *frame) {
     u32 serve_size;
     u64 hash;
     u64 put_in;
+    const u8 *base;
+    u32 base_size;
 
     if (!port_ReplayPlayRoom() ||
         !port_FindChunk(blob, size, TAG_SERVE, &serve, &serve_size) ||
-        serve_size < SERVE_HEAD_WORDS * WORD_BYTES ||
-        !port_ReplayUnpackStart(blob, size)) {
+        serve_size < SERVE_HEAD_WORDS * WORD_BYTES) {
+        return FALSE;
+    }
+    if (port_FindChunk(blob, size, TAG_BASE, &base, &base_size)
+            ? !port_ReplayUnpackDiff(blob, size, base, base_size)
+            : !port_ReplayUnpackStart(blob, size)) {
         return FALSE;
     }
     *frame = port_GetWord(serve + WORD_BYTES);
@@ -2599,8 +2658,13 @@ s32 port_ReplayLoadServed(const u8 *blob, u32 size, u32 *frame) {
  * session; each machine's replay of the fight it happened in keeps it
  * (RSYN), so that a playback puts it in at the same input. */
 
-/* The host's state packed for a resync (port_replay.h). */
-s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
+static u32 port_ReplayDiffMake(const u8 *base, const u8 *now, u32 size);
+static void port_ReplayDiffBlob(u32 count, u32 frame, u64 hash);
+
+/* The host's state packed for a resync (port_replay.h), and for the
+ * spectators the difference from the agreed frame's where the whole is
+ * too large for the lobby. */
+s32 port_ReplayResyncPack(u32 frame, u32 agreed, const u8 **blob, u32 *size) {
     u32 state = port_StateSize();
     u32 kept_work;
     u32 kept_count;
@@ -2648,6 +2712,22 @@ s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
     port_StateSave(g_resync.snapshot);
     hash = port_StateHash();
     port_ReplayClearOwn(g_resync.snapshot);
+    /* for the spectators, the difference from the state of the frame the
+     * machines last held the same, which they have: made before the disc's
+     * runs are cleared out of the snapshot, deflated below if the whole
+     * is too large for the lobby */
+    g_base.raw_size = 0;
+    g_base.blob_size = 0;
+    g_base.frame_of = agreed;
+    for (i = 0; i < BASES_KEPT && g_serve.on && agreed != NONE; i++) {
+        if (g_base.had[i] && g_base.frame[i] == agreed) {
+            port_ReplayClearOwn(g_base.state[i]);
+            g_base.raw_size =
+                port_ReplayDiffMake(g_base.state[i], g_resync.snapshot, state);
+            g_base.frame_of = agreed;
+            g_base.hash_of = g_base.hash[i];
+        }
+    }
     g_dedupe.sector_count = 0;
     g_dedupe.indexed = 0;
     g_dedupe.scanned = 0;
@@ -2688,6 +2768,9 @@ s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
     if (g_resync.size == 0) {
         return FALSE;
     }
+    if (g_serve.on && g_resync.size > PORT_REPLAY_SERVED_MOST) {
+        port_ReplayDiffBlob(count, frame, hash);
+    }
     *blob = g_resync.blob;
     *size = g_resync.size;
     return TRUE;
@@ -2696,6 +2779,9 @@ s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
 /* A resync's state put in (port_replay.h), kept as this program's last,
  * for the replay of the fight and the spectators it may serve. */
 s32 port_ReplayResyncLoad(const u8 *blob, u32 size, u32 *frame) {
+    const u8 *base;
+    u32 base_size;
+
     if (blob != g_resync.blob) {
         /* kept for the spectators, where this program serves them */
         if (g_resync.blob == NULL || g_resync.room < size) {
@@ -2713,7 +2799,292 @@ s32 port_ReplayResyncLoad(const u8 *blob, u32 size, u32 *frame) {
         return FALSE;
     }
     g_resync.frame = *frame;
+    if (port_FindChunk(g_resync.blob, size, TAG_BASE, &base, &base_size) &&
+        port_ReplayWrites()) {
+        /* a spectator's: the fight's replay keeps the state whole, which
+         * a playback puts in with no base of its own */
+        const u8 *whole;
+        u32 whole_size;
+
+        port_ReplayResyncPack(*frame, NONE, &whole, &whole_size);
+    }
     return TRUE;
+}
+
+/* ---- a resync's state for the spectators, told as a difference ---- */
+
+/* A hashed frame's state kept (port_replay.h): in the slot of that frame
+ * where one is (the host's frame made again), or the next not held. */
+void port_ReplayKeepBase(u32 frame, u64 hash, const void *saved) {
+    u32 state = port_StateSize();
+    s32 slot = -1;
+    s32 i;
+
+    if (g_base.state[0] == NULL) {
+        for (i = 0; i < BASES_KEPT; i++) {
+            g_base.state[i] = port_HostAllocate(state);
+            if (g_base.state[i] == NULL) {
+                return;
+            }
+        }
+    }
+    if (g_base.state[BASES_KEPT - 1] == NULL) {
+        return;
+    }
+    for (i = 0; i < BASES_KEPT; i++) {
+        if (g_base.had[i] && g_base.frame[i] == frame && i != g_base.held) {
+            slot = i;
+        }
+    }
+    for (i = 0; i < BASES_KEPT && slot < 0; i++) {
+        s32 at = (s32)((g_base.next + (u32)i) % BASES_KEPT);
+
+        if (at != g_base.held) {
+            slot = at;
+            g_base.next = (u32)at + 1;
+        }
+    }
+    if (slot < 0) {
+        return;
+    }
+    if (saved != NULL) {
+        /* the host's, as netplay saved it: copied, so that the state's
+         * pages do not take it for what they saved here last */
+        port_CopyBytes(g_base.state[slot], saved, state);
+        port_StateForget(g_base.state[slot]);
+    } else {
+        port_StateSave(g_base.state[slot]);
+    }
+    g_base.had[slot] = TRUE;
+    g_base.frame[slot] = frame;
+    g_base.hash[slot] = hash;
+}
+
+/* The kept state of `frame` held from being gone round (port_replay.h). */
+void port_ReplayHoldBase(u32 frame) {
+    s32 i;
+
+    g_base.held = -1;
+    for (i = 0; i < BASES_KEPT && frame != NONE; i++) {
+        if (g_base.had[i] && g_base.frame[i] == frame) {
+            g_base.held = i;
+        }
+    }
+}
+
+/* The base of a difference: the one kept of that frame and hash, or -1. */
+static s32 port_ReplayFindBase(u32 frame, u64 hash) {
+    s32 i;
+
+    for (i = 0; i < BASES_KEPT; i++) {
+        if (g_base.had[i] && g_base.frame[i] == frame &&
+            g_base.hash[i] == hash) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Whether a start served is a difference whose base is not kept here
+ * (port_replay.h). */
+s32 port_ReplayServedNeedsBase(const u8 *blob, u32 size, u32 *frame) {
+    const u8 *serve;
+    u32 serve_size;
+    const u8 *base;
+    u32 base_size;
+
+    if (!port_FindChunk(blob, size, TAG_BASE, &base, &base_size) ||
+        base_size < BASE_HEAD_WORDS * WORD_BYTES ||
+        !port_FindChunk(blob, size, TAG_SERVE, &serve, &serve_size) ||
+        serve_size < SERVE_HEAD_WORDS * WORD_BYTES) {
+        return FALSE;
+    }
+    *frame = port_GetWord(serve + WORD_BYTES);
+    return port_ReplayFindBase(
+               port_GetWord(base),
+               port_GetWord(base + WORD_BYTES) |
+                   ((u64)port_GetWord(base + 2 * WORD_BYTES) << WORD_BITS)) < 0;
+}
+
+/* The difference from `base` to `now` (`size` bytes, each a snapshot)
+ * into g_base.raw: its bytes, or 0 where there is no room. */
+static u32 port_ReplayDiffMake(const u8 *base, const u8 *now, u32 size) {
+    u32 words = size / WORD_BYTES;
+    u32 at = 0;
+    u32 out = 0;
+    u32 room = size + (words / BASE_SAME_LEAST + 2) * BASE_PAIR_MOST;
+
+    if (size % WORD_BYTES != 0) {
+        return 0;
+    }
+    if (g_base.raw_room < room) {
+        g_base.raw = port_HostAllocate(room);
+        g_base.raw_room = g_base.raw != NULL ? room : 0;
+        if (g_base.raw == NULL) {
+            return 0;
+        }
+    }
+    while (at < words) {
+        u32 same = 0;
+        u32 run = 0;
+        u32 end;
+
+        while (at + same < words &&
+               port_GetWord(base + (at + same) * WORD_BYTES) ==
+                   port_GetWord(now + (at + same) * WORD_BYTES)) {
+            same++;
+        }
+        at += same;
+        /* the new words, to the next run of the same long enough */
+        for (end = at; end < words && run < BASE_SAME_LEAST; end++) {
+            run = port_GetWord(base + end * WORD_BYTES) ==
+                          port_GetWord(now + end * WORD_BYTES)
+                      ? run + 1
+                      : 0;
+        }
+        if (run == BASE_SAME_LEAST) {
+            end -= BASE_SAME_LEAST;
+        }
+        out += port_PutVarint(g_base.raw + out, same);
+        out += port_PutVarint(g_base.raw + out, end - at);
+        port_CopyBytes(
+            g_base.raw + out, now + at * WORD_BYTES, (end - at) * WORD_BYTES);
+        out += (end - at) * WORD_BYTES;
+        at = end;
+    }
+    return out;
+}
+
+/* The host's difference deflated into a replay's chunks for the
+ * spectators (SERV, PIEC, BASE, END), where it was made and fits. */
+static void port_ReplayDiffBlob(u32 count, u32 frame, u64 hash) {
+    u32 state = port_StateSize();
+    u32 room;
+    u32 at;
+    u8 *out;
+
+    if (g_base.raw_size == 0) {
+        port_Log("replay: a resync's state for the spectators: the state of "
+                 "frame %u, the last the same, is not kept\n",
+                 g_base.frame_of);
+        return;
+    }
+    room = port_DeflateBound(g_base.raw_size);
+    if (g_base.packed_room < room) {
+        g_base.packed = port_HostAllocate(room);
+        g_base.packed_room = g_base.packed != NULL ? room : 0;
+        /* the deflated difference, and the chunks round it */
+        g_base.blob = port_HostAllocate(
+            room + KILOBYTE + PIECES_MAX * (PIECE_NAME_BYTES + WORD_BYTES));
+        if (g_base.packed == NULL || g_base.blob == NULL) {
+            g_base.packed_room = 0;
+            return;
+        }
+    }
+    port_DeflateBegin(&g_base.deflate, g_base.raw, g_base.raw_size,
+                      g_base.packed, g_base.packed_room);
+    while (!port_DeflateSome(&g_base.deflate, FILE_MAX)) {
+    }
+    if (g_base.deflate.failed) {
+        return;
+    }
+    out = g_base.blob;
+    at = port_ReplayServeHead(out, count, frame, hash);
+    port_PutWord(out + at, TAG_BASE);
+    port_PutWord(out + at + WORD_BYTES,
+                 BASE_HEAD_WORDS * WORD_BYTES + g_base.deflate.out_at);
+    at += CHUNK_HEAD_BYTES;
+    port_PutWord(out + at, g_base.frame_of);
+    port_PutWord(out + at + WORD_BYTES, (u32)g_base.hash_of);
+    port_PutWord(out + at + 2 * WORD_BYTES, (u32)(g_base.hash_of >> WORD_BITS));
+    port_PutWord(out + at + 3 * WORD_BYTES, g_base.raw_size);
+    port_PutWord(out + at + 4 * WORD_BYTES, state);
+    at += BASE_HEAD_WORDS * WORD_BYTES;
+    port_CopyBytes(out + at, g_base.packed, g_base.deflate.out_at);
+    at += g_base.deflate.out_at;
+    port_PutWord(out + at, TAG_END);
+    port_PutWord(out + at + WORD_BYTES, 0);
+    g_base.blob_size = at + CHUNK_HEAD_BYTES;
+    port_Log("replay: a resync's state for the spectators, more than the "
+             "lobby keeps whole: told as the difference from frame %u's, "
+             "%u bytes (%u raw)\n",
+             g_base.frame_of, g_base.blob_size, g_base.raw_size);
+}
+
+/* A difference served (BASE) put into the playback's start: the base this
+ * spectator kept, this run's own cleared, and the new words over it.
+ * FALSE where it has not the base, or the difference is not whole or not
+ * of this build's pieces. */
+static s32 port_ReplayUnpackDiff(
+    const u8 *bytes, u32 size, const u8 *base, u32 base_size) {
+    const u8 *pieces;
+    u32 pieces_size;
+    u32 state = port_StateSize();
+    u32 raw;
+    u32 at = 0;
+    u32 word = 0;
+    s32 kept;
+    s32 i;
+
+    if (base_size < BASE_HEAD_WORDS * WORD_BYTES ||
+        port_GetWord(base + 4 * WORD_BYTES) != state ||
+        !port_FindChunk(bytes, size, TAG_PIECES, &pieces, &pieces_size) ||
+        pieces_size < WORD_BYTES ||
+        port_GetWord(pieces) != (u32)port_StatePieceCount() ||
+        pieces_size < WORD_BYTES + port_GetWord(pieces) *
+                                       (PIECE_NAME_BYTES + WORD_BYTES)) {
+        return FALSE;
+    }
+    for (i = 0; i < port_StatePieceCount(); i++) {
+        const u8 *of =
+            pieces + WORD_BYTES + (u32)i * (PIECE_NAME_BYTES + WORD_BYTES);
+        PortStatePiece piece;
+
+        port_StateGetPiece(i, &piece);
+        if (!port_TextsEqual((const char *)of, piece.name) ||
+            port_GetWord(of + PIECE_NAME_BYTES) != piece.bytes) {
+            return FALSE;
+        }
+    }
+    kept = port_ReplayFindBase(
+        port_GetWord(base),
+        port_GetWord(base + WORD_BYTES) |
+            ((u64)port_GetWord(base + 2 * WORD_BYTES) << WORD_BITS));
+    if (kept < 0) {
+        port_Log("replay: the start is told as the difference from the state "
+                 "of frame %u, which this program has not kept\n",
+                 port_GetWord(base));
+        return FALSE;
+    }
+    raw = port_GetWord(base + 3 * WORD_BYTES);
+    if (g_base.raw_room < raw) {
+        g_base.raw = port_HostAllocate(raw);
+        g_base.raw_room = g_base.raw != NULL ? raw : 0;
+    }
+    if (g_base.raw == NULL || g_base.raw_room < raw ||
+        !port_ZlibInflate(
+            base + BASE_HEAD_WORDS * WORD_BYTES,
+            base_size - BASE_HEAD_WORDS * WORD_BYTES, g_base.raw, raw)) {
+        return FALSE;
+    }
+    port_CopyBytes(g_play.start, g_base.state[kept], state);
+    port_ReplayClearOwn(g_play.start);
+    while (at < raw) {
+        u32 same = port_GetVarint(g_base.raw, raw, &at);
+        u32 fresh = port_GetVarint(g_base.raw, raw, &at);
+
+        if (same > state / WORD_BYTES - word ||
+            fresh > state / WORD_BYTES - word - same ||
+            fresh * WORD_BYTES > raw - at) {
+            return FALSE;
+        }
+        word += same;
+        port_CopyBytes(g_play.start + word * WORD_BYTES, g_base.raw + at,
+                       fresh * WORD_BYTES);
+        word += fresh;
+        at += fresh * WORD_BYTES;
+    }
+    return word == state / WORD_BYTES;
 }
 
 /* The last resync's state the session's (port_replay.h): the session's
@@ -2762,7 +3133,7 @@ void port_ReplayResynced(u32 agreed_frame) {
         g_resync.at[resync] > back ? g_resync.at[resync] - back : 0;
     g_resync.count++;
     port_Log("replay: the fight's resync %d at its frame %u kept; its hashes "
-             "from its frame %u to there are not held\resync",
+             "from its frame %u to there are not held\n",
              g_resync.count, g_resync.at[resync], g_resync.agreed[resync]);
 }
 
