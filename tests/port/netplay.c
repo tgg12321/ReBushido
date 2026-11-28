@@ -102,7 +102,8 @@ static void test_PackState(u8 *out, u64 state, u32 frame) {
     port_NetPutWord(out + sizeof(state), frame);
 }
 
-s32 port_ReplayResyncPack(u32 frame, const u8 **blob, u32 *size) {
+s32 port_ReplayResyncPack(u32 frame, u32 agreed, const u8 **blob, u32 *size) {
+    (void)agreed;
     test_PackState(g_test_packed, g_test_game, frame);
     *blob = g_test_packed;
     *size = RESYNC_TEST_BYTES;
@@ -141,6 +142,21 @@ void port_StatsResynced(u32 back, s32 loaded) {
 }
 
 u64 port_StateBuildSum(void) { return 0x0123456789ABCDEFULL; }
+
+void port_ReplayKeepBase(u32 frame, u64 hash, const void *saved) {
+    (void)frame;
+    (void)hash;
+    (void)saved;
+}
+
+void port_ReplayHoldBase(u32 frame) { (void)frame; }
+
+s32 port_ReplayServedNeedsBase(const u8 *blob, u32 size, u32 *frame) {
+    (void)blob;
+    (void)size;
+    (void)frame;
+    return 0;
+}
 
 s32 port_RelayIsRelayed(void) { return 0; }
 
@@ -244,8 +260,11 @@ u32 port_SessionLeftAt(void) { return 0; }
 
 s32 port_SessionResult(void) { return 0; }
 
+/* what this program's player holds (test_SelectHeld) */
+static u16 g_test_held;
+
 void port_DriverInput(PortInput *input) {
-    input->buttons[0] = 0;
+    input->buttons[0] = g_test_held;
     input->buttons[1] = 0;
 }
 
@@ -847,6 +866,43 @@ static void test_HostResyncs(void) {
     g_port_net_links[0].socket = -1;
 }
 
+/* The host parted, neither resyncing by itself: its player holds Select
+ * (a controller's press for the resync). Select is the game's no more
+ * from the parting (the pad's inputs are sent without it); held a second,
+ * RESYNC_HOLD_FRAMES of the local pad's frames, it asks for the resync as
+ * F5 does, and not a frame before. */
+static void test_SelectHeld(void) {
+    u32 from;
+    u32 i;
+
+    test_Begin();
+    test_LinkUp();
+    port_SetNetplayResyncAuto(0);
+    test_LinkTells(0, 1, 0, 120, TEST_HASHED, test_TrueHash(TEST_HASHED) ^ 1,
+                   test_TheirInput, 0);
+    while (!g_np_parted && g_np_frame < TEST_RUN_TO) {
+        test_ResyncTurn();
+    }
+    CHECK(g_np_parted);
+    CHECK(!g_np_resync_asked);
+    g_test_held = PADselect | PADRdown;
+    from = g_np_local_count;
+    while (g_np_local_count < from + RESYNC_HOLD_FRAMES - 1) {
+        test_ResyncTurn();
+    }
+    CHECK(!g_np_resync_asked);
+    CHECK_EQ(g_np_resync_at, 0);
+    for (i = from; i < g_np_local_count; i++) {
+        CHECK_EQ(g_np_inputs[0][i & NETPLAY_INPUT_MASK], PADRdown);
+    }
+    test_ResyncTurn();
+    CHECK(g_np_resync_asked);
+    CHECK(g_np_resync_at != 0);
+    g_test_held = 0;
+    port_SetNetplayResyncAuto(RESYNC_AUTO_FRAMES);
+    g_port_net_links[0].socket = -1;
+}
+
 /* A chunk of a host's state of `state` at `frame`, resync `epoch`, as the
  * host sends it, into the queue. */
 static void test_QueueChunk(u64 state, u32 frame, u32 epoch, u32 chunk) {
@@ -964,4 +1020,6 @@ void test_Main(void) {
     /* the host resyncing a session that parted, and a guest resynced */
     test_HostResyncs();
     test_GuestResynced();
+    /* ... asked for by Select held */
+    test_SelectHeld();
 }

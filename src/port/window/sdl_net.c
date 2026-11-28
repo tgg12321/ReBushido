@@ -157,13 +157,14 @@ static u32 port_NetWords(char *out, u32 room) {
         } else if (stats.resync_in != 0) {
             snprintf(out, room,
                      "The game fell out of step with the other %s   |   "
-                     "F5: resync now   |   by itself in %u s",
+                     "F5 or hold Select: resync now   |   by itself in %u s",
                      whose,
                      (stats.resync_in + FRAMES_A_SECOND - 1) / FRAMES_A_SECOND);
         } else {
             snprintf(out, room,
                      "The game fell out of step with the other %s   |   "
-                     "F5: resync (the host's game on every machine)",
+                     "F5 or hold Select: resync (the host's game on "
+                     "every machine)",
                      whose);
         }
         return COLOR_WAIT;

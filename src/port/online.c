@@ -527,7 +527,20 @@ static s32 port_OnlineWatchWaits(char *why, u32 room) {
         port_RoomTick();
         port_WatchTick();
         if (port_WatchSettings() != NULL && port_WatchStart(&blob, &size)) {
-            return 1;
+            u32 frame;
+
+            if (!port_ReplayServedNeedsBase(blob, size, &frame)) {
+                return 1;
+            }
+            /* a resync's state told as the difference from a state the
+             * match's spectators had (a fight of four's): no way in for
+             * one who comes now; the next fight's start is (docs/NETPLAY.md,
+             * section 21) */
+            port_Log("room: match %d's newest start is a resync's, told from "
+                     "a state this spectator has not: its next fight's start "
+                     "is waited for\n",
+                     next->match.number);
+            port_WatchAskStart(frame + 1);
         }
         port_RoomGet(&view);
         if (port_SessionIsCanceled()) {

@@ -468,6 +468,9 @@ ROOM_SEED = 4242
 # rooms-resync: the host of the room's match parts at this frame, in the
 # fight (which begins near 1,450 and is decided near 2,000)
 ROOM_PART_AT = 1550
+# rooms-four-resync: the host of a room's match of four parts at this
+# frame, in its fight (which begins near 2,075 and is decided near 4,400)
+ROOM_FOUR_PART_AT = 2700
 # Bunta leaves the second match in the middle of its fight, at this frame
 # of the session (its fight begins near 1,450 and is decided near 2,000).
 LEAVE_FRAME = 1700
@@ -1732,6 +1735,106 @@ def rooms_four(case, stock):
                          'match\'s card), every one kept as a replay on the three who stayed, the same on '
                          'all three and played back with every hash the same' % (fights, dai))
 
+def case_rooms_four_resync(case):
+    """A room's match of four watched as its host parts (docs/NETPLAY.md,
+    section 21): Ayame opens a room of matches of four and plays its first
+    with Bunta, Chie and Dai; Sora watches from the fight's start. Ayame's
+    own state parts on purpose in the fight, so that her three guests and
+    Sora (who run the inputs as they are) part from her; she resyncs them
+    by herself three seconds after. Her state whole is more than the
+    lobby keeps (1 MB), so the lobby is given it as the difference from
+    her state of the frame all last held the same, which Sora kept; Sora
+    puts it in and watches on to the match's end, every hash after it the
+    same on all five."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(HEADLESS, case.folder, four=True)
+    base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--net-plan-pads',
+            '--net-seed', str(ROOM_SEED), '--plan', plan, '--trace'] + TROUBLE
+
+    def member(label, *more):
+        return case.start(label, base + ['--out', os.path.join(case.folder, label), '--player', label.capitalize()] +
+                          list(more))
+
+    procs = [member('ayame', '--room-open', 'Parted', '--room-rule', 'fixed', '--room-size', '4', '--room-matches',
+                    '1', '--net-part-at', str(ROOM_FOUR_PART_AT))]
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", CODE_SECONDS)
+    if code is None:
+        case.fail('the room of several was given no code')
+        return
+    code = code.group(1)
+    for label in ('bunta', 'chie', 'dai'):
+        procs.append(member(label, '--room-enter', code, '--room-matches', '1'))
+        if case.wait_for(label, r'room: in room', 60) is None:
+            case.fail('%s never came into the room' % label.capitalize())
+    # Sora keeps the fight she watched as a replay: the resync in it whole,
+    # though it came to her as a difference
+    replays = os.path.join(case.folder, 'sora-replays')
+    if os.path.isdir(replays):
+        shutil.rmtree(replays)
+    os.makedirs(replays)
+    procs.append(member('sora', '--room-enter', code, '--room-watcher', '--room-matches', '1', '--replays',
+                        replays))
+    labels = ['ayame', 'bunta', 'chie', 'dai', 'sora']
+    codes = wait_all(procs, SECONDS * 2)
+    segments = {}
+    for label, code_ in zip(labels, codes):
+        if code_ != 0:
+            case.fail('%s ended with %s (%s)' % (label, code_, os.path.join(case.folder, label + '.err')))
+        segments[label] = room_segments(case.err(label))
+    who = {label: seg.get(1) for label, seg in segments.items()}
+    if any(part is None for part in who.values()):
+        case.fail('match 1 was not played and watched by all five: %s' % ', '.join(
+            label for label, part in who.items() if part is None))
+        return
+    players = [label for label in labels if who[label]['role'] != 'watch']
+    if players != labels[:4]:
+        case.fail('match 1 was played by %s' % ', '.join(players))
+        return
+    more, parted = port_net.resync_problems(case.name, ['\n'.join(who[label]['text']) for label in players],
+                                            [who[label]['hashes'] for label in players])
+    case.problems += more
+    host = '\n'.join(who['ayame']['text'])
+    told = re.search(r"replay: a resync's state for the spectators, more than the lobby keeps whole: told as the "
+                     r"difference from frame (\d+)'s, (\d+) bytes \((\d+) raw\)", host)
+    whole = re.search(r"replay: a resync's state, netplay's frame \d+: (\d+) bytes", host)
+    if 'too large for the lobby' in host or not told or int(told.group(2)) > 1024 * 1024:
+        case.fail('Ayame did not give the lobby her resync\'s state as a difference that fits')
+    sora = '\n'.join(who['sora']['text'])
+    watched = re.search(r"watch: resync 1: the host's state of frame (\d+) put in", sora)
+    if 'watch: parted from the players\' game after frame' not in sora or not watched:
+        case.fail('Sora did not part from the players and put the resync\'s state in')
+    reference = who['ayame']['hashes']
+    for label in labels[1:]:
+        mine = who[label]['hashes']
+        differ = [f for f in sorted(set(mine) & set(reference))
+                  if mine[f] != reference[f] and not port_net.in_parted(f, parted)]
+        if differ:
+            case.fail('%s\'s hash of frame %d is not Ayame\'s' % (label, differ[0]))
+    if watched and told:
+        after = [f for f in who['sora']['hashes'] if f >= int(watched.group(1))]
+        held = re.search(r"(\d+) hashes the same as its players'", sora)
+        if len(after) < 5 or not held:
+            case.fail('Sora ran %d hashes after the resync, and said %s' % (
+                len(after), held.group(0) if held else 'nothing of the match\'s end'))
+        else:
+            case.said.append('Ayame parted at frame %d; the resync at frame %s put her state (%s bytes whole) on '
+                             'her three guests, and on Sora by the lobby as the difference from frame %s\'s, %s '
+                             'bytes (%s raw); Sora ran %d hashes after it, %s held in all' % (
+                                 ROOM_FOUR_PART_AT, watched.group(1), whole.group(1) if whole else '?',
+                                 told.group(1), told.group(2), told.group(3), len(after), held.group(1)))
+    kept = sorted(f for f in os.listdir(replays) if f.endswith('.rbr'))
+    if not kept:
+        case.fail('Sora kept no replay of the fight she watched')
+    for name in kept:
+        code_, said = port_replay_check(os.path.join(replays, name))
+        if code_ != 0:
+            case.fail('Sora\'s replay %s does not play back: %s' % (name, said))
+    if kept and not case.problems:
+        case.said.append('Sora\'s replay of the fight keeps the resync\'s state whole and plays back through it '
+                         '(%s)' % said)
+
+
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
                   ('direct6', case_direct6), ('punchto', case_punchto), ('list', case_list),
                   ('refused', case_refused),
@@ -1758,6 +1861,9 @@ FOUR_CASES = [('four-punch-win' if IS_WINDOWS else 'four-punch', case_four_punch
               # meets him: his seat taken by another
               ('four-gives-up-win' if IS_WINDOWS else 'four-gives-up', case_four_gives_up)]
 FOUR_LATER_CASES = [('rooms-four-win' if IS_WINDOWS else 'rooms-four', case_rooms_four)]
+# ... and a resync in a room's match of four, watched (docs/NETPLAY.md,
+# section 21; alone: five programs)
+FOUR_RESYNC_CASES = [('rooms-four-resync-win' if IS_WINDOWS else 'rooms-four-resync', case_rooms_four_resync)]
 # ... and a room's matches of several fights, a leave in one (alone: five
 # programs, as rooms-four)
 FOUR_ROOM_CASES = [('rooms-four-stock-win' if IS_WINDOWS else 'rooms-four-stock', case_rooms_four_stock)]
@@ -1811,14 +1917,16 @@ def case_win_headless(case):
 def case_win_resync(case):
     """A resync between two windows (docs/NETPLAY.md, section 21): the
     guest's state parts on purpose in the fight, neither resyncs by itself
-    (--resync-auto 0), and the guest's player asks (as F5 does,
-    --resync-ask-at); the host's state goes to it and the session goes on
-    to the guest's leaving, the window's replays the same on both."""
+    (--resync-auto 0), and the guest's player asks, holding Select a second
+    (port_net.RESYNC_HOLD, a controller's way, as F5 is the keyboard's);
+    the host's state goes to it and the session goes on to the guest's
+    leaving, the window's replays the same on both."""
     args = argparse.Namespace(out=case.folder, latency=60, loss=5, delay=2)
     case.problems += port_net.check_session(
         'windows-resync', os.path.join(REPO, WINDOW), args, (case.port(1), case.port(2)), True, 'stock',
-        [['--resync-auto', '0'], ['--resync-auto', '0', '--net-part-at', str(port_net.RESYNC_PART_AT),
-                                  '--resync-ask-at', str(port_net.RESYNC_ASK_AT)]], True)
+        [['--resync-auto', '0'], ['--resync-auto', '0', '--net-part-at', str(port_net.RESYNC_PART_AT)]], True,
+        [[], [port_net.RESYNC_HOLD]])
+    case.problems += port_net.resync_held(os.path.join(case.folder, 'session', 'windows-resync'))
 
 
 def case_win_window(case):
@@ -2436,7 +2544,7 @@ def main():
     else:
         cases = HEADLESS_CASES
     later = LATER_CASES if args.what == 'headless' else WINDOWS_LATER_CASES if args.what == 'windows' else []
-    fours = [FOUR_CASES, FOUR_LATER_CASES, FOUR_LEAVE_CASES, FOUR_ROOM_CASES] if args.what != 'internet' else []
+    fours = [FOUR_CASES, FOUR_LATER_CASES, FOUR_LEAVE_CASES, FOUR_ROOM_CASES, FOUR_RESYNC_CASES] if args.what != 'internet' else []
     if args.only:
         cases = [c for c in cases if c[0] in args.only]
         later = [c for c in later if c[0] in args.only]
@@ -2450,6 +2558,10 @@ def main():
         problems += run(later, args.port_base + len(cases) * PORTS_PER_CASE)
     base = args.port_base + (len(cases) + len(later)) * PORTS_PER_CASE
     for batch in fours:
+        if batch is fours[-1] and fours[-1] is not fours[0]:
+            # the last batch on the first cases' ports, done with by then:
+            # the checkout's span of ports is no wider for it
+            base = args.port_base
         if batch:
             problems += run(batch, base)
             base += len(batch) * PORTS_PER_CASE

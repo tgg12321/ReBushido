@@ -102,8 +102,12 @@ the counter in the corner: `59.8/30.0 100%` is the pictures shown a
 second, the game's own frames a second (30 in a fight and 60 in the
 main menu are full speed), and the speed against the console's.
 Online, **F5** resyncs a game that has fallen out of step with the
-other player's ("Playing online", below). In a fight offline, **F4** is
-photo mode ("Photo mode", below).
+other player's ("Playing online", below); on a controller, **hold
+Select** (Back) a second. Select is the resync's only while the games
+are out of step, and holding it then is not pressed in the game; it is
+whatever key or button your settings make Select (`p1.select`, below),
+Right Shift on the keyboard unless you change it. In a fight offline,
+**F4** is photo mode ("Photo mode", below).
 
 **F9 keeps a report of a problem**: press it when something looked or
 sounded wrong, or the game stuttered, and a folder
@@ -1333,17 +1337,20 @@ same way, and the pages say why.
 **If the two games fall out of step** (a desync: the two PCs' games
 have come to differ, which should not happen, and each of you would see
 a fight of his own), the session goes on and the line at the top says
-*The game fell out of step with the other player's | F5: resync now |
-by itself in 3 s*. Press **F5**, either of you (or anyone's, with four
-players), or wait three seconds: the game stops a moment (*Resyncing:
+*The game fell out of step with the other player's | F5 or hold Select:
+resync now | by itself in 3 s*. Press **F5** or **hold Select** a second
+(on a controller, Back), either of you (or anyone's, with four players),
+or wait three seconds: the game stops a moment (*Resyncing:
 the host's game is coming*, with how much of it has come, a second or
 two; a few through the lobby's relay), the host's game is put on every
 PC, and the fight goes on from there, *Back in step* on the line. If it
-falls out of step again within twenty seconds it waits for F5. Only if
-the host's game cannot reach you (nothing of it for 15 seconds) does the
-session end, as before. A spectator who falls out of step with the
-players waits for the same and watches on. The fight's replay keeps the
-resync and plays to its end.
+falls out of step again within twenty seconds it waits for F5 or
+Select. Only if the host's game cannot reach you (nothing of it for 15
+seconds) does the session end, as before. A spectator who falls out of
+step with the players waits for the same and watches on, in a fight of
+four as in one of two. The fight's replay keeps the resync and plays to
+its end. (A spectator who comes into a fight of four after its resync
+waits for its next fight to watch from.)
 The settings menu cannot be opened during a session (the other
 player's game would have to stop too).
 

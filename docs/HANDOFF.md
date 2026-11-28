@@ -97,12 +97,14 @@ lessons still holds unless this section says otherwise.
 
 - ROADMAP 28, the resync (2026-11-27, NETPLAY.md, section 21): done on
   the port, proved on desyncs made on purpose (`port_net.py resync`,
-  `port_net_lobby.py` `relay-resync`, `rooms-resync`, `win-resync`).
-  Left: a spectator of a fight of four whose host parts (its state is
-  1.09 MB, over the lobby's 1 MB for a start: serve it as the difference
-  from the fight's start, which every spectator has); a controller's
-  press (F5 only; by itself after three seconds otherwise); the three
-  seconds tried with players. Session protocol 21.
+  `port_net_lobby.py` `relay-resync`, `rooms-resync`,
+  `rooms-four-resync`, `win-resync`). A controller's press is Select held
+  a second while parted (2026-11-28); a fight of four's state, over the
+  lobby's 1 MB, goes to its spectators as the difference from the agreed
+  frame's state, which they keep (320 KB of 1.06 MB). Left: Select's
+  second and the three seconds tried with players; a spectator who comes
+  into a fight of four after its resync waits for the next fight. Session
+  protocol 21, lobby 4, both unchanged.
 - ROADMAP 30, stats (2026-11-27, PORT.md and PLAYING.md, "Stats"): the
   record (`rebushido-stats.txt`) and the settings menu's Stats page are
   in, held by `tests/port/stats.c`, `tools/port_stats.py` and
