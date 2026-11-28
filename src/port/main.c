@@ -297,13 +297,19 @@ static const char g_port_usage[] =
     "  --training-slow N  slow motion shows each frame N times, 2 to 8\n"
     "  --tournament SPEC  a local tournament begun at the start: words split\n"
     "                 by commas, single or double, random or order (the\n"
-    "                 seeding), one, first_to:N or stock:N, seed:N, and two\n"
+    "                 seeding), one, first_to:N, stock:N or crew:N (2 to\n"
+    "                 5), seed:N, and two\n"
     "                 to eight entrants, pN (the PC's pad N) or\n"
     "                 cpu:LEVEL[:FIGHTER[:WEAPON]], each perhaps /Name\n"
     "                 (docs/PLAYING.md, \"Tournament\")\n"
     "  --tournament-auto N  ... each match begun N inputs after the bracket is\n"
     "                 up at the main menu, as if Play were pressed (a test's)\n"
     "  --tournament-quit  ... and the program ended N inputs after it is over\n"
+    "  --tournament-file FILE  keep a local tournament not finished in FILE,\n"
+    "                 to be resumed (the window's is beside the settings)\n"
+    "  --tournament-resume  the tournament kept there begun again at the start\n"
+    "  --tournament-quit-in N  the program ended in the fight of the match\n"
+    "                 after N decided (a test's, of a tournament resumed)\n"
     "  --match single|stock:N|first_to:N|crew:N  the match rule the stage\n"
     "                 select starts at, N 1 to 9, a crew's 2 to 8 (five\n"
     "                 if not given; the window's match_rule and\n"
@@ -640,6 +646,8 @@ s32 port_Main(s32 argc, char **argv) {
             room_auto.lie = TRUE;
         } else if (port_TextsEqual(word, "--tournament-quit")) {
             port_SetTournamentQuit();
+        } else if (port_TextsEqual(word, "--tournament-resume")) {
+            port_SetTournamentResumeAtStart();
         } else if (port_TextsEqual(word, "--room-until-champion")) {
             room_auto.until_champion = TRUE;
         } else if (port_TextsEqual(word, "--room-quit-left")) {
@@ -776,6 +784,17 @@ s32 port_Main(s32 argc, char **argv) {
             if (!port_AskTournamentWords(argv[++i])) {
                 port_UsageError("--tournament: not a tournament: ", argv[i]);
             }
+        } else if (port_TextsEqual(word, "--tournament-file") && has_value) {
+            port_SetTournamentFile(argv[++i]);
+        } else if (port_TextsEqual(word, "--tournament-quit-in") && has_value) {
+            s32 decided;
+
+            if (!port_ParseNumber(argv[++i], &decided) || decided < 0) {
+                port_UsageError("--tournament-quit-in takes a number of "
+                                "matches, not ",
+                                argv[i]);
+            }
+            port_SetTournamentQuitIn(decided);
         } else if (port_TextsEqual(word, "--tournament-auto") && has_value) {
             s32 steps;
 

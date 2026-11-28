@@ -976,6 +976,8 @@ static void select_PortTournamentCpu(void) {
                         if ((at & SELECT_FIGHTER_OPEN) &&
                             (own || !(at & SELECT_FIGHTER_TAKEN)) &&
                             (pass == 1 || cell->fighter == fighter) &&
+                            /* (a Crew's: never one its crew has) */
+                            !port_MatchCrewHas(side, cell->fighter) &&
                             cell->fighter != SELECT_FIGHTER_FIXED_1 &&
                             cell->fighter != SELECT_FIGHTER_FIXED_2) {
                             *flags &= ~SELECT_FIGHTER_TAKEN;

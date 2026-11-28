@@ -100,6 +100,9 @@ static s32 port_MatchTournamentPage(PortMatch *match) {
     }
     match->page_rule = (u8)rule;
     match->page_count = (u8)port_MatchCount(count);
+    if (rule == PORT_MATCH_CREW) {
+        match->page_crew = (u8)port_MatchCrewSize(count);
+    }
     match->page_teams = PORT_TEAMS_ONE;
     return TRUE;
 }
@@ -166,6 +169,20 @@ static void port_MatchCrewBegin(PortMatch *match) {
             match->crew[side][place].fighter =
                 g_fighter_roster_characters[(u8)g_fight_config.roster[side]];
             match->crew[side][place].weapon = (u8)g_fight_config.weapon[side];
+        }
+    }
+    /* a tournament's match of two CPUs, which has no select screen:
+     * the crews it drew (port_tournament.h) */
+    for (place = 0; place < match->count && port_TournamentGivesCrews();
+         place++) {
+        for (side = 0; side < 2; side++) {
+            s32 fighter;
+            s32 weapon;
+
+            if (port_TournamentCrewPick(side, place, &fighter, &weapon)) {
+                match->crew[side][place].fighter = (u8)fighter;
+                match->crew[side][place].weapon = (u8)weapon;
+            }
         }
     }
     match->crew_size = match->count;
@@ -364,10 +381,16 @@ void port_MatchFightOver(s32 mode, s32 p1_fell, s32 p2_fell) {
     } else if (match->rule == PORT_MATCH_CREW) {
         /* the loser's fighter out, both on a draw; the match is over when
          * a crew has none left, drawn if both ran out at once */
-        if (match->last != PORT_MATCH_WON_P2) {
+        /* (a tournament's, where both crews' last fighters fell
+         * together: a bracket needs a winner, so nobody is out and the
+         * two fight again, sudden death, as Stock's last lives do) */
+        s32 sudden = match->last == PORT_MATCH_DRAW && match->lives[0] == 1 &&
+                     match->lives[1] == 1 && port_TournamentIsPlaying();
+
+        if (match->last != PORT_MATCH_WON_P2 && !sudden) {
             match->lives[1]--;
         }
-        if (match->last != PORT_MATCH_WON_P1) {
+        if (match->last != PORT_MATCH_WON_P1 && !sudden) {
             match->lives[0]--;
         }
         if (match->lives[0] == 0 || match->lives[1] == 0) {
@@ -616,6 +639,8 @@ void port_MatchCrewTake(s32 side, s32 fighter, s32 weapon) {
         match->crew_grid = match->crew_picked < match->crew_size;
     }
 }
+
+s32 port_MatchCrewPlace(void) { return g_port_match.crew_picked; }
 
 s32 port_MatchCrewDone(void) {
     PortMatch *match = port_Match();
@@ -866,7 +891,8 @@ void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
     match->rule_row =
         match->rule_first ? PORT_MATCH_ROW_RULE : PORT_MATCH_ROW_CPU;
     match->rule_sides = (u8)sides;
-    if (match->rule_first && room && !to_stages) {
+    if (match->rule_first && (room || tournament) && !to_stages) {
+        /* (a tournament's Crew: its places picked from the first) */
         port_MatchRuleTaken(match);
     }
 }

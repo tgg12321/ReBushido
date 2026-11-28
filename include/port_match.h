@@ -242,6 +242,9 @@ extern s32 port_MatchModeHasRules(s32 mode);
 extern s32 port_MatchCrewWanted(s32 mode, s32 sides);
 /* A side's pick for the place being picked. */
 extern void port_MatchCrewTake(s32 side, s32 fighter, s32 weapon);
+/* The crews' place being picked now, from 0 (a tournament's CPU picks
+ * its crew's: port_tournament.h). */
+extern s32 port_MatchCrewPlace(void);
 /* The place just taken was the crews' last. */
 extern s32 port_MatchCrewDone(void);
 /* A crew's place after the first is being picked (the grid, the weapons). */

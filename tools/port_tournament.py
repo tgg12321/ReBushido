@@ -43,6 +43,33 @@ The cases:
   rollback  byes' tournament with the rollback self-test (--rollback-test 8
             --rollback-every 24) and run-ahead 2: the same matches, places
             and record as byes'.
+  resume    four CPUs, double elimination, kept in a file (--tournament-
+            file): played through once; then again, the program ended 300
+            frames into the fight of the fourth match (--tournament-quit-in
+            3), the file holding the three decided, and a third run begun
+            from the file alone (--tournament-resume): the fourth match
+            played again from its start, and every match, its sides, the
+            champion and the record (but the dates) those of the run not
+            stopped; the file taken away when it is over.
+  windowresume  resume's tournament stopped in the headless port, then
+            resumed in the window's program as a player resumes one: the
+            main menu's Tournament, its page's Resume row (above the
+            entrants, the page pictured into --shots' resume/), the
+            bracket's Play: the same champion as resume's run not stopped.
+  crew      four CPUs, single elimination, Crew 3 (crew:3): each match of
+            two CPUs straight to its fights, each crew three different
+            characters, drawn place by place, the first the entrant's own
+            where it is set; to the champion.
+  crewdraw  two CPUs, Crew 2: the first two fights made draws (the plan
+            writes the first fighter's fall once the second has fallen, a
+            `poke`), so that both crews are on their last fighter and then
+            run out together: nobody out, the two fight again (sudden
+            death), and the match is decided by a fight won.
+  crewperson  Player 1 and the CPU (Gengoro and the yari), Crew 2, in
+            versus mode's select screen: the player's two places picked at
+            the grid with his pad, the CPU's crew picked for it place by
+            place (Gengoro and the yari first, a different character
+            second), a stage, and the fights.
 
 In WSL, with the programs `make port` (and for `window`, `make port-sdl`)
 builds and the player's disc (REBUSHIDO_RETAIL, or the .cue at the
@@ -60,7 +87,7 @@ sys.path.insert(0, os.path.join(REPO, 'tools'))
 from port_match import RB_OPENING, RB_START  # noqa: E402
 from port_stage_select import HEAD  # noqa: E402
 
-CASES = ['window', 'cpu8', 'byes', 'person', 'rollback']
+CASES = ['window', 'cpu8', 'byes', 'person', 'rollback', 'resume', 'windowresume', 'crew', 'crewdraw', 'crewperson']
 PROGRAMS = {64: 'build/port/rebushido', 32: 'build/port32/rebushido'}
 WINDOW = 'build/port-sdl/linux/rebushido'
 SECONDS = 2400
@@ -69,6 +96,13 @@ EIGHT = 'double,random,one,seed:2026,cpu:4/Kenshin,cpu:3/Musashi,cpu:2/Kojiro,cp
         'cpu:4/Tsukahara,cpu:3/Inshun,cpu:2/Sekishusai,cpu:1/Ittosai'
 BYES = 'single,order,one,seed:5,cpu:4,cpu:3,cpu:2,cpu:1,cpu:4'
 PERSON = 'single,order,one,seed:9,p1/Trial,cpu:4:gengoro:yari/Shainto,cpu:2:gengoro:yari/Adept'
+RESUME = 'double,random,one,seed:31,cpu:4/Kenshin,cpu:3/Musashi,cpu:2/Kojiro,cpu:1/Bokuden'
+RESUME_QUIT_IN = 3
+CREW = 'single,order,crew:3,seed:12,cpu:4:kannuki:katana/Kenshin,cpu:3/Musashi,cpu:2/Kojiro,cpu:1/Bokuden'
+CREW_DRAW = 'single,order,crew:2,seed:4,cpu:4/Kenshin,cpu:3/Musashi'
+CREW_PERSON = 'single,order,crew:2,seed:9,p1/Trial,cpu:4:gengoro:yari/Shainto'
+SPECS = {'cpu8': EIGHT, 'byes': BYES, 'person': PERSON, 'rollback': BYES, 'crew': CREW, 'crewdraw': CREW_DRAW,
+         'crewperson': CREW_PERSON}
 # the CPUs' words in the record, by the names above
 PERSON_LEVELS = {'Shainto': 'master', 'Adept': 'adept'}
 AUTO = 40
@@ -131,6 +165,94 @@ expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 1", "port_tournamen
 ''' % {'roster': ROSTER_GENGORO, 'weapon': WEAPON_YARI}
 PERSON_PRESSES = ['"select+300 CROSS"', '"select+520 CROSS"', '"stages+60 CROSS"']
 
+# Crew 2 of two CPUs: the first fight and the second each a draw (the
+# first fighter written fallen once the second has: a `poke`), the
+# second's leaving both crews out at once, which in a tournament takes
+# nobody out: the third fight decides.
+CREW_DRAW_PLAN = '''
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE && port_tournament_phase == 3"
+within = 200000
+shot = false
+expect = ["port_match_rule == 3", "port_match_count == 2", "port_match_lives_p1 == 2", "port_match_lives_p2 == 2"]
+
+[[checkpoint]]
+name = "down"
+when = "p1_frames_alive >= 90"
+within = 9000
+shot = false
+
+[[checkpoint]]
+name = "card"
+when = "port_match_card == 1"
+within = 3000
+shot = false
+expect = ["port_match_last == 2", "port_match_lives_p1 == 1", "port_match_lives_p2 == 1", "port_match_over == 0"]
+
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && port_match_card == 0 && p1_defeated == 0 && p2_defeated == 0"
+within = 3000
+shot = false
+
+[[checkpoint]]
+name = "down2"
+when = "p1_frames_alive >= 90"
+within = 9000
+shot = false
+
+[[checkpoint]]
+name = "card2"
+when = "port_match_card == 1"
+within = 3000
+shot = false
+expect = ["port_match_last == 2", "port_match_fights == 2", "port_match_lives_p1 == 1", "port_match_lives_p2 == 1",
+          "port_match_over == 0"]
+
+[[checkpoint]]
+name = "fight3"
+when = "screen == SCREEN_FIGHT_UPDATE && port_match_card == 0 && p1_defeated == 0 && p2_defeated == 0"
+within = 3000
+shot = false
+'''
+CREW_DRAW_POKES = [('down', 4, 'p1_defeated', 1), ('down', 4, 'p2_defeated', 1),
+                   ('down2', 4, 'p1_defeated', 1), ('down2', 4, 'p2_defeated', 1)]
+
+# Crew 2, the player's match: the first place at the grid and the weapon
+# row as person's; the second place one down the grid (the first's
+# character is his crew's), its weapon; a stage.
+CREW_PERSON_PLAN = PERSON_PLAN.split('[[checkpoint]]\nname = "stages"')[0].replace(
+    '"port_tournament_decided == 1", ', '"port_tournament_decided == 0", ') + '''[[checkpoint]]
+name = "crew2"
+when = "port_match_crew_picked == 1"
+within = 3000
+shot = false
+expect = ["menu_page == MENU_PAGE_SELECT", "port_match_page_rule == 3", "port_match_crew_size == 2",
+          "port_crew_p2_1 == %(gengoro)d"]
+
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 3000
+shot = false
+expect = ["port_match_crew_picked == 2", "port_crew_p2_1 == %(gengoro)d", "port_crew_p2_2 != %(gengoro)d",
+          "port_crew_p1_1 != port_crew_p1_2"]
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+within = 3000
+at_frame = true
+shot = false
+expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 1", "port_match_rule == 3", "port_match_count == 2",
+          "p2_roster == %(roster)d", "p2_weapon == %(weapon)d"]
+''' % {'roster': ROSTER_GENGORO, 'weapon': WEAPON_YARI, 'gengoro': 12}
+CREW_PERSON_PRESSES = ['"select+300 CROSS"', '"select+520 CROSS"', '"crew2+60 DOWN"', '"crew2+100 CROSS"',
+                       '"crew2+320 CROSS"', '"stages+60 CROSS"']
+# the sides of a match as the log says them at its fight
+SIDES_LINE = re.compile(r"tournament: match (\d+)'s fight: (.+) \((.*)\) against (.+) \((.*)\)$")
+
 
 def toml_text(presses, middle='', start=OPENING):
     head = HEAD.replace('limit = 9000', 'limit = 400000').replace('seconds = 600', 'seconds = %d' % SECONDS)
@@ -166,12 +288,12 @@ def write_plan(playtest, out, name, text, program):
     return plan, test, order
 
 
-def run(playtest, program, name, folder, plan, spec, extra=(), window=False):
+def run(playtest, program, name, folder, plan, spec, extra=(), window=False, keep_stats=False):
     """A run of `program` with the tournament `spec`: its exit code, its
     log's text, its trace's, and its record's path."""
     os.makedirs(folder, exist_ok=True)
     stats = os.path.join(folder, 'rebushido-stats.txt')
-    if os.path.exists(stats):
+    if os.path.exists(stats) and not keep_stats:
         os.remove(stats)
     log = os.path.join(folder, 'log.txt')
     cmd = [program, '--image', playtest.RETAIL_CUE, '--no-cards', '--mods', 'off', '--menu', 'rebushido',
@@ -203,6 +325,28 @@ def run(playtest, program, name, folder, plan, spec, extra=(), window=False):
 MATCH_LINE = re.compile(r'tournament: match (\d+) of (\d+) \(([^,]+(?:, reset)?), (\d+)\): (.+) beat (.+)$')
 PLACE_LINE = re.compile(r'tournament: place (\d+): (.+) \((\d+) lost\)$')
 OVER_LINE = re.compile(r'tournament: over after (\d+) matches; the champion: (.+)$')
+
+
+def sides_of(log):
+    """[(match, first, [picks], second, [picks])] of a run's log."""
+    out = []
+    for line in log.splitlines():
+        line = re.sub(r'^\s*[0-9.]+\s+', '', line.strip())
+        m = SIDES_LINE.search(line)
+        if m:
+            out.append((int(m.group(1)), m.group(2), m.group(3).split(), m.group(4), m.group(5).split()))
+    return out
+
+
+def check_crews(report, case, sides, size):
+    """Each crew of a match: `size` places, no character twice."""
+    report.check(len(sides) > 0, '%s: the log says each match\'s crews (%d)' % (case, len(sides)))
+    for number, first, picks1, second, picks2 in sides:
+        for name, picks in ((first, picks1), (second, picks2)):
+            fighters = [p.split('/')[0] for p in picks]
+            report.check(len(picks) == size and len(set(fighters)) == size,
+                         '%s: match %d, %s\'s crew of %d different characters: %s'
+                         % (case, number, name, size, ' '.join(picks)))
 
 
 def tournament_of(log):
@@ -285,8 +429,11 @@ def check_record(report, case, stats, matches, places, champion, fights_wanted):
         return None
     version, fights, tournaments = record_of(stats)
     report.check(version == 2, '%s: the record is version 2' % case)
-    report.check(len(fights) == fights_wanted, '%s: %d fights in the record (%d wanted)'
-                 % (case, len(fights), fights_wanted))
+    if fights_wanted is not None:
+        report.check(len(fights) == fights_wanted, '%s: %d fights in the record (%d wanted)'
+                     % (case, len(fights), fights_wanted))
+    else:
+        report.check(len(fights) >= 1, '%s: the person\'s fights in the record (%d)' % (case, len(fights)))
     if not report.check(len(tournaments) == 1, '%s: one tournament in the record' % case):
         return None
     t = tournaments[0]
@@ -325,6 +472,120 @@ def check_checkpoints(report, case, test, order, trace, playtest):
         values.update(reached[cp.name])
         for claim in cp.expect:
             report.check(playtest.evaluate(claim, values), '%s: at `%s`, %s' % (case, cp.name, claim))
+
+
+def run_resume(playtest, report, folder):
+    """The resume case: a run not stopped, a run stopped in a match, and a
+    run resumed from its file."""
+    program = os.path.join(REPO, PROGRAMS[64])
+    if not report.check(os.path.exists(program), 'resume: the 64-bit port is built'):
+        return
+    entrants = len(RESUME.split(',')) - 4
+    runs = {}
+    for part in ('whole', 'stopped', 'resumed'):
+        sub = os.path.join(folder, part)
+        os.makedirs(sub, exist_ok=True)
+        kept = os.path.join(folder, 'tournament-%s.txt' % ('whole' if part == 'whole' else 'kept'))
+        text = toml_text([], '')
+        extra = ['--tournament-file', kept]
+        spec = RESUME
+        if part == 'stopped':
+            extra += ['--tournament-quit-in', str(RESUME_QUIT_IN)]
+        elif part == 'resumed':
+            if not os.path.exists(kept):
+                return
+            extra += ['--tournament-resume']
+            spec = None
+        plan, test, order = write_plan(playtest, folder, 'resume-' + part, text, program)
+        code, log, trace, stats = run(playtest, program, 'resume ' + part, sub, plan, spec, extra)
+        runs[part] = (code, log, trace, stats, kept)
+        if part == 'stopped':
+            report.check('the program ends in match %d\'s fight' % (RESUME_QUIT_IN + 1) in log,
+                         'resume: the stopped run ended in the fight of match %d' % (RESUME_QUIT_IN + 1))
+            report.check(os.path.exists(kept), 'resume: the tournament is kept in its file (%s)' % kept)
+            if os.path.exists(kept):
+                with open(kept, encoding='utf-8') as f:
+                    kept_text = f.read()
+                shutil.copy(kept, os.path.join(sub, 'kept-as-stopped.txt'))
+                results = [line for line in kept_text.splitlines() if line.startswith('result=')]
+                report.check(kept_text.startswith('rebushido-tournament 1\n') and len(results) == RESUME_QUIT_IN,
+                             'resume: the file has the %d matches decided (%d), not the one stopped'
+                             % (RESUME_QUIT_IN, len(results)))
+            report.check(len(tournament_of(log)[0]) == RESUME_QUIT_IN,
+                         'resume: the stopped run decided %d matches' % RESUME_QUIT_IN)
+            continue
+        report.check(code == 0, 'resume %s: the port ran its plan to the end (exit %d)' % (part, code))
+        check_checkpoints(report, 'resume ' + part, test, order, trace, playtest)
+        matches, places, champion, played = tournament_of(log)
+        check_bracket(report, 'resume ' + part, entrants, True, matches, places, champion, played)
+        check_record(report, 'resume ' + part, stats, matches, places, champion, 0)
+        report.check(not os.path.exists(kept), 'resume %s: the file taken away when it was over' % part)
+        if part == 'resumed':
+            report.check('tournament: resumed, %d entrants' % entrants in log,
+                         'resume: the third run resumed the tournament kept')
+    if len(runs) != 3:
+        return
+    whole, resumed = runs['whole'][1], runs['resumed'][1]
+    report.check(tournament_of(whole)[:3] == tournament_of(resumed)[:3],
+                 'resume: the same matches, places and champion as the run not stopped (%s)'
+                 % tournament_of(resumed)[2])
+    stopped_sides = sides_of(runs['stopped'][1])
+    report.check(sides_of(whole)[RESUME_QUIT_IN:] == sides_of(resumed) and
+                 len(sides_of(whole)) == len(tournament_of(whole)[0]),
+                 'resume: each match after the resume with the sides of the run not stopped')
+    report.check(stopped_sides and stopped_sides[-1][0] == RESUME_QUIT_IN + 1 and
+                 stopped_sides[-1] in sides_of(resumed),
+                 'resume: the match stopped (%d) played again from its start, as it began'
+                 % (RESUME_QUIT_IN + 1))
+    if os.path.exists(runs['whole'][3]) and os.path.exists(runs['resumed'][3]):
+        report.check(strip_dates(open(runs['whole'][3]).read()) == strip_dates(open(runs['resumed'][3]).read()),
+                     'resume: the record\'s tournament the same as the run not stopped\'s (but the dates)')
+
+
+# The window's presses to resume: the Tournament page's four settings,
+# then Resume; on the bracket, Play.
+RESUME_KEYS = ','.join(['wait:12', 'shot', 'down', 'down', 'down', 'down', 'wait:4', 'shot', 'accept', 'wait:20',
+                        'shot', 'accept'])
+
+
+def run_window_resume(playtest, report, folder, shots):
+    """windowresume: stopped headless, resumed in the window's program."""
+    program = os.path.join(REPO, PROGRAMS[64])
+    window = os.path.join(REPO, WINDOW)
+    if not (report.check(os.path.exists(program), 'windowresume: the 64-bit port is built') and
+            report.check(os.path.exists(window), 'windowresume: the window\'s program is built')):
+        return
+    kept = os.path.join(folder, 'tournament-kept.txt')
+    plan, _, _ = write_plan(playtest, folder, 'stopped', toml_text([], ''), program)
+    run(playtest, program, 'windowresume stopped', os.path.join(folder, 'stopped'), plan, RESUME,
+        ['--tournament-file', kept, '--tournament-quit-in', str(RESUME_QUIT_IN)])
+    if not report.check(os.path.exists(kept), 'windowresume: the tournament kept by the stopped run'):
+        return
+    os.makedirs(shots, exist_ok=True)
+    for old in os.listdir(shots):
+        if re.fullmatch(r'(bracket|menu)-\d+\.png', old):
+            os.remove(os.path.join(shots, old))
+    plan, test, order = write_plan(playtest, folder, 'window', toml_text(WINDOW_PRESSES, start=RB_START), window)
+    code, log, trace, stats = run(playtest, window, 'windowresume window', os.path.join(folder, 'window'), plan,
+                                  None, ['--tournament-file', kept, '--menu-shots', shots, '--menu-keys',
+                                         RESUME_KEYS], window=True)
+    report.check(code == 0, 'windowresume: the window\'s program ran its plan to the end (exit %d)' % code)
+    check_checkpoints(report, 'windowresume', test, order, trace, playtest)
+    report.check('tournament page: resumed, 4 entrants, %d played' % RESUME_QUIT_IN in log,
+                 'windowresume: the page\'s Resume resumed the tournament kept')
+    matches, places, champion, played = tournament_of(log)
+    check_bracket(report, 'windowresume', 4, True, matches, places, champion, played)
+    check_record(report, 'windowresume', stats, matches, places, champion, 0)
+    report.check(not os.path.exists(kept), 'windowresume: the file taken away when it was over')
+    whole = os.path.join(os.path.dirname(folder), 'resume', 'whole', 'log.txt')
+    if os.path.exists(whole):
+        with open(whole, encoding='utf-8', errors='replace') as f:
+            report.check(tournament_of(f.read())[:3] == (matches, places, champion),
+                         'windowresume: the matches, places and champion of resume\'s run not stopped (%s)'
+                         % champion)
+    pages = sorted(p for p in os.listdir(shots) if re.fullmatch(r'menu-\d+\.png', p))
+    report.check(len(pages) >= 2, 'windowresume: the Tournament page pictured with its Resume row (%d): %s'
+                 % (len(pages), shots))
 
 
 def strip_dates(text):
@@ -385,11 +646,17 @@ def main(argv):
             report.check(len(pages) == 4, "window: four pictures of the tournament's and the entrant's pages (%d)"
                          % len(pages))
             continue
-        spec = {'cpu8': EIGHT, 'byes': BYES, 'person': PERSON, 'rollback': BYES}[case]
-        presses = PERSON_PRESSES if case == 'person' else []
-        middle = PERSON_PLAN if case == 'person' else ''
+        if case == 'resume':
+            run_resume(playtest, report, folder)
+            continue
+        if case == 'windowresume':
+            run_window_resume(playtest, report, folder, os.path.join(os.path.abspath(args.shots), 'resume'))
+            continue
+        spec = SPECS[case]
+        presses = {'person': PERSON_PRESSES, 'crewperson': CREW_PERSON_PRESSES}.get(case, [])
+        middle = {'person': PERSON_PLAN, 'crewperson': CREW_PERSON_PLAN, 'crewdraw': CREW_DRAW_PLAN}.get(case, '')
         extra = ['--rollback-test', '8', '--rollback-every', '24', '--run-ahead', '2'] if case == 'rollback' else []
-        sizes = (64, 32) if case in ('cpu8', 'byes') else (64,)
+        sizes = (64, 32) if case in ('cpu8', 'byes', 'crew') else (64,)
         logs = {}
         for bits in sizes:
             program = os.path.join(REPO, PROGRAMS[bits])
@@ -397,6 +664,13 @@ def main(argv):
                 continue
             plan, test, order = write_plan(playtest, os.path.join(folder), '%s%d' % (case, bits),
                                            toml_text(presses, middle), program)
+            if case == 'crewdraw':
+                from port_stage_select import poke_lines
+                with open(plan, encoding='utf-8') as f:
+                    lines = f.read().split('\n')
+                lines = [line for line in lines if line] + poke_lines(playtest, program, lines, CREW_DRAW_POKES)
+                with open(plan, 'w', encoding='utf-8', newline='\n') as f:
+                    f.write('\n'.join(lines) + '\n')
             code, log, trace, stats = run(playtest, program, '%s %d-bit' % (case, bits),
                                           os.path.join(folder, str(bits)), plan, spec, extra)
             report.check(code == 0, '%s: the %d-bit port ran its plan to the end (exit %d)' % (case, bits, code))
@@ -406,7 +680,22 @@ def main(argv):
             check_bracket(report, '%s %d-bit' % (case, bits), entrants, spec.startswith('double'), matches,
                           places, champion, played)
             got = check_record(report, '%s %d-bit' % (case, bits), stats, matches, places, champion,
-                               1 if case == 'person' else 0)
+                               {'person': 1}.get(case, 0) if case != 'crewperson' else None)
+            if case in ('crew', 'crewdraw', 'crewperson'):
+                sides = sides_of(log)
+                check_crews(report, '%s %d-bit' % (case, bits), sides, int(spec.split('crew:')[1].split(',')[0]))
+                report.check(len(sides) == len(matches), '%s: a crew match for each match decided (%d of %d)'
+                             % (case, len(sides), len(matches)))
+            if case == 'crew' and bits == 64:
+                firsts = [s for s in sides_of(log) if 'Kenshin' in (s[1], s[3])]
+                report.check(firsts and all((s[2] if s[1] == 'Kenshin' else s[4])[0] == 'kannuki/katana'
+                                            for s in firsts),
+                             'crew: Kenshin\'s crew led by his own Kannuki and katana in each of his matches')
+            if case == 'crewperson' and got:
+                cpu = [s for s in sides_of(log) if s[3] == 'Shainto']
+                report.check(cpu and cpu[0][4][0] == 'gengoro/yari' and len(set(p.split('/')[0] for p in cpu[0][4])) == 2,
+                             'crewperson: the CPU\'s crew picked for it at the grid, Gengoro and the yari first: %s'
+                             % (cpu[0][4] if cpu else None))
             logs[bits] = (matches, places, champion, strip_dates(open(stats).read()) if got else None)
             if case == 'byes' and bits == 64:
                 report.check(matches and matches[0][1:] in (('CPU 4', 'CPU 5'), ('CPU 5', 'CPU 4')),

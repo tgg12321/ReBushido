@@ -70,6 +70,8 @@
 /* the player's record of fights, beside the settings too (docs/PLAYING.md,
  * "Stats") */
 #define STATS_FILE "rebushido-stats.txt"
+/* a local tournament not finished, kept to be resumed (port_tournament.h) */
+#define TOURNAMENT_FILE "rebushido-tournament.txt"
 #define SETTINGS_BYTES_MAX 0x10000
 #define IMAGE_SUM_BYTES 0x100000
 #define CUE_BYTES_MAX 2048
@@ -1294,10 +1296,14 @@ int main(int argc, char **argv) {
          * after, says where */
         if (!has_end && export_path == NULL) {
             static char stats[PATH_BYTES_MAX];
+            static char kept[PATH_BYTES_MAX];
 
             snprintf(stats, sizeof(stats), "%.*s%s", (int)(cut - settings),
                      settings, STATS_FILE);
             port_SetStatsFile(stats);
+            snprintf(kept, sizeof(kept), "%.*s%s", (int)(cut - settings),
+                     settings, TOURNAMENT_FILE);
+            port_SetTournamentFile(kept);
         }
     }
     /* the updater (update.h): never in a session of online play or a

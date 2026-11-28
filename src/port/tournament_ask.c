@@ -14,8 +14,55 @@
 /* The main menu's top page (menu_screen.c, enum MenuPage). */
 #define MENU_PAGE_TOP 1
 #define WORD_BYTES 32
-#define DATE_BYTES 24
+#define DATE_BYTES PORT_TOURNAMENT_DATE_BYTES
 #define DECIMAL 10
+/* the kept tournament's file (port_SetTournamentFile): its first line,
+ * the room for its path and for its text, and a test's frames into the
+ * fight of the match it ends in (--tournament-quit-in) */
+#define KEPT_HEAD "rebushido-tournament"
+#define KEPT_VERSION 1
+#define KEPT_PATH_BYTES 1024
+#define KEPT_TEXT_BYTES 4096
+#define KEPT_LINE_BYTES 160
+#define QUIT_IN_FRAMES 300
+#define HEX_LOW 0xF
+#define HEX_BITS 4
+#define BYTE_MOST 0xFF
+/* a name's byte as %XX: three bytes, and the one after them */
+#define ESCAPE_BYTES 3
+#define ESCAPE_ROOM 4
+
+/* An entrant's line's numbers, before its name. */
+enum {
+    KEPT_PAD,
+    KEPT_CPU,
+    KEPT_FIGHTER,
+    KEPT_WEAPON,
+    KEPT_LAST_FIGHTER,
+    KEPT_LAST_WEAPON,
+    KEPT_FIELDS
+};
+
+/* The file's keys, in the order of g_kept_keys. */
+enum {
+    KEY_COUNT,
+    KEY_DOUBLE,
+    KEY_SEEDING,
+    KEY_RULE,
+    KEY_RULE_COUNT,
+    KEY_SEED,
+    KEY_DICE,
+    KEY_JUDGED,
+    KEY_RESULT,
+    KEY_ENTRANT,
+    KEY_DATE,
+    KEYS
+};
+
+static const char * const g_kept_keys[KEYS] = {
+    "count=", "double=", "seeding=", "rule=",    "rule_count=", "seed=",
+    "dice=",  "judged=", "result=",  "entrant=", "date=",
+};
 
 /* The fighters a CPU entrant may be given, and their names as
  * --tournament takes them (the select screen's, with blades). */
@@ -62,6 +109,23 @@ static struct {
     u8 said;
     s32 recorded;
     char date[DATE_BYTES];
+    /* the tournament kept between runs: its file, the setup of the last
+     * resume asked, and the tournament and matches it was last written
+     * for (so it is written once a match) */
+    char kept_path[KEPT_PATH_BYTES];
+    PortTournamentKept kept;
+    u16 kept_number;
+    u8 kept_decided;
+    s32 kept_written;
+    /* a test's: the program ended in the fight of the match after
+     * `quit_in` decided (one more than it, 0 for none), the frames of it
+     * seen; and the kept one resumed at the first boundary */
+    s32 quit_in;
+    s32 quit_frames;
+    s32 resume_at_start;
+    /* the match whose sides the log has said (its tournament's number and
+     * the matches before it), 0 none */
+    u32 said_begun;
 } g_port_tournament_ask;
 
 static u32 port_AskText(char *out, u32 room, const char *format, ...) {
@@ -99,6 +163,10 @@ const PortTournamentSetup *port_TournamentAskedSetup(void) {
     return &g_port_tournament_ask.setup;
 }
 
+const PortTournamentKept *port_TournamentAskedKept(void) {
+    return &g_port_tournament_ask.kept;
+}
+
 void port_AskTournamentStart(const PortTournamentSetup *setup) {
     g_port_tournament_ask.setup = *setup;
     port_TournamentAsk(PORT_TOURNAMENT_ASK_BEGIN);
@@ -117,6 +185,14 @@ void port_SetTournamentAuto(s32 boundaries) {
 }
 
 void port_SetTournamentQuit(void) { g_port_tournament_ask.auto_quit = TRUE; }
+
+void port_SetTournamentQuitIn(s32 decided) {
+    g_port_tournament_ask.quit_in = decided + 1;
+}
+
+void port_SetTournamentResumeAtStart(void) {
+    g_port_tournament_ask.resume_at_start = TRUE;
+}
 
 const char *port_TournamentDate(void) {
     return port_TournamentIsOn() ? g_port_tournament_ask.date : "";
@@ -265,8 +341,8 @@ static s32 port_TournamentEntrantWord(
 }
 
 /* The words of a setup, split by commas: `single` or `double`, `random`
- * or `order` (the seeding), `first_to:N` or `stock:N` (`one`: one
- * fight), `seed:N`, and two to eight entrants' words. */
+ * or `order` (the seeding), `first_to:N`, `stock:N` or `crew:N` (`one`:
+ * one fight), `seed:N`, and two to eight entrants' words. */
 s32 port_TournamentParse(const char *spec, PortTournamentSetup *out) {
     const char *at = spec;
     u32 i;
@@ -311,6 +387,15 @@ s32 port_TournamentParse(const char *spec, PortTournamentSetup *out) {
                 (u8)(number < 1                       ? 1
                      : number > PORT_MATCH_COUNT_MOST ? PORT_MATCH_COUNT_MOST
                                                       : number);
+        } else if (port_TextsEqual(key, "crew")) {
+            /* a crew of 2 to PORT_TOURNAMENT_CREW_MOST, three if not said */
+            out->rule = PORT_MATCH_CREW;
+            out->rule_count =
+                (u8)(number == 0                      ? 3
+                     : number < PORT_MATCH_CREW_LEAST ? PORT_MATCH_CREW_LEAST
+                     : number > PORT_TOURNAMENT_CREW_MOST
+                         ? PORT_TOURNAMENT_CREW_MOST
+                         : number);
         } else if (port_TextsEqual(key, "one")) {
             out->rule = PORT_MATCH_FIRST_TO;
             out->rule_count = 1;
@@ -335,13 +420,309 @@ s32 port_AskTournamentWords(const char *spec) {
 
     if (!port_TournamentParse(spec, &setup)) {
         port_Log("--tournament: %s is not a tournament: single or double, "
-                 "random or order, one, first_to:N or stock:N, seed:N, and "
+                 "random or order, one, first_to:N, stock:N or crew:N, "
+                 "seed:N, and "
                  "two to eight of pN or cpu:LEVEL[:FIGHTER[:WEAPON]], each "
                  "perhaps /Name\n",
                  spec);
         return FALSE;
     }
     port_AskTournamentStart(&setup);
+    return TRUE;
+}
+
+/* ---- the tournament kept between runs (port_tournament.h) ---- */
+
+void port_SetTournamentFile(const char *path) {
+    port_AskText(g_port_tournament_ask.kept_path,
+                 sizeof(g_port_tournament_ask.kept_path), "%s",
+                 path != NULL ? path : "");
+}
+
+/* A name as the file has it: every byte not a letter, a digit, `-` or `_`
+ * as %XX. */
+static void port_KeptName(const char *name, char *out, u32 room) {
+    static const char g_hex[] = "0123456789ABCDEF";
+    u32 length = 0;
+
+    for (; *name != 0 && length + ESCAPE_ROOM < room; name++) {
+        u8 letter = (u8)*name;
+
+        if ((letter >= 'a' && letter <= 'z') ||
+            (letter >= 'A' && letter <= 'Z') ||
+            (letter >= '0' && letter <= '9') || letter == '-' ||
+            letter == '_') {
+            out[length++] = (char)letter;
+        } else {
+            out[length++] = '%';
+            out[length++] = g_hex[letter >> HEX_BITS];
+            out[length++] = g_hex[letter & HEX_LOW];
+        }
+    }
+    out[length] = 0;
+}
+
+/* The tournament as it is, written whole into PATH.part and renamed over
+ * PATH, as the record is: the file is the last one or this one. */
+static void port_TournamentKeep(void) {
+    static char text[KEPT_TEXT_BYTES];
+    const PortTournament *tournament = &g_port_tournament;
+    const PortTournamentSetup *setup = &tournament->setup;
+    const PortBracket *bracket = &tournament->bracket;
+    char part[KEPT_PATH_BYTES + sizeof(".part")];
+    u32 at;
+    s32 order;
+    s32 i;
+    s32 file;
+    s32 ok;
+
+    at = port_AskText(
+        text, sizeof(text),
+        KEPT_HEAD " %d\ndate=%s\ncount=%d\ndouble=%d\n"
+                  "seeding=%d\nrule=%d\nrule_count=%d\n"
+                  "seed=%u\ndice=%u\njudged=%d\n",
+        KEPT_VERSION, g_port_tournament_ask.date, setup->count,
+        setup->is_double, setup->seeding, setup->rule, setup->rule_count,
+        setup->seed, tournament->dice_kept, tournament->judged);
+    for (i = 0; i < setup->count && at < sizeof(text) - KEPT_LINE_BYTES; i++) {
+        const PortTournamentEntrant *entrant = &setup->entrant[i];
+        char name[3 * PORT_TOURNAMENT_NAME_BYTES + 1];
+
+        port_KeptName(entrant->name, name, sizeof(name));
+        at += port_AskText(
+            text + at, sizeof(text) - at, "entrant=%d:%d:%d:%d:%d:%d:%s\n",
+            entrant->pad, entrant->cpu, entrant->fighter, entrant->weapon,
+            tournament->last_fighter[i], tournament->last_weapon[i], name);
+    }
+    for (order = 1; order <= bracket->played; order++) {
+        for (i = 0; i < bracket->match_count; i++) {
+            const PortBracketMatch *match = &bracket->match[i];
+
+            if (match->played && match->order == order &&
+                at < sizeof(text) - KEPT_LINE_BYTES) {
+                at += port_AskText(text + at, sizeof(text) - at,
+                                   "result=%d:%d\n", i, match->winner);
+            }
+        }
+    }
+    port_AskText(
+        part, sizeof(part), "%s.part", g_port_tournament_ask.kept_path);
+    file = port_HostCreate(part);
+    if (file < 0) {
+        port_Log("tournament: %s cannot be written\n", part);
+        return;
+    }
+    ok = port_HostAppend(file, text, at);
+    port_HostClose(file);
+    if (!ok || !port_HostRename(part, g_port_tournament_ask.kept_path)) {
+        port_Log("tournament: %s cannot be written\n",
+                 g_port_tournament_ask.kept_path);
+        port_HostRemove(part);
+        return;
+    }
+    g_port_tournament_ask.kept_written = TRUE;
+    port_Log("tournament: kept in %s after %d matches\n",
+             g_port_tournament_ask.kept_path, tournament->decided);
+}
+
+/* The kept tournament over or left: its file taken away. */
+static void port_TournamentUnkeep(void) {
+    if (g_port_tournament_ask.kept_path[0] != 0 &&
+        g_port_tournament_ask.kept_written) {
+        port_HostRemove(g_port_tournament_ask.kept_path);
+        port_Log(
+            "tournament: %s taken away\n", g_port_tournament_ask.kept_path);
+    }
+    g_port_tournament_ask.kept_written = FALSE;
+}
+
+/* A number of the file's: digits, from `at`; where they end. */
+static const char *port_KeptNumber(const char *at, u32 *value) {
+    *value = 0;
+    while (*at >= '0' && *at <= '9') {
+        *value = *value * DECIMAL + (u32)(*at - '0');
+        at++;
+    }
+    return at;
+}
+
+/* A digit of %XX: its value, or -1. */
+static s32 port_KeptHex(char digit) {
+    return digit >= '0' && digit <= '9'   ? digit - '0'
+           : digit >= 'A' && digit <= 'F' ? digit - 'A' + DECIMAL
+           : digit >= 'a' && digit <= 'f' ? digit - 'a' + DECIMAL
+                                          : -1;
+}
+
+/* An entrant's line: pad:cpu:fighter:weapon:last fighter:last weapon:name. */
+static s32 port_KeptEntrant(const char *at, PortTournamentKept *kept) {
+    PortTournamentEntrant *entrant;
+    u32 field[KEPT_FIELDS];
+    u32 length = 0;
+    s32 i;
+
+    if (kept->setup.count >= PORT_BRACKET_MOST) {
+        return FALSE;
+    }
+    for (i = 0; i < KEPT_FIELDS; i++) {
+        at = port_KeptNumber(at, &field[i]);
+        if (*at != ':' || field[i] > BYTE_MOST) {
+            return FALSE;
+        }
+        at++;
+    }
+    entrant = &kept->setup.entrant[kept->setup.count];
+    entrant->pad = (u8)field[KEPT_PAD];
+    entrant->cpu = (u8)field[KEPT_CPU];
+    entrant->fighter = (u8)field[KEPT_FIGHTER];
+    entrant->weapon = (u8)field[KEPT_WEAPON];
+    if ((entrant->pad >= PORT_TOURNAMENT_PADS &&
+         entrant->pad != PORT_TOURNAMENT_CPU) ||
+        entrant->cpu > PORT_CPU_LEVELS) {
+        return FALSE;
+    }
+    kept->last_fighter[kept->setup.count] = (u8)field[KEPT_LAST_FIGHTER];
+    kept->last_weapon[kept->setup.count] = (u8)field[KEPT_LAST_WEAPON];
+    while (*at != 0 && *at != '\n' && length + 1 < sizeof(entrant->name)) {
+        if (*at == '%' && port_KeptHex(at[1]) >= 0 &&
+            port_KeptHex(at[2]) >= 0) {
+            entrant->name[length++] =
+                (char)(port_KeptHex(at[1]) << HEX_BITS | port_KeptHex(at[2]));
+            at += ESCAPE_BYTES;
+        } else {
+            entrant->name[length++] = *at++;
+        }
+    }
+    entrant->name[length] = 0;
+    kept->setup.count++;
+    return TRUE;
+}
+
+/* One line of the file into `kept`: FALSE where it is not one. */
+static s32 port_KeptLine(const char *line, PortTournamentKept *kept) {
+    s32 key;
+    u32 value;
+    u32 slot;
+    const char *at = line;
+
+    for (key = 0; key < KEYS; key++) {
+        const char *word = g_kept_keys[key];
+
+        for (at = line; *word != 0 && *at == *word; word++, at++) {
+        }
+        if (*word == 0) {
+            break;
+        }
+    }
+    if (key == KEYS) {
+        return FALSE;
+    }
+    if (key == KEY_ENTRANT) {
+        return port_KeptEntrant(at, kept);
+    }
+    if (key == KEY_DATE) {
+        u32 length = 0;
+
+        while (*at != 0 && *at != '\n' && length + 1 < sizeof(kept->date)) {
+            kept->date[length++] = *at++;
+        }
+        kept->date[length] = 0;
+        return TRUE;
+    }
+    at = port_KeptNumber(at, &value);
+    if (key == KEY_RESULT) {
+        if (*at != ':' || kept->results >= PORT_BRACKET_MATCHES ||
+            value >= PORT_BRACKET_MATCHES) {
+            return FALSE;
+        }
+        at = port_KeptNumber(at + 1, &slot);
+        if (slot > 1) {
+            return FALSE;
+        }
+        kept->result[kept->results++] = (u8)(value << 1 | slot);
+    } else if (key == KEY_COUNT) {
+        /* (the entrants' lines count them) */
+    } else if (key == KEY_DOUBLE) {
+        kept->setup.is_double = (u8)(value != 0);
+    } else if (key == KEY_SEEDING) {
+        kept->setup.seeding = (u8)(value != 0);
+    } else if (key == KEY_RULE) {
+        kept->setup.rule = (u8)value;
+    } else if (key == KEY_RULE_COUNT) {
+        kept->setup.rule_count = (u8)value;
+    } else if (key == KEY_SEED) {
+        kept->setup.seed = value;
+    } else if (key == KEY_DICE) {
+        kept->dice = value;
+    } else {
+        kept->judged = (u16)value;
+    }
+    return *at == 0 || *at == '\n';
+}
+
+/* The kept file read (port_tournament.h): its first line this version's,
+ * each line one of its keys, two entrants at least and a rule a
+ * tournament has. */
+s32 port_TournamentKeptRead(PortTournamentKept *kept) {
+    static char text[KEPT_TEXT_BYTES];
+    const char *path = g_port_tournament_ask.kept_path;
+    char head[WORD_BYTES];
+    const char *line;
+    u32 size;
+    u32 byte;
+    s32 file;
+
+    for (byte = 0; byte < sizeof(*kept); byte++) {
+        ((u8 *)kept)[byte] = 0;
+    }
+    if (path[0] == 0) {
+        return FALSE;
+    }
+    file = port_HostOpen(path);
+    if (file < 0) {
+        return FALSE;
+    }
+    size = port_HostFileSize(file);
+    if (size >= sizeof(text)) {
+        size = sizeof(text) - 1;
+    }
+    size = port_HostReadAt(file, 0, text, size);
+    port_HostClose(file);
+    text[size] = 0;
+    port_AskText(head, sizeof(head), KEPT_HEAD " %d\n", KEPT_VERSION);
+    for (byte = 0; head[byte] != 0 && text[byte] == head[byte]; byte++) {
+    }
+    if (head[byte] != 0) {
+        return FALSE;
+    }
+    for (line = text + byte; *line != 0;) {
+        if (*line != '\n' && !port_KeptLine(line, kept)) {
+            port_Log(
+                "tournament: %s: a line not understood; not resumed\n", path);
+            return FALSE;
+        }
+        while (*line != 0 && *line != '\n') {
+            line++;
+        }
+        if (*line == '\n') {
+            line++;
+        }
+    }
+    return kept->setup.count >= PORT_BRACKET_LEAST &&
+           (kept->setup.rule == PORT_MATCH_FIRST_TO ||
+            kept->setup.rule == PORT_MATCH_STOCK ||
+            kept->setup.rule == PORT_MATCH_CREW);
+}
+
+s32 port_AskTournamentResume(void) {
+    if (!port_TournamentKeptRead(&g_port_tournament_ask.kept)) {
+        port_Log("tournament: no tournament kept to resume (%s)\n",
+                 g_port_tournament_ask.kept_path[0] != 0
+                     ? g_port_tournament_ask.kept_path
+                     : "no file");
+        return FALSE;
+    }
+    port_TournamentAsk(PORT_TOURNAMENT_ASK_RESUME);
     return TRUE;
 }
 
@@ -390,6 +771,59 @@ static void port_TournamentSayMatches(void) {
         }
         g_port_tournament_ask.said = order;
     }
+}
+
+/* A fighter and weapon as --tournament's words have them. */
+static void port_TournamentPickText(
+    s32 fighter, s32 weapon, char *out, u32 room) {
+    const char *who = "?";
+    s32 i;
+
+    for (i = 0; i < COUNT_OF(g_port_tournament_choosable); i++) {
+        if (g_port_tournament_choosable[i] == fighter) {
+            who = g_port_tournament_fighter_words[i];
+        }
+    }
+    port_AskText(
+        out, room, "%s/%s", who,
+        weapon >= 0 && weapon < COUNT_OF(g_port_tournament_weapon_words)
+            ? g_port_tournament_weapon_words[weapon]
+            : "?");
+}
+
+/* A match begun, in its fight: who plays each side with what (a crew's
+ * every place). */
+static void port_TournamentSaySides(void) {
+    const PortTournament *tournament = &g_port_tournament;
+    const PortMatch *match = &g_port_match;
+    s32 side;
+
+    port_Log("tournament: match %d's fight:", tournament->decided + 1);
+    for (side = 0; side < 2; side++) {
+        char name[PORT_STATS_NAME_BYTES];
+        char pick[WORD_BYTES];
+        s32 places = match->rule == PORT_MATCH_CREW ? match->count : 1;
+        s32 place;
+
+        port_TournamentNameOf(
+            tournament->side_entrant[side], name, sizeof(name));
+        port_Log("%s %s (", side == 0 ? "" : " against", name);
+        for (place = 0; place < places && place < PORT_MATCH_CREW_MOST;
+             place++) {
+            if (match->rule == PORT_MATCH_CREW) {
+                port_TournamentPickText(
+                    match->crew[side][place].fighter,
+                    match->crew[side][place].weapon, pick, sizeof(pick));
+            } else {
+                port_TournamentPickText(
+                    tournament->fighter[side], tournament->weapon[side], pick,
+                    sizeof(pick));
+            }
+            port_Log("%s%s", place == 0 ? "" : " ", pick);
+        }
+        port_Log(")");
+    }
+    port_Log("\n");
 }
 
 /* The tournament over: its line in the record, and the places said. */
@@ -473,15 +907,23 @@ static void port_TournamentBegun(void) {
     port_AskText(g_port_tournament_ask.date, sizeof(g_port_tournament_ask.date),
                  "%04d-%02d-%02dT%02d:%02d:%02d", date.year, date.month,
                  date.day, date.hour, date.minute, date.second);
+    if (tournament->resumed && g_port_tournament_ask.kept.date[0] != 0) {
+        /* resumed: the date it was begun at, as its fights have it */
+        port_AskText(
+            g_port_tournament_ask.date, sizeof(g_port_tournament_ask.date),
+            "%s", g_port_tournament_ask.kept.date);
+    }
     g_port_tournament_ask.number = tournament->number;
     g_port_tournament_ask.said = 0;
     g_port_tournament_ask.recorded = FALSE;
     g_port_tournament_ask.top_seen = FALSE;
     g_port_tournament_ask.auto_asked = FALSE;
-    port_Log("tournament: begun, %d entrants, %s elimination, %s %d, seeds:",
-             tournament->setup.count,
+    port_Log("tournament: %s, %d entrants, %s elimination, %s %d, seeds:",
+             tournament->resumed ? "resumed" : "begun", tournament->setup.count,
              tournament->setup.is_double ? "double" : "single",
-             tournament->setup.rule == PORT_MATCH_STOCK ? "stock" : "first_to",
+             tournament->setup.rule == PORT_MATCH_STOCK  ? "stock"
+             : tournament->setup.rule == PORT_MATCH_CREW ? "crew"
+                                                         : "first_to",
              tournament->setup.rule_count);
     for (seed = 0; seed < tournament->bracket.count; seed++) {
         char name[PORT_STATS_NAME_BYTES];
@@ -501,10 +943,16 @@ void port_TournamentBoundary(void) {
     s32 at_top =
         g_sys_screen == SCREEN_MENU_UPDATE && g_menu_page == MENU_PAGE_TOP;
 
+    if (g_port_tournament_ask.resume_at_start) {
+        /* a test's: the kept one, as Resume on the page begins it */
+        g_port_tournament_ask.resume_at_start = FALSE;
+        port_AskTournamentResume();
+    }
     if (g_port_tournament_ask.was_on && !port_TournamentIsOn()) {
         port_Log("tournament: %s\n", g_port_tournament_ask.recorded
                                          ? "over, and put away"
                                          : "left, not finished: nothing kept");
+        port_TournamentUnkeep();
     }
     g_port_tournament_ask.was_on = port_TournamentIsOn();
     if (!port_TournamentIsOn()) {
@@ -514,6 +962,37 @@ void port_TournamentBoundary(void) {
         port_TournamentBegun();
     }
     port_TournamentSayMatches();
+    /* kept for the next run, each time a match is decided (never a room's
+     * match, which is the room's) */
+    if (!tournament->online && g_port_tournament_ask.kept_path[0] != 0 &&
+        tournament->phase != PORT_TOURNAMENT_DONE &&
+        (tournament->number != g_port_tournament_ask.kept_number ||
+         tournament->decided != g_port_tournament_ask.kept_decided ||
+         !g_port_tournament_ask.kept_written)) {
+        g_port_tournament_ask.kept_number = tournament->number;
+        g_port_tournament_ask.kept_decided = tournament->decided;
+        port_TournamentKeep();
+    }
+    /* the sides of a match said as its first fight is up */
+    if (tournament->phase != PORT_TOURNAMENT_PLAYING) {
+        g_port_tournament_ask.said_begun = 0;
+    } else if (tournament->began && g_sys_screen == SCREEN_FIGHT_UPDATE &&
+               g_port_tournament_ask.said_begun == 0) {
+        g_port_tournament_ask.said_begun =
+            (u32)tournament->number << 8 | (u32)(tournament->decided + 1);
+        port_TournamentSaySides();
+    }
+    /* a test's: the program ended in the middle of a match's fight */
+    if (g_port_tournament_ask.quit_in > 0 &&
+        tournament->decided + 1 == g_port_tournament_ask.quit_in &&
+        tournament->phase == PORT_TOURNAMENT_PLAYING &&
+        g_sys_screen == SCREEN_FIGHT_UPDATE &&
+        ++g_port_tournament_ask.quit_frames >= QUIT_IN_FRAMES) {
+        port_Log("tournament: --tournament-quit-in: the program ends in "
+                 "match %d's fight\n",
+                 tournament->decided + 1);
+        port_Quit(PORT_EXIT_OK);
+    }
     if (tournament->phase == PORT_TOURNAMENT_DONE &&
         !g_port_tournament_ask.recorded) {
         char name[PORT_STATS_NAME_BYTES];
@@ -523,6 +1002,7 @@ void port_TournamentBoundary(void) {
         port_Log("tournament: over after %d matches; the champion: %s\n",
                  tournament->bracket.played, name);
         port_TournamentRecord();
+        port_TournamentUnkeep();
     }
     /* a test's own play: the next match, a while after the bracket is up */
     if (g_port_tournament_ask.auto_after > 0 && at_top &&

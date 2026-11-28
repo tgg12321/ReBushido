@@ -78,7 +78,9 @@ static void port_TournamentDraw(PortTournament *tournament, s32 side) {
             ? entrant->weapon
             : g_port_tournament_weapons[port_TournamentDie(
                   tournament, COUNT_OF(g_port_tournament_weapons))];
-    if (side == 1 && tournament->fighter[1] == tournament->fighter[0]) {
+    if (side == 1 && tournament->fighter[1] == tournament->fighter[0] &&
+        port_TournamentIsCpu(tournament, tournament->side_entrant[0])) {
+        /* (a player's side picks his own: his draw is never used) */
         /* the same as the first side's: the next of the draw's list */
         for (i = 0; i < fighters; i++) {
             if (g_port_tournament_fighters[i] == tournament->fighter[1]) {
@@ -86,6 +88,57 @@ static void port_TournamentDraw(PortTournament *tournament, s32 side) {
             }
         }
         tournament->fighter[1] = g_port_tournament_fighters[(i + 1) % fighters];
+    }
+}
+
+/* Crew (PORT_MATCH_CREW): each side's crew drawn place by place, the
+ * first its fighter for the match (set, or drawn above), the rest drawn
+ * from the six of a new save with no character twice; the weapon its own
+ * where it is set, else one drawn for each place. The second side's
+ * place never the first's character at the same place (the select screen
+ * keeps two cursors apart). */
+static void port_TournamentDrawCrews(PortTournament *tournament) {
+    u32 fighters = COUNT_OF(g_port_tournament_fighters);
+    s32 size = tournament->setup.rule_count;
+    s32 side;
+
+    if (tournament->setup.rule != PORT_MATCH_CREW) {
+        return;
+    }
+    if (size > PORT_TOURNAMENT_CREW_MOST) {
+        size = PORT_TOURNAMENT_CREW_MOST;
+    }
+    for (side = 0; side < 2; side++) {
+        const PortTournamentEntrant *entrant =
+            &tournament->setup.entrant[tournament->side_entrant[side]];
+        u8 pool[COUNT_OF(g_port_tournament_fighters)];
+        u32 left = 0;
+        s32 place;
+        u32 i;
+
+        for (i = 0; i < fighters; i++) {
+            if (g_port_tournament_fighters[i] != tournament->fighter[side]) {
+                pool[left++] = g_port_tournament_fighters[i];
+            }
+        }
+        tournament->crew_fighter[side][0] = tournament->fighter[side];
+        tournament->crew_weapon[side][0] = tournament->weapon[side];
+        for (place = 1; place < size; place++) {
+            u32 pick = port_TournamentDie(tournament, left);
+
+            if (side == 1 && left > 1 &&
+                pool[pick] == tournament->crew_fighter[0][place] &&
+                port_TournamentIsCpu(tournament, tournament->side_entrant[0])) {
+                pick = (pick + 1) % left;
+            }
+            tournament->crew_fighter[side][place] = pool[pick];
+            pool[pick] = pool[--left];
+            tournament->crew_weapon[side][place] =
+                entrant->weapon != PORT_TOURNAMENT_RANDOM
+                    ? entrant->weapon
+                    : g_port_tournament_weapons[port_TournamentDie(
+                          tournament, COUNT_OF(g_port_tournament_weapons))];
+        }
     }
 }
 
@@ -112,6 +165,7 @@ static s32 port_TournamentSeat(PortTournament *tournament) {
     for (side = 0; side < 2; side++) {
         port_TournamentDraw(tournament, side);
     }
+    port_TournamentDrawCrews(tournament);
     tournament->stage = g_port_tournament_stages[port_TournamentDie(
         tournament, COUNT_OF(g_port_tournament_stages))];
     tournament->began = FALSE;
@@ -214,6 +268,8 @@ s32 port_TournamentCpuLevel(s32 place, s32 *level) {
     return TRUE;
 }
 
+/* The CPU's side's pick at the select screen (port_tournament.h): its
+ * fighter and weapon, or a crew's place being picked. */
 s32 port_TournamentCpuPick(s32 side, s32 *fighter, s32 *weapon) {
     const PortTournament *tournament = &g_port_tournament;
 
@@ -221,9 +277,52 @@ s32 port_TournamentCpuPick(s32 side, s32 *fighter, s32 *weapon) {
         !port_TournamentIsCpu(tournament, tournament->side_entrant[side])) {
         return FALSE;
     }
+    /* a crew's: the place the select screen is picking */
+    if (port_TournamentCrewPick(side, port_MatchCrewPlace(), fighter, weapon)) {
+        return TRUE;
+    }
     *fighter = tournament->fighter[side];
     *weapon = tournament->weapon[side];
     return TRUE;
+}
+
+/* A CPU side's crew's place as it was drawn (port_tournament.h). */
+s32 port_TournamentCrewPick(s32 side, s32 place, s32 *fighter, s32 *weapon) {
+    const PortTournament *tournament = &g_port_tournament;
+
+    if (tournament->phase != PORT_TOURNAMENT_PLAYING ||
+        tournament->setup.rule != PORT_MATCH_CREW || side < 0 || side > 1 ||
+        place < 0 || place >= tournament->setup.rule_count ||
+        place >= PORT_TOURNAMENT_CREW_MOST ||
+        !port_TournamentIsCpu(tournament, tournament->side_entrant[side])) {
+        return FALSE;
+    }
+    *fighter = tournament->crew_fighter[side][place];
+    *weapon = tournament->crew_weapon[side][place];
+    return TRUE;
+}
+
+s32 port_TournamentGivesCrews(void) {
+    const PortTournament *tournament = &g_port_tournament;
+
+    return tournament->phase == PORT_TOURNAMENT_PLAYING &&
+           tournament->setup.rule == PORT_MATCH_CREW &&
+           port_TournamentIsCpu(tournament, tournament->side_entrant[0]) &&
+           port_TournamentIsCpu(tournament, tournament->side_entrant[1]);
+}
+
+/* A tournament's fight: the game's dice and rand() from the tournament's
+ * (port_tournament.h). Not a room's match, whose session seeds them. */
+void port_TournamentFightSeed(void) {
+    PortTournament *tournament = &g_port_tournament;
+    u32 seed;
+
+    if (tournament->phase != PORT_TOURNAMENT_PLAYING || tournament->online) {
+        return;
+    }
+    seed = port_TournamentDie(tournament, 0);
+    rng_SetSeed((s32)seed);
+    srand(seed);
 }
 
 /* The match in play won by the side `winner`: the bracket told, the
@@ -250,6 +349,7 @@ static void port_TournamentDecide(PortTournament *tournament, s32 winner) {
     tournament->phase = port_BracketIsDone(&tournament->bracket)
                             ? PORT_TOURNAMENT_DONE
                             : PORT_TOURNAMENT_BETWEEN;
+    tournament->dice_kept = tournament->dice;
     /* (a room's match: its session ends here, the room's bracket told) */
     tournament->ask_bracket = !tournament->online;
 }
@@ -373,7 +473,44 @@ void port_TournamentBegin(const PortTournamentSetup *setup) {
     tournament->phase = port_BracketIsDone(&tournament->bracket)
                             ? PORT_TOURNAMENT_DONE
                             : PORT_TOURNAMENT_BETWEEN;
+    tournament->dice_kept = tournament->dice;
     tournament->ask_bracket = TRUE;
+}
+
+/* One kept begun again (port_tournament.h): begun from its setup, each
+ * result reported again in its order, its dice as the last was decided. */
+s32 port_TournamentResume(const PortTournamentKept *kept) {
+    PortTournament *tournament = &g_port_tournament;
+    s32 i;
+
+    port_TournamentBegin(&kept->setup);
+    if (tournament->phase == PORT_TOURNAMENT_OFF) {
+        return FALSE;
+    }
+    for (i = 0; i < kept->results && i < PORT_BRACKET_MATCHES; i++) {
+        s32 index = kept->result[i] >> 1;
+
+        if (port_BracketNext(&tournament->bracket) != index ||
+            !port_BracketReport(
+                &tournament->bracket, index, kept->result[i] & 1)) {
+            /* not this bracket's: nothing begun */
+            port_TournamentEnd();
+            return FALSE;
+        }
+        tournament->decided++;
+    }
+    for (i = 0; i < PORT_BRACKET_MOST; i++) {
+        tournament->last_fighter[i] = kept->last_fighter[i];
+        tournament->last_weapon[i] = kept->last_weapon[i];
+    }
+    tournament->judged = kept->judged;
+    tournament->dice = kept->dice;
+    tournament->dice_kept = kept->dice;
+    tournament->resumed = TRUE;
+    tournament->phase = port_BracketIsDone(&tournament->bracket)
+                            ? PORT_TOURNAMENT_DONE
+                            : PORT_TOURNAMENT_BETWEEN;
+    return TRUE;
 }
 
 /* The window's asks for this input taken in, each once: a tournament
@@ -393,6 +530,8 @@ static void port_TournamentTakeAsks(PortTournament *tournament) {
             port_TournamentEnd();
         } else if (kind == PORT_TOURNAMENT_ASK_BEGIN) {
             port_TournamentBegin(port_TournamentAskedSetup());
+        } else if (kind == PORT_TOURNAMENT_ASK_RESUME) {
+            port_TournamentResume(port_TournamentAskedKept());
         } else if (tournament->phase == PORT_TOURNAMENT_BETWEEN) {
             tournament->phase = PORT_TOURNAMENT_STARTING;
         }

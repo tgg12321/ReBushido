@@ -37,6 +37,7 @@ enum {
     ITEM_PLAY = 7, /* the bracket's page */
     ITEM_LEAVE = 8,
     ITEM_DONE = 9,
+    ITEM_RESUME = 10, /* the tournament's page: the one kept, again */
 };
 
 #define ITEM(kind, index) ((kind) << ITEM_SHIFT | (index))
@@ -55,8 +56,9 @@ static const char * const g_cpu_names[PORT_CPU_LEVELS + 1] = {
 static struct {
     PortTournamentEntrant entrant[PORT_BRACKET_MOST];
     s32 has_entrants;
-    s32 editing;     /* the entrant whose page is up */
-    s32 leave_asked; /* Leave pressed once: the second leaves */
+    s32 editing;             /* the entrant whose page is up */
+    s32 leave_asked;         /* Leave pressed once: the second leaves */
+    PortTournamentKept kept; /* the one kept, as the page last read it */
 } g_tour;
 
 /* The page's entrants as they start: the first player's pad, then the CPU
@@ -123,6 +125,10 @@ s32 port_TournamentPageItems(s32 page, s32 *items, s32 most) {
 
     port_TourEntrants();
     if (page == PORT_TOUR_PAGE_SETUP) {
+        if (tournament->phase == PORT_TOURNAMENT_OFF &&
+            port_TournamentKeptRead(&g_tour.kept)) {
+            items[count++] = ITEM(ITEM_RESUME, 0);
+        }
         for (i = 0; i < port_TourCount() && count < most; i++) {
             items[count++] = ITEM(ITEM_ENTRANT, i);
         }
@@ -225,6 +231,13 @@ void port_TournamentPageDescribe(
     case ITEM_BEGIN:
         snprintf(label, label_room, "Begin the tournament");
         break;
+    case ITEM_RESUME:
+        snprintf(label, label_room, "Resume");
+        /* (the date's day: the time would not fit beside the label) */
+        snprintf(value, value_room, "%d entrants, %d played, %.10s",
+                 g_tour.kept.setup.count, g_tour.kept.results,
+                 g_tour.kept.date[0] != 0 ? g_tour.kept.date : "-");
+        break;
     case ITEM_NAME:
         snprintf(label, label_room, "Name");
         if (typed != NULL) {
@@ -276,7 +289,10 @@ const char *port_TournamentPageHelp(s32 item, s32 is_typing) {
                "CPU's fighter and weapon";
     case ITEM_BEGIN:
         return "The seeds drawn (or in order) and the bracket made; its "
-               "first match is next";
+               "first match is next (a tournament kept is let go)";
+    case ITEM_RESUME:
+        return "The tournament left when the program closed, its bracket "
+               "as it was: a match not finished is played again";
     case ITEM_NAME:
         return is_typing ? "Type the name; Enter keeps it, Escape leaves it"
                          : "Enter / Cross: type a name (letters, digits, "
@@ -293,7 +309,8 @@ const char *port_TournamentPageHelp(s32 item, s32 is_typing) {
         return "Its players pick at the select screen; two CPUs go straight "
                "to their fight";
     case ITEM_LEAVE:
-        return "The tournament ends here and is not kept";
+        return "The tournament ends here and is not kept (one not left is "
+               "kept when the program closes)";
     default:
         return "The result is kept in your record (Options, Stats)";
     }
@@ -303,11 +320,10 @@ const char *port_TournamentPageHelp(s32 item, s32 is_typing) {
  * `note`, where two entrants are played by the same pad. */
 static s32 port_TourSetup(PortTournamentSetup *setup, char *note, u32 room) {
     static const u8 g_rules[][2] = {
-        {PORT_MATCH_FIRST_TO, 1},
-        {PORT_MATCH_FIRST_TO, 2},
-        {PORT_MATCH_FIRST_TO, 3},
-        {PORT_MATCH_STOCK, 2},
-        {PORT_MATCH_STOCK, 3}};
+        {PORT_MATCH_FIRST_TO, 1}, {PORT_MATCH_FIRST_TO, 2},
+        {PORT_MATCH_FIRST_TO, 3}, {PORT_MATCH_STOCK, 2},
+        {PORT_MATCH_STOCK, 3},    {PORT_MATCH_CREW, 2},
+        {PORT_MATCH_CREW, 3},     {PORT_MATCH_CREW, 5}};
     s32 rule = port_TourSetting(
         g_port_settings.tournament_match, 0, COUNT_OF(g_rules) - 1);
     s32 used[PORT_TOURNAMENT_PADS];
@@ -350,6 +366,15 @@ s32 port_TournamentPageAccept(
     case ITEM_ENTRANT:
         g_tour.editing = index;
         return PORT_TOUR_ENTRANT;
+    case ITEM_RESUME:
+        if (!port_AskTournamentResume()) {
+            snprintf(note, note_room, "The tournament kept cannot be read");
+            return PORT_TOUR_NOTHING;
+        }
+        g_tour.leave_asked = FALSE;
+        port_Note("tournament page: resumed, %d entrants, %d played",
+                  g_tour.kept.setup.count, g_tour.kept.results);
+        return PORT_TOUR_BRACKET;
     case ITEM_BEGIN:
         if (!port_TourSetup(&setup, note, note_room)) {
             return PORT_TOUR_NOTHING;
