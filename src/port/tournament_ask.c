@@ -47,11 +47,15 @@ static struct {
     PortTournamentSetup setup;
     /* the tournament was on at the last boundary (its end said) */
     s32 was_on;
-    /* a test's: boundaries at the main menu before the next match, and
-     * the program ended when it is over */
+    /* a test's: inputs at the main menu before the next match, and the
+     * program ended when it is over; the input the main menu came up at
+     * (the game's inputs, not boundaries: a rollback that runs frames
+     * again brings the match no sooner), and whether it has been asked */
     s32 auto_after;
     s32 auto_quit;
-    s32 waited;
+    u32 top_from;
+    s32 top_seen;
+    s32 auto_asked;
     /* the tournament the log and the record have followed: its number,
      * the matches said, whether its line is written */
     u16 number;
@@ -472,7 +476,8 @@ static void port_TournamentBegun(void) {
     g_port_tournament_ask.number = tournament->number;
     g_port_tournament_ask.said = 0;
     g_port_tournament_ask.recorded = FALSE;
-    g_port_tournament_ask.waited = 0;
+    g_port_tournament_ask.top_seen = FALSE;
+    g_port_tournament_ask.auto_asked = FALSE;
     port_Log("tournament: begun, %d entrants, %s elimination, %s %d, seeds:",
              tournament->setup.count,
              tournament->setup.is_double ? "double" : "single",
@@ -523,9 +528,14 @@ void port_TournamentBoundary(void) {
     if (g_port_tournament_ask.auto_after > 0 && at_top &&
         (tournament->phase == PORT_TOURNAMENT_BETWEEN ||
          tournament->phase == PORT_TOURNAMENT_DONE)) {
-        if (++g_port_tournament_ask.waited >=
-            g_port_tournament_ask.auto_after) {
-            g_port_tournament_ask.waited = 0;
+        if (!g_port_tournament_ask.top_seen) {
+            g_port_tournament_ask.top_seen = TRUE;
+            g_port_tournament_ask.top_from = g_port_input_count;
+        }
+        if (!g_port_tournament_ask.auto_asked &&
+            g_port_input_count - g_port_tournament_ask.top_from >=
+                (u32)g_port_tournament_ask.auto_after) {
+            g_port_tournament_ask.auto_asked = TRUE;
             if (tournament->phase == PORT_TOURNAMENT_BETWEEN) {
                 port_AskTournamentPlay();
             } else if (g_port_tournament_ask.auto_quit) {
@@ -534,6 +544,7 @@ void port_TournamentBoundary(void) {
             }
         }
     } else if (!at_top) {
-        g_port_tournament_ask.waited = 0;
+        g_port_tournament_ask.top_seen = FALSE;
+        g_port_tournament_ask.auto_asked = FALSE;
     }
 }

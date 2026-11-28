@@ -254,6 +254,67 @@ the opponent strikes when it stands within his reach; the master stands at
 the edge of a hasty opponent's reach to draw him, and goes in on a patient
 one.
 
+### Committing (2026-11-28)
+
+Before this, two of the port's CPUs could stand off each other for the
+whole fight: each stood just past the other's reach and struck first
+only inside its own, so where neither came in nothing happened (a
+master's first strike was 2 in 1,024 a frame). Measured (below,
+"Fights to the clock"), a fight of two masters went past three minutes
+in 23 of 48, and the tournament's judges (PORT.md, "A local tournament")
+decided 11 of its 34 matches of two CPUs. The logs
+(`--cpu-log`) showed three ways it stalled: both standing still, each in
+the place it liked, for minutes; each standing "in its reach" by the
+motion's numbers (`attack_reach`) where no attack of its list was meant
+for that distance, so every strike it tried found none; and two
+fighters on two levels of a terraced stage, the lower one's way blocked
+by the step and the upper one's by the drop, sidling side to side for
+ever. Now it commits as a player does, from what it can see:
+
+- **A patience that runs out.** It counts the frames since anything
+  happened, as it saw it (`PortCpuMind.quiet`, `port_CpuNoteQuiet`): a
+  wound of either begins the count again; an attack begun, his or its
+  own, halves it. Past its level's `patience` it presses, all it will
+  after `ramp` frames more (`port_CpuPressure`, of 256): ahead on wounds
+  in half the hurry, behind more for each wound it has more than it saw
+  him to have (64 each); and more as the fight goes on, ahead or not
+  (from a minute, all by two and a half: an opponent who will not come to
+  it, a person who stands there, is gone to in the end; an online
+  takeover's master ahead on wounds against two players who had stopped
+  pressing stood off them for good before this). Pressing, the place it likes
+  comes in from past his reach to within its own, and its chance to
+  strike first rises by its level's `aggression` (of 1,024 a frame),
+  walking in as well as standing.
+- **Its reach is its attacks' reach.** It counts itself in reach where an
+  attack of its list is meant for the distance (`port_CpuListReach`),
+  not where the motion's numbers say.
+- **Approach and pokes.** Pressing, from just past its reach (1,500) it
+  may lunge: a quick step in and a blow (`lunge`). A lesser level,
+  pressing, swings from as far as it misjudges (its `slack`).
+- **Meeting him.** As he is seen to walk, run or step into its reach, it
+  meets him with a blow (`meet`, of 256, once each time he comes in):
+  the adept now and then, the master nearly always. A player who walks
+  in on a master pays for it.
+- **Feints**, from the veteran up: pressing but not all out, standing
+  just past his reach, a step into it and straight back out
+  (`feint`), to draw a blow that misses, which it then punishes (an
+  opening, as before).
+- **Heights.** On its way to him, where the ground ahead is a drop or a
+  step (`CPU_FOUND_DROP`, `CPU_FOUND_BLOCKED_STEP`), it walks on: down
+  off it, or up it with R1 at its edge (`fighter_FindLedge`), as the
+  game's CPU climbs.
+
+The levels: the novice's patience runs out soonest (40 frames, 1.3 s;
+all out after 4 s more) and it swings carelessly, as a beginner does; the
+adept's after 3.3 s; the veteran's after 8 s, the master's after 10 s,
+each all out after 8 s more: the better player waits for an opening
+longer and makes one (a feint, meeting him as he comes in) before he
+forces one. The master, pressing, stays just outside his reach (200
+past it, `outside`) and goes in by lunges rather than walking into a
+veteran's blow (57% over the veteran of 192 fights with it, 55% of 288
+without). Its reaction times are as before; nothing it does is
+quicker or sees more.
+
 Its pad is a pad's: the fighter's own directions and buttons, held,
 pressed and released as a thumb does them; the stick buttons as the game's
 reader turns them into R1 and the first attack; never Start or Select.
@@ -377,11 +438,69 @@ a fight (`tools/port_rollback.py --test` the bench's plan
 72 rounds of 8 frames run twice, the same, on both sizes, plainly and
 quietly.
 
+### Fights to the clock (2026-11-28)
+
+`tools/port_cpu_bench.py` prints each fight's length in the fight's
+frames and how many went past 5,400 (three minutes, where a tournament
+judges a fight of two CPUs). Every pairing of the levels, before the CPU
+committed (48 fights a pair, the limit 12,000 blanks, about 5,800
+frames) and after (96 a pair; the master over the veteran 288):
+
+| Pairing | past three minutes, before | after | A's rate, before | after |
+|---|---|---|---|---|
+| Novice against Novice | 1 of 48 | 0 of 96 | | |
+| Adept against Novice | 0 of 48 | 0 of 96 | 75% | 59% |
+| Adept against Adept | 3 of 48 | 0 of 96 | | |
+| Veteran against Novice | 0 of 48 | 0 of 96 | 69% | 65% |
+| Veteran against Adept | 2 of 48 | 0 of 96 | 54% | 59% |
+| Veteran against Veteran | 5 of 48 | 0 of 96 | | |
+| Master against Novice | 3 of 48 | 0 of 96 | 73% | 68% |
+| Master against Adept | 8 of 48 | 0 of 96 | 71% | 69% |
+| Master against Veteran | 8 of 48 | 0 of 288 | 65% | 56% |
+| Master against Master | 23 of 48 | 0 of 96 | | |
+
+So 53 of 480 fights (11%) went to the clock before, none of 1,152 after;
+half the fights now end within 250 to 670 frames (8 to 22 s) and three
+quarters within 1,330. The tournament's `cpu8` and `byes` (PORT.md, "A
+local tournament") had 4 of 15 and 2 of 4 judged; now none. Each level
+still beats each below it (with 96 fights a rate is good to about ten
+points, with 288 to six: the master over the veteran, 162 to 126, is
+the one step near the noise), and by more the further down it is; the
+same levels against each other come to about half (46% to 53%). The
+novice is beaten by every level and by the game's own CPU (39%). Against
+the original (96 fights each): the novice 39%, the adept 40%, the
+veteran 53%, the master 60% (65% before): committing costs more against
+a CPU that sees an attack the frame it begins.
+
+How it was found and tuned (`--tune`, 96 fights): with the first
+pressing alone the veteran beat the novice only 54% and the master the
+veteran 50%: pressing made every fight a few blind swings. What gave the
+order back: the higher levels' patience made longer (the veteran over
+the novice 69% with it), the novice's made shorter with more blows
+(71%), and meeting him as he walks in. What did not move the master over
+the veteran (each 96 fights, 50% to 57%): more feints, longer patience,
+more or less aggression, meeting him always, the veteran meeting him
+less or feinting not at all.
+
+Unchanged where the setting is Original: the game's own CPU's fights
+(four of the bench's fights, the game's CPU on both sides, and a person
+who presses nothing against it with `--cpu original`) traced at a
+checkpoint every 30 frames for 5,400 frames, positions, wounds, the
+game's dice and all the plans' values, byte for byte the same before and
+after (the port's CPU is never set up there: `port_CpuInit` returns at
+`PORT_CPU_ORIGINAL`, and none of its code runs). The determinism check
+(`--check`, the master against the veteran) and the rollback self-test
+of the tournament's `rollback` case pass.
+
 ## 4. What is left
 
 - Getting about: it walks round the stage's obstacles to him (since
-  2026-11-27), but the original's circling of an opponent at an edge,
-  and its leaps down and climbs up a height on the way, are not used.
+  2026-11-27) and on over a drop or a step between them (2026-11-28),
+  but the original's circling of an opponent at an edge, and its leaps,
+  are not used.
+- The master over the veteran is the thinnest step since the CPU
+  commits (56%, "Fights to the clock"): none of the master's own numbers
+  tried moved it (feints, patience, aggression, meeting him).
 - Dirt, thrown sub-weapons and guns, which it neither uses nor answers
   better than by its guard.
 - Levels learned from replays of real players (item 23's files hold every

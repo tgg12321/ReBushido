@@ -11,7 +11,11 @@ levels (`--cpu A,B`, src/port/cpu.c). Fight k is on a stage and between two
 fighters drawn from the lists by k, with the port CPU's seed S + k; half of
 the fights put A in the first place and half in the second, so neither has
 the first fighter's side. Each fight ends when one falls (or at the limit,
-a draw). It prints each fight and the win rate of A over B.
+a draw). It prints each fight (with its length in the fight's frames) and
+the win rate of A over B, and how many fights went past three minutes,
+where a tournament's judges would have decided them (docs/CPU.md, "Fights
+to the clock"). `--program` runs another build (a copy of
+build/port/rebushido kept to compare against).
 
 `--log` keeps each fight's frame by frame record of both fighters
 (`--cpu-log`, src/port/cpu.c) in the fight's folder, for
@@ -33,6 +37,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, 'tools'))
 
 TUNE = []
+# the fight's frames (30 a second) after which a tournament's fight of two
+# CPUs is judged (PORT_TOURNAMENT_JUDGE_FRAMES, include/port_tournament.h)
+JUDGE_FRAMES = 5400
 PROGRAMS = {64: os.path.join('build', 'port', 'rebushido'),
             32: os.path.join('build', 'port32', 'rebushido')}
 
@@ -122,7 +129,7 @@ def run_fight(program, plan, order, out, stage, f1, f2, cpus, seed, log):
         if len(w) > 3 and w[0] == 'cp' and w[1] == 'end':
             values = dict(zip(order, w[3:]))
             winner = int(values['winner'])
-            frames = int(values.get('fight_frames', -1))
+            frames = max(int(values.get('p1_frames_alive', -1)), int(values.get('p2_frames_alive', -1)))
     return code, winner, frames, trace
 
 
@@ -133,6 +140,7 @@ def main():
     parser.add_argument('--fights', type=int, default=20)
     parser.add_argument('-j', type=int, default=4, help='fights at once')
     parser.add_argument('--bits', type=int, default=64, choices=(64, 32))
+    parser.add_argument('--program', help='the program to run (a copy of build/port/rebushido, say)')
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--first', type=int, default=0, help='the number of the first fight')
     parser.add_argument('--limit', type=int, default=24000, help='blanks before a fight is a draw')
@@ -152,7 +160,7 @@ def main():
         playtest.RETAIL_CUE = args.image
     if args.check:
         return check(args)
-    program = os.path.join(REPO, PROGRAMS[args.bits])
+    program = os.path.abspath(args.program) if args.program else os.path.join(REPO, PROGRAMS[args.bits])
     if not os.path.exists(program):
         print('port_cpu_bench: no %s (make port)' % program)
         return 1
@@ -166,13 +174,15 @@ def main():
             jobs.append((k, stage, f1, f2, cpus, swapped,
                          pool.submit(run_fight, program, plan, order, out, stage, f1, f2, cpus,
                                      args.seed + k, args.log)))
-        wins = losses = draws = failed = 0
+        wins = losses = draws = failed = judged = 0
+        lengths = []
         for k, stage, f1, f2, cpus, swapped, job in jobs:
             code, winner, frames, trace = job.result()
             if winner is None:
                 if code in (0, 1) and any(line.startswith('cp fight ') for line in trace.splitlines()):
                     result = 'draw'
                     draws += 1
+                    judged += 1
                 else:
                     result = 'FAILED (exit %d)' % code
                     failed += 1
@@ -181,9 +191,18 @@ def main():
                 result = 'A' if a_won else 'B'
                 wins += a_won
                 losses += not a_won
-            print('fight %4d  %-20s %-22s %-22s cpus %d,%d  winner %s' % (k, stage, f1, f2, cpus[0], cpus[1],
-                                                                          result), flush=True)
+                lengths.append(frames)
+                if frames > JUDGE_FRAMES:
+                    judged += 1
+                    result += ' (judged)'
+            print('fight %4d  %-20s %-22s %-22s cpus %d,%d  frames %5s  winner %s'
+                  % (k, stage, f1, f2, cpus[0], cpus[1], frames if winner is not None else '-', result), flush=True)
     decided = wins + losses
+    lengths.sort()
+    print('A (%d) against B (%d): %d of %d fights past %d frames (the tournament judges them), %d to the limit; '
+          'the fights decided: median %d frames, three quarters within %d'
+          % (args.a, args.b, judged, args.fights, JUDGE_FRAMES, draws,
+             lengths[len(lengths) // 2] if lengths else 0, lengths[len(lengths) * 3 // 4] if lengths else 0))
     print('A (%d) against B (%d): %d fights, A won %d, B won %d, %d draws, %d failed; A\'s rate %.0f%%'
           % (args.a, args.b, args.fights, wins, losses, draws, failed,
              100.0 * wins / decided if decided else 0.0))
