@@ -729,9 +729,20 @@ the stage").
     fighters, so the port's CPU plays partners, the CPU's team and a
     leaver's fighter, at the host's level online. Walking round the
     stage's obstacles by their corners, as the original plans (2026-11-27).
+    Committing (2026-11-28; CPU.md, "Committing"): two of the port's CPUs
+    stood off each other (two masters past three minutes in 23 of 48
+    fights; the tournament's judges decided 11 of its 34 matches of two
+    CPUs); now a patience that runs out (pressing the longer nothing
+    happens, the more it is behind, the later in the fight), lunges and
+    pokes, meeting him as he walks in, feints from the veteran up, its
+    reach its attacks' own, and over a drop or a step between them: none
+    of 1,152 fights past three minutes (53 of 480 before), the levels
+    still in order, the game's own CPU untouched with the setting
+    Original.
     Left: circling at an edge; dirt, thrown
     weapons and guns; levels learned from replays of real players; a
-    person's test of how it feels to fight.
+    person's test of how it feels to fight; the master over the veteran
+    the thinnest step (55 to 57%).
 28. **A resync button** (the owner, 2026-11-26, instead of a desync
     report): when an online session finds the machines' hashes parted, a
     press (any player's, or offered on its own) puts the host's state on
