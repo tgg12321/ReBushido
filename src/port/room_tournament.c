@@ -799,9 +799,27 @@ static void port_RtMemberTurn(const PortRoomView *view) {
         g_rt.seen_match = (u32)view->match.number;
     }
     if (g_rt.on && !g_rt.done && !g_rt.is_host && view->host != g_rt.host) {
-        port_Log("room tournament: its host has left the room: the "
-                 "tournament is over, unfinished\n");
-        g_rt.on = FALSE;
+        /* the host may leave as soon as the last match is decided, before
+         * this program read its last board (a loaded machine): the room's
+         * last result, where it is the match the board named, is taken
+         * here as the host took it */
+        if (g_rt.pair[0] != PORT_ROOM_NOBODY &&
+            (u32)view->last_number > g_rt.after &&
+            ((view->last_a == g_rt.pair[0] && view->last_b == g_rt.pair[1]) ||
+             (view->last_a == g_rt.pair[1] && view->last_b == g_rt.pair[0])) &&
+            (view->last_winner == PORT_ROOM_WON_FIRST ||
+             view->last_winner == PORT_ROOM_WON_SECOND)) {
+            s32 won = view->last_winner == PORT_ROOM_WON_FIRST ? view->last_a
+                                                               : view->last_b;
+
+            g_rt.after = (u32)view->last_number;
+            port_RtReport(port_RtSlotOf(won, view->last_a), FALSE);
+        }
+        if (!g_rt.done) {
+            port_Log("room tournament: its host has left the room: the "
+                     "tournament is over, unfinished\n");
+            g_rt.on = FALSE;
+        }
     }
     if (g_rt.on && !g_rt.done) {
         s32 want = (view->you == g_rt.pair[0] || view->you == g_rt.pair[1]) &&

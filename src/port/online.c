@@ -89,6 +89,7 @@ static struct {
     s32 tournament;
     s32 tournament_begun;
     char tournament_why[WHY_BYTES];
+    s32 tournament_seen; /* --room-until-champion: a tournament was on */
 } g_online;
 
 void port_OnlineWanted(void) { g_online.wanted = 1; }
@@ -855,6 +856,15 @@ static void port_OnlineRoomTurn(void) {
                      "leaves and ends\n");
             port_RoomLeave();
             port_Quit(PORT_EXIT_OK);
+        }
+        if (tournament.on) {
+            g_online.tournament_seen = TRUE;
+        } else if (g_online.tournament_seen) {
+            /* ended unfinished (its host left): nothing more to wait for */
+            port_Log("room: the room's tournament ended unfinished; this "
+                     "program leaves and ends\n");
+            port_RoomLeave();
+            port_Quit(PORT_EXIT_FAILED);
         }
     }
     if ((room->matches != 0 && view.last_number >= (s32)room->matches &&
