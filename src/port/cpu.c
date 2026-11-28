@@ -1675,10 +1675,13 @@ static u32 port_CpuFromAfar(
         mind->quiet /= 2;
         return DODGE_STARTED;
     }
-    /* -- an opening far off, run in on (the strike is the opening's) -- */
+    /* -- an opening far off, run in on (the strike is the opening's);
+     * pressing, one just out of its reach too, so that a man who swings
+     * at it from too far over and over is gone in on in the end -- */
     if (level->rushes && (busy || mind->rush_frames > 0) &&
-        distance > my_reach + OPENING_MARGIN && distance < RUSH_FAR &&
-        level_ground && *want > my_reach - PRESS_DEPTH) {
+        distance > (pressure >= LUNGE_PRESSURE ? my_reach - PRESS_DEPTH
+                                               : my_reach + OPENING_MARGIN) &&
+        distance < RUSH_FAR && level_ground && *want > my_reach - PRESS_DEPTH) {
         *want = my_reach - PRESS_DEPTH;
         if (angle < ANGLE_TURN / 16 &&
             port_CpuClear(fighter, CPU_PROBE_TOWARD) &&
