@@ -30,6 +30,8 @@
 #define SPEED_ONE 8
 #define COLOR_TEXT 0xFFEDEDF2U
 #define COLOR_TROUBLE 0xFFF0A848U
+/* the theatre's part of the line (sdl_theatre.c, port_TheatreWords) */
+#define THEATRE_BYTES 320
 
 static struct {
     char folder[PATH_BYTES];
@@ -214,7 +216,7 @@ static s32 port_FilmWords(char *out, u32 room, u32 *color) {
 u32 port_ReplayWords(char *out, u32 room) {
     PortReplayStatus status;
     char speed[32];
-    char theatre[PORT_REPLAY_WHY_BYTES];
+    char theatre[THEATRE_BYTES];
     u32 color;
 
     out[0] = 0;

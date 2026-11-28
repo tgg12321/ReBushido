@@ -1,5 +1,6 @@
 /* The port's window, without SDL: the picture's place, the sound's queue, the
- * clock, the keys, the log's names and lines, the counter, the caches. */
+ * clock, the keys, the log's names and lines, the counter, the caches, the
+ * replay theatre's camera path and seek bar. */
 /* The arithmetic of the native port's window (src/port/window/; docs/
  * PORT.md, "The window"), held to cases worked out by hand. Nothing here
  * opens a window or a sound card: the four files ask nothing of SDL or
@@ -12,6 +13,7 @@
 #include "src/port/window/logname.c"
 #include "src/port/window/fps.c"
 #include "src/port/window/cpus.c"
+#include "src/port/window/theatre_path.c"
 #include "runtime/runtime.h"
 
 /* ---- where the picture goes ---- */
@@ -1471,6 +1473,146 @@ static void test_Cpus(void) {
     test_CheckChoice(PORT_CPUS_UNREAD, "-");
 }
 
+/* ---- the replay theatre's camera path and seek bar ---- */
+
+static PortTheatreCamera test_Camera(
+    s32 x, s32 y, s32 z, s32 pitch, s32 yaw, s32 distance, s32 plane) {
+    PortTheatreCamera camera;
+
+    camera.focus[0] = x;
+    camera.focus[1] = y;
+    camera.focus[2] = z;
+    camera.angles[0] = (s16)pitch;
+    camera.angles[1] = (s16)yaw;
+    camera.angles[2] = 0;
+    camera.distance = distance;
+    camera.plane = plane;
+    return camera;
+}
+
+static s32 test_SameCamera(
+    const PortTheatreCamera *a, const PortTheatreCamera *b) {
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        if (a->focus[i] != b->focus[i] || a->angles[i] != b->angles[i]) {
+            return FALSE;
+        }
+    }
+    return a->distance == b->distance && a->plane == b->plane;
+}
+
+static void test_Path(void) {
+    PortPath path;
+    PortTheatreCamera a = test_Camera(0, -500, 1000, 100, 4000, 2000, 772);
+    PortTheatreCamera b = test_Camera(3000, -500, -1000, 300, 200, 8000, 400);
+    PortTheatreCamera c = test_Camera(6000, -900, 0, -200, 1000, 4000, 1200);
+    PortTheatreCamera at;
+    PortTheatreCamera before;
+    u32 cleared = 0;
+    u32 frame;
+    s32 wrong = 0;
+    s32 i;
+
+    path.count = 0;
+    CHECK(!port_PathAt(&path, 10, &at));
+    CHECK(!port_PathClear(&path, 10, &cleared));
+    /* keys kept by their frames, one at a frame */
+    CHECK_EQ(port_PathSet(&path, 260, &b), 0);
+    CHECK_EQ(port_PathSet(&path, 200, &a), 0);
+    CHECK_EQ(port_PathSet(&path, 260, &b), 1);
+    CHECK_EQ(path.count, 2);
+    CHECK_EQ(path.keys[0].frame, 200);
+    CHECK_EQ(path.keys[1].frame, 260);
+    /* at a key, its camera; before the first and after the last, theirs */
+    CHECK(port_PathAt(&path, 200, &at) && test_SameCamera(&at, &a));
+    CHECK(port_PathAt(&path, 260, &at) && test_SameCamera(&at, &b));
+    CHECK(port_PathAt(&path, 0, &at) && test_SameCamera(&at, &a));
+    CHECK(port_PathAt(&path, 999, &at) && test_SameCamera(&at, &b));
+    /* two keys: eased from the one into the other, halfway at the middle;
+     * the yaw the short way round (4000 to 200 through 0, 296 on: 52),
+     * the inverse distance half way (2 / (1/2000 + 1/8000)), the screen's
+     * distance half way */
+    CHECK(port_PathAt(&path, 230, &at));
+    CHECK_EQ(at.focus[0], 1500);
+    CHECK_EQ(at.focus[1], -500);
+    CHECK_EQ(at.focus[2], 0);
+    CHECK_EQ(at.angles[0], 200);
+    CHECK_EQ(at.angles[1], 52);
+    CHECK_EQ(at.distance, 3200);
+    CHECK_EQ(at.plane, 586);
+    /* eased: a quarter of the time is less than a quarter of the way */
+    CHECK(port_PathAt(&path, 215, &at));
+    CHECK(at.focus[0] > 0 && at.focus[0] < 750);
+    /* the way along only ever on, never back, for two keys */
+    for (frame = 201; frame <= 260; frame++) {
+        port_PathAt(&path, frame - 1, &before);
+        port_PathAt(&path, frame, &at);
+        wrong += at.focus[0] < before.focus[0];
+    }
+    CHECK_EQ(wrong, 0);
+    /* three keys: through the middle one, with its slope Catmull-Rom's
+     * (the line through the two either side), so no stop there: 6000
+     * over 120 frames is 50 a frame, about 100 over two */
+    CHECK_EQ(port_PathSet(&path, 320, &c), 2);
+    CHECK(port_PathAt(&path, 260, &at) && test_SameCamera(&at, &b));
+    port_PathAt(&path, 259, &before);
+    port_PathAt(&path, 261, &at);
+    CHECK(at.focus[0] - before.focus[0] > 90 &&
+          at.focus[0] - before.focus[0] < 110);
+    /* the pitch, the distance and the screen's within the keys' own */
+    for (frame = 200; frame <= 320; frame++) {
+        port_PathAt(&path, frame, &at);
+        wrong += at.angles[0] < -200 || at.angles[0] > 300 ||
+                 at.distance < 2000 || at.distance > 8000 || at.plane < 400 ||
+                 at.plane > 1200;
+    }
+    CHECK_EQ(wrong, 0);
+    /* the nearest key cleared, the earlier of two as near */
+    CHECK(port_PathClear(&path, 290, &cleared));
+    CHECK_EQ(cleared, 260);
+    CHECK_EQ(path.count, 2);
+    CHECK_EQ(path.keys[1].frame, 320);
+    CHECK(port_PathClear(&path, 0, &cleared));
+    CHECK_EQ(cleared, 200);
+    CHECK(port_PathAt(&path, 10, &at) && test_SameCamera(&at, &c));
+    /* full */
+    path.count = 0;
+    for (i = 0; i < PORT_PATH_KEYS; i++) {
+        CHECK_EQ(port_PathSet(&path, (u32)(i * 10), &a), i);
+    }
+    CHECK_EQ(port_PathSet(&path, 5, &a), -1);
+    CHECK_EQ(port_PathSet(&path, 10, &b), 1);
+}
+
+static void test_Bar(void) {
+    s32 wrong = 0;
+    s32 x;
+
+    /* a track 400 pixels from 100, for 601 frames: 1.5 a pixel */
+    CHECK_EQ(port_BarFrameAt(100, 100, 400, 601), 0);
+    CHECK_EQ(port_BarFrameAt(50, 100, 400, 601), 0);
+    CHECK_EQ(port_BarFrameAt(500, 100, 400, 601), 600);
+    CHECK_EQ(port_BarFrameAt(900, 100, 400, 601), 600);
+    CHECK_EQ(port_BarFrameAt(300, 100, 400, 601), 300);
+    CHECK_EQ(port_BarFrameAt(200, 100, 400, 601), 150);
+    CHECK_EQ(port_BarFrameAt(101, 100, 400, 601), 2);
+    CHECK_EQ(port_BarXOf(0, 100, 400, 601), 100);
+    CHECK_EQ(port_BarXOf(600, 100, 400, 601), 500);
+    CHECK_EQ(port_BarXOf(150, 100, 400, 601), 200);
+    CHECK_EQ(port_BarXOf(9999, 100, 400, 601), 500);
+    /* a pixel's frame is drawn at that pixel */
+    for (x = 100; x <= 500; x++) {
+        wrong += port_BarXOf(
+                     port_BarFrameAt(x, 100, 400, 4000), 100, 400, 4000) != x;
+    }
+    CHECK_EQ(wrong, 0);
+    /* a replay of a frame or none */
+    CHECK_EQ(port_BarFrameAt(300, 100, 400, 1), 0);
+    CHECK_EQ(port_BarFrameAt(300, 100, 400, 0), 0);
+    CHECK_EQ(port_BarXOf(0, 100, 400, 1), 100);
+}
+
 void test_Main(void) {
     test_Place();
     test_Shape();
@@ -1483,4 +1625,6 @@ void test_Main(void) {
     test_Log();
     test_Counter();
     test_Cpus();
+    test_Path();
+    test_Bar();
 }

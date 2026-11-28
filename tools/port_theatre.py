@@ -14,7 +14,9 @@ for the replay's frame F, `hold` pauses, `step` a frame on, `back` a frame
 back, `seek:F`, `free`, `orbit:YAW:PITCH`, `move:F:R:U`, `zoom:P`, `hud`,
 `time:T`, `still:PATH`, `hash` (a line with the frame, the input and the
 state's hash), `photo`, `clip:FROM:TO:GIF`, `plain` (no look at all, the
-playback as before the theatre). The cases:
+playback as before the theatre), `fov:DEGREES`, `key`, `unkey`,
+`camera` (a line with the camera), `in`, `out`, `bar`, `click:X:Y`,
+`drag:X1:X2:Y`, `shown:PATH`. The cases:
 
   look      the picture of a frame paused, every picture a look (the frame
             drawn again from the state before it), is the picture of the
@@ -42,12 +44,26 @@ playback as before the theatre). The cases:
             camera, the HUD hidden, the time of day turned, stills taken)
             and gone on: the state's hash at inputs after it the same as a
             run with no photo mode; photo mode refused in a replay
+  path      the free camera keyed at frames 200 and 260 (`key`, another
+            field of view at the second, `fov:`): between them the camera
+            is the curve's (half way at 230, eased at 215), the state's
+            hash at 230 a plain seek's; the theatre's clip of 200 to 260
+            follows the keys (its GIF decoded, its pictures moving, the
+            middle neither key's), and a film's run given them
+            (--theatre-path) has the playback's cameras at 200, 230 and
+            260, its first and last pictures near the keys' stills
+  bar       the seek bar's place (`bar`); a press of the mouse on it
+            (`click:X:Y`, SDL's events) lands on the frame of its x, the
+            state's hash a seek's to that frame; a drag along it lands
+            where it is let go; a press above it seeks nothing; the window
+            as shown (`shown:`) is the still but in the bar's strip
 
 It saves a few stills and clips for the eye in --keep (tmp/theatre/ by
 default). It needs the disc's image (REBUSHIDO_RETAIL, the .cue at the
 checkout's root, or at the main checkout's). Exit 0 if every check passes,
 1 if one fails; with no program or image it says so and passes."""
 import argparse
+import math
 import os
 import re
 import shutil
@@ -63,7 +79,12 @@ PROGRAMS = {'nt': 'build/port-sdl/windows/rebushido.exe', 'posix': 'build/port-s
 FIGHT = ['--fight', 'tatara-shrine', 'kannuki', 'mikado', '--fight-cpu']
 RECORD_FRAMES = '4000'
 SIZE = '640x360'
-CASES = ['look', 'seek', 'step', 'still', 'gif', 'photo']
+CASES = ['look', 'seek', 'step', 'still', 'gif', 'photo', 'path', 'bar']
+# the path's keys, and the frame half way and a quarter of the way
+KEY_A = 200
+KEY_B = 260
+# a picture of the path's clip neither key's: at least this far from both
+MOVED_LEAST = 8.0
 SECONDS = 900
 # the HUD of a versus fight (the wins' two boxes) is a small part of the picture
 HUD_MOST = 0.15
@@ -550,6 +571,213 @@ def case_photo(runner, report, keep):
     report.check('no photo mode: a replay plays' in said, 'photo mode refused in a replay')
 
 
+CAMERA = re.compile(r'theatre: camera at frame (\d+) free (\d) follows (\d) keys (\d+) focus (-?\d+) (-?\d+) (-?\d+) '
+                    r'angles (-?\d+) (-?\d+) (-?\d+) distance (\d+) plane (\d+) fov ([\d.]+)')
+
+
+def cameras(said):
+    """[(frame, follows, keys, (x, y, z), (pitch, yaw, roll), distance, plane)] of the `camera` lines."""
+    out = []
+    for m in CAMERA.finditer(said):
+        n = [int(v) for v in m.groups()[:12]]
+        out.append((n[0], n[2], n[3], tuple(n[4:7]), tuple(n[7:10]), n[10], n[11]))
+    return out
+
+
+def eased(a, b, s):
+    """The path's curve of two keys at `s` of the way: Hermite with no slope at either."""
+    h = s * s * (3 - 2 * s)
+    return a + (b - a) * h
+
+
+def expected_camera(a, b, frame):
+    """The camera the path of keys `a` and `b` has at `frame` (theatre_path.h): the focus and the pitch along
+    the curve, the yaw the short way round, the inverse of the distance, the screen's distance; before the
+    first key and after the last, theirs."""
+    s = min(1.0, max(0.0, (frame - a[0]) / float(b[0] - a[0])))
+    _, _, _, fa, aa, da, pa = a
+    _, _, _, fb, ab, db, pb = b
+    turn = (ab[1] - aa[1]) % 4096
+    if turn > 2048:
+        turn -= 4096
+    yaw = eased(aa[1], aa[1] + turn, s) % 4096
+    nearness = eased(1e6 / da, 1e6 / db, s)
+    return (tuple(eased(fa[i], fb[i], s) for i in range(3)), eased(aa[0], ab[0], s), yaw, 1e6 / nearness,
+            eased(pa, pb, s))
+
+
+def near_camera(got, want):
+    """Whether a `camera` line is the camera wanted, to a unit (a distance to its thousandth)."""
+    focus, pitch, yaw, distance, plane = want
+    _, _, _, f, angles, d, p = got
+    turned = abs((angles[1] - yaw + 2048) % 4096 - 2048)
+    return (all(abs(f[i] - focus[i]) <= 1 for i in range(3)) and abs(angles[0] - pitch) <= 1 and turned <= 1 and
+            abs(d - distance) <= max(1, distance / 1000.0) and abs(p - plane) <= 1)
+
+
+def check_camera(report, got, frame, key_a, key_b, what):
+    want = expected_camera(key_a, key_b, got[0])
+    report.check(got[0] == frame and near_camera(got, want),
+                 'frame %d: %s, %s %s %d %d (wanted %s)'
+                 % (got[0], what, got[3], got[4], got[5], got[6],
+                    ', '.join('%.1f' % v if not isinstance(v, tuple) else str(tuple(round(x) for x in v))
+                              for v in want)))
+
+
+def path_words(keys):
+    """--theatre-path's words of `camera` lines."""
+    return ';'.join('%d,%d,%d,%d,%d,%d,%d,%d,%d' % ((c[0],) + c[3] + c[4] + (c[5], c[6])) for c in keys)
+
+
+def case_path(runner, replay, report, keep):
+    a_still = os.path.join(runner.out, 'path-key-a.png')
+    b_still = os.path.join(runner.out, 'path-key-b.png')
+    size = '1280x720'
+    words = ('at:%d hold seek:%d wait:2 orbit:300:80 zoom:120 key wait:2 camera still:%s '
+             'seek:%d wait:3 orbit:-900:-60 zoom:50 move:1500:800:200 fov:75 key wait:2 camera still:%s '
+             'seek:%d wait:3 camera hash seek:%d wait:3 camera clip:%d:%d:1 clip-wait quit'
+             % (KEY_A - 20, KEY_A, a_still, KEY_B, b_still, (KEY_A + KEY_B) // 2, KEY_A + (KEY_B - KEY_A) // 4,
+                KEY_A, KEY_B))
+    code, said = runner.play('path', replay, words, 'original', size)
+    seen = cameras(said)
+    if not report.check(code == 0 and ended_well(said) and len(seen) == 4 and
+                        os.path.isfile(a_still) and os.path.isfile(b_still),
+                        'two keys set, the camera said four times (exit %d, %d cameras)' % (code, len(seen))):
+        print(said[-2000:])
+        return
+    key_a, key_b, middle, quarter = seen
+    report.check(key_a[0] == KEY_A and key_b[0] == KEY_B and key_b[2] == 2 and middle[1] == 1,
+                 'keys at frames %d and %d, the camera following them' % (key_a[0], key_b[0]))
+    report.check(abs(key_b[6] - round(320 / math.tan(math.radians(37.5)))) <= 1 and key_a[6] != key_b[6],
+                 'the second key at another field of view: 75 degrees, the screen at %d (the first\'s %d)'
+                 % (key_b[6], key_a[6]))
+    for got, frame in ((middle, (KEY_A + KEY_B) // 2), (quarter, KEY_A + (KEY_B - KEY_A) // 4)):
+        check_camera(report, got, frame, key_a, key_b, 'the curve\'s camera')
+    by_frame, _ = hashes(said)
+    code_s, said_s = runner.play('path-seek', replay, 'at:10 hold seek:%d wait:2 hash quit' % middle[0])
+    plain, _ = hashes(said_s)
+    report.check(middle[0] in by_frame and by_frame.get(middle[0]) == plain.get(middle[0]),
+                 'frame %d: the state\'s hash %s with the path, %s by a plain seek'
+                 % (middle[0], by_frame.get(middle[0]), plain.get(middle[0])))
+    # the theatre's clip, with the keys (the setting's picture: remastered)
+    made = re.search(r'film: (\S.*?\.gif), \d+ frames', said)
+    if report.check(made is not None and os.path.isfile(made.group(1)),
+                    'the theatre\'s clip of the keyed camera made by another run'):
+        check_gif(report, made.group(1), KEY_B - KEY_A + 1, 'the keyed clip')
+        check_moving(report, made.group(1), 'the keyed clip')
+        if keep:
+            shutil.copy(made.group(1), os.path.join(keep, 'clip-keyed-remastered.gif'))
+        os.remove(made.group(1))
+    # a film's run given the keys: the same cameras, its ends the keys' stills
+    gif = os.path.join(runner.out, 'path.gif')
+    view = '1,%d,%d,%d,%d,%d,%d,%d,0,-1,%d' % (key_a[3] + key_a[4] + (key_a[5], key_a[6]))
+    code, said = runner.run('path-film', ['--graphics', 'original', '--window', size, '--replay', replay,
+                                          '--export', gif, '--export-from', str(KEY_A), '--export-to', str(KEY_B),
+                                          '--theatre-view', view, '--theatre-path', path_words([key_a, key_b]),
+                                          '--theatre-keys', 'at:%d camera at:%d camera at:%d camera'
+                                          % (KEY_A, middle[0], KEY_B)])
+    film = cameras(said)
+    if not report.check(code == 0 and os.path.isfile(gif) and len(film) == 3,
+                        'the film\'s run given the keys (exit %d, %d cameras)' % (code, len(film))):
+        return
+    # (a word of a run that plays waits for its frame or the one after)
+    for got, frame in zip(film, (KEY_A, middle[0], KEY_B)):
+        check_camera(report, got, got[0] if got[0] in (frame, frame + 1) else frame, key_a, key_b,
+                     'the film\'s camera the path\'s')
+    width, height, frames, _ = read_gif(gif)
+    shown = list(composite_gif(width, height, frames))
+    ends = [(0, a_still), (len(shown) - 1, b_still)]
+    worst = max(mean_difference((width, height, shown[k]), halved(read_png(p))) for k, p in ends)
+    report.check(len(shown) == KEY_B - KEY_A + 1 and worst <= GIF_MOST,
+                 'the film\'s first and last pictures are the keys\' stills (a channel\'s mean difference %.2f '
+                 'of 255 at most, %.1f allowed)' % (worst, GIF_MOST))
+    check_moving(report, gif, 'the film of the keys')
+    if keep:
+        shutil.copy(gif, os.path.join(keep, 'clip-keyed-original.gif'))
+        shutil.copy(a_still, os.path.join(keep, 'key-a.png'))
+        shutil.copy(b_still, os.path.join(keep, 'key-b.png'))
+
+
+def check_moving(report, path, what):
+    """The camera moves through a clip: its middle picture neither its first nor its last, and each
+    picture another than the one before it."""
+    width, height, frames, _ = read_gif(path)
+    shown = list(composite_gif(width, height, frames))
+    if not report.check(len(shown) > 4, '%s: pictures to compare (%d)' % (what, len(shown))):
+        return
+    first, middle, last = shown[0], shown[len(shown) // 2], shown[-1]
+    far = min(mean_difference((width, height, middle), (width, height, first)),
+              mean_difference((width, height, middle), (width, height, last)))
+    report.check(far >= MOVED_LEAST, '%s: the middle picture neither the first nor the last (a channel\'s mean '
+                 'difference %.1f of 255 from the nearer, %.1f at least)' % (what, far, MOVED_LEAST))
+    still = sum(1 for k in range(1, len(shown)) if shown[k] == shown[k - 1])
+    report.check(still == 0, '%s: every picture another than the one before (%d the same)' % (what, still))
+
+
+BAR = re.compile(r'theatre: bar track (-?\d+) (\d+) band (-?\d+) (-?\d+) (\d+) (\d+) frames (\d+) shown (\d)')
+
+
+def bar_frame(x, left, width, frames):
+    """The frame of the bar at pixel `x` (theatre_path.h, port_BarFrameAt)."""
+    along = x - left
+    if frames <= 1 or along <= 0:
+        return 0
+    if along >= width:
+        return frames - 1
+    return int(along * (frames - 1) / float(width) + 0.5)
+
+
+def case_bar(runner, replay, report, keep):
+    size = '1280x720'
+    code, said = runner.play('bar-place', replay, 'at:100 hold wait:2 bar quit', 'remastered', size)
+    place = BAR.search(said)
+    if not report.check(code == 0 and place is not None and place.group(8) == '1',
+                        'the bar\'s place said, the bar shown with the HUD (exit %d)' % code):
+        return
+    left, width, band_x, band_y, band_w, band_h, frames = (int(v) for v in place.groups()[:7])
+    window_w, window_h = (int(n) for n in size.split('x'))
+    report.check(0 <= band_x < left and left + width < band_x + band_w <= window_w and
+                 window_h // 2 < band_y < band_y + band_h <= window_h,
+                 'a strip at the bottom, %d by %d at (%d, %d), its track %d across from %d; %d frames'
+                 % (band_w, band_h, band_x, band_y, width, left, frames))
+    y = band_y + band_h // 2
+    x1 = left + width * 3 // 10
+    x2 = left + width * 6 // 10
+    x3 = left + width // 2
+    e1 = bar_frame(x1, left, width, frames)
+    e2 = bar_frame(x2, left, width, frames)
+    still = os.path.join(runner.out, 'bar-still.png')
+    shown = os.path.join(runner.out, 'bar-shown.png')
+    words = ('at:100 hold wait:2 click:%d:%d wait:3 hash drag:%d:%d:%d wait:3 hash click:%d:%d wait:3 hash '
+             'seek:%d wait:3 hash seek:%d wait:3 in key seek:%d wait:3 orbit:500:60 key out wait:3 still:%s '
+             'shown:%s quit'
+             % (x1, y, x1, x2, y, x3, band_y - band_h, e1, e1 + 40, e1 + 150, still, shown))
+    code, said = runner.play('bar', replay, words, 'remastered', size)
+    lines = re.findall(r'theatre: frame (\d+) input \d+ hash ([0-9A-F]{16})', said)
+    if not report.check(code == 0 and ended_well(said) and len(lines) == 4,
+                        'played, pressed and dragged (exit %d, %d hashes)' % (code, len(lines))):
+        print(said[-2000:])
+        return
+    got = [int(f) for f, _ in lines]
+    report.check(got[0] == e1, 'a press at x %d lands on frame %d (%d wanted)' % (x1, got[0], e1))
+    report.check(got[1] == e2, 'a drag from x %d to %d lands on frame %d (%d wanted)' % (x1, x2, got[1], e2))
+    report.check(got[2] == e2, 'a press above the bar seeks nothing (frame %d)' % got[2])
+    report.check(got[3] == e1 and lines[3][1] == lines[0][1],
+                 'frame %d: the state\'s hash %s by the press, %s by a seek' % (e1, lines[0][1], lines[3][1]))
+    if not report.check(os.path.isfile(still) and os.path.isfile(shown), 'the still and the window shown written'):
+        return
+    a, b = read_png(still), read_png(shown)
+    rows = set()
+    for i in range(0, len(a[2]), 3):
+        if a[2][i:i + 3] != b[2][i:i + 3]:
+            rows.add(i // 3 // a[0])
+    report.check(rows and min(rows) >= band_y and max(rows) < band_y + band_h,
+                 'the window shown is the still but in the bar\'s strip (rows %s to %s differ, the strip %d to %d)'
+                 % (min(rows) if rows else '-', max(rows) if rows else '-', band_y, band_y + band_h - 1))
+    if keep:
+        shutil.copy(shown, os.path.join(keep, 'seek-bar.png'))
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'theatre'))
@@ -597,6 +825,10 @@ def main(argv):
             case_gif(runner, replay, report, keep)
         elif case == 'photo':
             case_photo(runner, report, keep)
+        elif case == 'path':
+            case_path(runner, replay, report, keep)
+        elif case == 'bar':
+            case_bar(runner, replay, report, keep)
     print('port_theatre: %s' % ('%d checks failed' % report.failed if report.failed else 'every check passed'))
     return 1 if report.failed else 0
 

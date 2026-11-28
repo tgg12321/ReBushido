@@ -780,9 +780,17 @@ the stage").
     Proved by `tools/port_theatre.py` (a look's picture the playback's
     own, a seek's hashes the played-through ones, step and back, stills,
     both clips decoded, photo mode's fight the same hash for hash as one
-    without it). Left: a seek bar for the mouse; a camera that moves
-    through a clip (a clip's is where it was as G was pressed); the
-    field of view; the owner's eye on `tmp/theatre/`.
+    without it). Then (PORT.md, "The camera's keys", "The seek bar",
+    "The field of view"): a seek bar for the mouse in the menus' look
+    (shown with the HUD or as the mouse moves; a click or a drag seeks,
+    the clip's marks and the camera's keys on it); a camera that moves
+    through a clip, keys of the free camera (J, U, O) on a curve
+    through them (Catmull-Rom on each number, the turn the short way
+    round with the horizon level, a zoom even), passed to a clip's run
+    (`--theatre-path`); the field of view (N M, Ctrl and the wheel, 20
+    to 100 degrees, kept with the keys, in photo mode too). Proved by
+    `port_theatre.py path` and `bar` and `tests/port/window.c`. Left:
+    the owner's eye on `tmp/theatre/` and `tmp/theatre2/`.
 30. **Stats** (the owner, 2026-11-26; no achievements): a player's record
     kept by the program: fights and matches won and lost, by fighter,
     weapon, stage, mode and opponent (CPU levels, online names); kills
