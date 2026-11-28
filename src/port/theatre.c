@@ -9,7 +9,6 @@
 #include "common.h"
 #include "port_host.h"
 #include "port_net.h"
-#include "port_gte.h"
 #include "bb2.h"
 
 /* A look runs the step before the boundary again: the picture a boundary
