@@ -97,6 +97,47 @@ typedef struct {
     /* TRUE: pressing, it waits just outside his reach and goes in by
      * lunges, not by walking into a blow */
     u8 outside;
+    /* TRUE: weighs each of its ways in (meeting him, striking first,
+     * lunging, an opening) by what it has come to against him: landed, or
+     * hurt in it (port_CpuTacticWeight) */
+    u8 weighs_tactics;
+    /* TRUE: strikes at an opening only with an attack it knows to reach
+     * him before he is over it (its attacks' speeds, learned as it uses
+     * them) */
+    u8 times_openings;
+    /* of 256: the chance to step aside out of the line of something seen
+     * thrown at it (a sub-weapon, dirt, a shot), where there is time */
+    u8 dodge;
+    /* of 1024 a frame, standing off him: the chance to throw a sub-weapon
+     * (where it has one), to throw dirt (standing on loose ground), and,
+     * pressing, to leap in with the leaping attack from its distance */
+    u8 throws;
+    u8 dirt;
+    u8 leap;
+    /* TRUE: an opening seen beyond its reach (his attack missed far off,
+     * he staggers at its dirt, reloads, gets up) is run in on and struck,
+     * and a long one far off is leapt at or thrown at */
+    u8 rushes;
+    /* TRUE: crowded at an edge or a wall with him in reach, it circles
+     * round him to open ground, as the game's CPU does
+     * (cpu_PortPlanCircling); and with his back to a drop or a wall it
+     * presses in on him there */
+    u8 circles;
+    /* TRUE: an attack it judges will fall short (it stands past the
+     * motion's reach by `holds_margin`) is let go by, standing, ready to
+     * punish it, not stepped back from or guarded */
+    u8 holds;
+    s16 holds_margin;
+    /* TRUE: reads how he answers it (port_CpuReadAnswers): one who strikes
+     * at it as it comes into his reach is feinted at, to make him miss;
+     * one who goes straight on from a miss into another attack is not
+     * struck at in the first till he cannot */
+    u8 reads_answers;
+    /* not 0: a strike at him free to answer it (meeting him, striking
+     * first, after a lunge's step) is made only with an attack that
+     * brings its blade within this many frames, as it knows its moves
+     * (port_CpuBladeFrames): a slow one is seen coming and met */
+    u8 quick;
 } PortCpuLevel;
 
 static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
@@ -122,7 +163,11 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .patience = 40,
      .ramp = 120,
      .aggression = 64,
-     .lunge = 24},
+     .lunge = 24,
+     .dodge = 40,
+     .throws = 4,
+     .dirt = 3,
+     .leap = 6},
     /* adept: learns which of its attacks do */
     {.reaction = 8,
      .jitter = 2,
@@ -141,7 +186,12 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .ramp = 150,
      .aggression = 48,
      .lunge = 24,
-     .meet = 60},
+     .meet = 60,
+     .dodge = 100,
+     .throws = 3,
+     .dirt = 2,
+     .leap = 4,
+     .circles = TRUE},
     /* veteran: reads the opponent's habits; waits 8 s for an opening
      * before it presses, meets him as he walks in, feints */
     {.reaction = 7,
@@ -163,7 +213,12 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .aggression = 56,
      .lunge = 28,
      .feint = 20,
-     .meet = 220},
+     .meet = 220,
+     .dodge = 170,
+     .throws = 2,
+     .dirt = 2,
+     .leap = 2,
+     .circles = TRUE},
     /* master: a quick player's reaction, never less; draws a hasty
      * opponent out; waits longest, and pressing stays outside his reach
      * and lunges in */
@@ -188,7 +243,16 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
      .lunge = 32,
      .feint = 32,
      .meet = 250,
-     .outside = TRUE},
+     .outside = TRUE,
+     .weighs_tactics = TRUE,
+     .quick = 22,
+     .dodge = 220,
+     .throws = 2,
+     .dirt = 3,
+     .leap = 1,
+     .rushes = TRUE,
+     .circles = TRUE,
+     .reads_answers = TRUE},
 };
 
 /* No level reacts quicker than this: a sixth of a second. */
@@ -201,12 +265,23 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
 #define THREAT_MARGIN 600
 /* an attack picked is given up if he has gone this far past its reach */
 #define GIVE_UP_MARGIN 300
+/* an attack of the list is waited for this many frames to begin (it may
+ * begin with a step) before it is counted as come to nothing */
+#define OWN_BEGIN_FRAMES 30
 /* he is counted as standing within his reach of it within this of it,
  * and an attack he begins as begun there within this */
 #define HABIT_STANDING_MARGIN 300
 #define HABIT_ATTACK_MARGIN 600
 /* an opening is struck at within its own reach and this */
 #define OPENING_MARGIN 600
+/* an opening is struck at with an attack whose blade comes within the
+ * frames he has still to go and these */
+#define OPENING_GRACE 4
+/* an attack's blade frames, guessed before it has used it: one that
+ * crouches first, and any other; a script is looked into this far */
+#define BLADE_GUESS_CROUCHING 24
+#define BLADE_GUESS 16
+#define SCRIPT_LOOK_BYTES 16
 /* the nearest it ever likes to stand */
 #define NEAREST_WANTED 600
 /* the master stands this far within a hasty opponent's reach to draw
@@ -238,9 +313,47 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
 /* a level that presses from outside his reach waits this far past it */
 #define OUTSIDE_MARGIN 200
 #define LUNGE_PRESSURE 96
+/* an opening just out of its reach is stepped in on if he has this many
+ * frames still to go in it */
+#define LUNGE_FRAMES_LEAST 14
 #define FEINT_DISTANCE 1200
 #define FEINT_PRESSURE_LEAST 32
 #define FEINT_PRESSURE_MOST 224
+/* From afar (port_CpuFromAfar): a thing thrown or a shot is stepped
+ * aside from with this many frames to go or more; a sub-weapon is thrown
+ * (from where it cannot strike) from between these, dirt from this near, and a
+ * level that rushes throws this many times as readily at an opening; a gun
+ * keeps this far past his reach */
+#define DODGE_FRAMES_LEAST 4
+/* a throw seen begun is stepped aside from this far off and further */
+#define DODGE_THROW_NEAR 2500
+#define THROW_NEAR 2500
+#define THROW_FAR 7000
+#define DIRT_NEAR 2000
+#define RUSH_THROWS 8
+#define GUN_STANDOFF 2000
+/* an opening is rushed at if he has this many frames still to go in it,
+ * from no further than this, running from this past its reach; a leap
+ * is made at one with this many; dirt is followed in on for these */
+#define RUSH_FRAMES_LEAST 12
+#define RUSH_FAR 6000
+#define RUSH_RUN 2500
+#define LEAP_FRAMES_LEAST 24
+#define DIRT_RUSH_FRAMES 45
+/* crowded at an edge, it circles this many frames; with his back to one
+ * it goes in on him from within his reach and this */
+#define CIRCLE_FRAMES 24
+#define CORNER_DISTANCE 1500
+/* His answers (port_CpuReadAnswers): a blow of his begun within this many
+ * frames of its coming into his reach (and seen within this many of its
+ * beginning) meets it; each is read once it has seen this many */
+#define ENTRY_FRAMES 24
+#define ENTRY_SEEN_FRAMES 4
+#define ANSWERS_LEAST 2
+/* one who meets it is feinted at this many times as readily; one who
+ * follows a miss is struck at in it only with this many frames more */
+#define MEETER_FEINTS 4
+#define FOLLOWER_FRAMES 6
 /* the place it likes is drawn again this often */
 #define MARGIN_FRAMES 60
 /* this far past where it likes to be it runs */
@@ -267,6 +380,11 @@ static PortCpuLevel g_port_cpu_levels[PORT_CPU_LEVELS + 1] = {
 
 /* ---- what it keeps ---- */
 
+/* Nothing thrown is coming (PortCpuSeen.projectile); something thrown is
+ * seen coming at it within this of its height. */
+#define PROJECTILE_NONE S16_MOST
+#define PROJECTILE_HEIGHT 2000
+
 /* How many frames of what it saw it keeps: more than any reaction. */
 #define SEEN_FRAMES 16
 /* The opponent's attacks it has seen, by motion. */
@@ -291,6 +409,13 @@ typedef struct {
     u8 attack_kind;
     u8 wounds; /* legs, arm and body, and 4 for an arm that hangs */
     u8 seen;   /* 1: there is something here */
+    /* the ground he stands on, and the frames to it of the nearest thing
+     * thrown seen coming at it (a sub-weapon, dirt), PROJECTILE_NONE if
+     * none */
+    s32 y;
+    s16 projectile;
+    /* 1: his weapon is a gun, with shots in it */
+    u8 gun;
 } PortCpuSeen;
 
 typedef struct {
@@ -310,7 +435,31 @@ enum {
     SCRIPT_GUARD_FRONTAL,
     SCRIPT_GUARD_REVERSE,
     SCRIPT_STRIKE_FALLEN,
+    SCRIPT_LEAP,  /* the leaping attack (the game's g_cpu_script_leap) */
+    SCRIPT_THROW, /* a sub-weapon thrown (g_cpu_script_throw) */
+    SCRIPT_DIRT,  /* dirt thrown (g_cpu_script_throw_dirt) */
 };
+
+/* Why it began a script (the log's last field, port_CpuScriptWhy). */
+enum {
+    WHY_NONE,
+    WHY_OPENING, /* an opening seen: a missed attack, a stagger */
+    WHY_MEET,    /* he walked into its reach */
+    WHY_LUNGE,   /* a step in and a blow, pressing */
+    WHY_FIRST,   /* a strike of its own, standing */
+    WHY_FALLEN,  /* a blow at him down */
+    WHY_EVADE,   /* a step back from his attack */
+    WHY_GUARD,   /* the guard as his blade comes */
+    WHY_FEINT,   /* a step in and out, to draw him */
+    WHY_DODGE,   /* a step aside out of the line of a thing thrown, a shot */
+    WHY_THROW,   /* a sub-weapon thrown at him */
+    WHY_DIRT,    /* dirt thrown at him */
+    WHY_LEAP,    /* the leaping attack, from afar */
+    WHY_SHOT,    /* a gun fired at him */
+};
+
+/* its ways in, weighed: WHY_OPENING to WHY_FIRST */
+#define TACTICS (WHY_FIRST + 1)
 
 typedef struct {
     s32 level;  /* 0: the game's CPU plays this place */
@@ -320,6 +469,7 @@ typedef struct {
     PortCpuSeen seen[SEEN_FRAMES];
     /* the script it is playing: which, where in it, how long it waits */
     u8 script;
+    u8 why; /* WHY_...: why it began it */
     u8 script_wait;
     u16 script_at;
     u16 attack; /* an attack's script: its offset in the motion file's list */
@@ -342,6 +492,19 @@ typedef struct {
     u16 in_reach_frames;
     u16 in_reach_attacks;
     u16 habit_motion; /* the attack last counted */
+    /* how he answers its coming into his reach: the times it came in, the
+     * times he struck within ENTRY_FRAMES of it, and the frames since the
+     * last (0: not counting); whether it was in his reach a frame ago */
+    u8 entries;
+    u8 entry_meets;
+    u8 entry_frames;
+    u8 was_inside;
+    /* what he does after an attack of his that missed: how many it saw
+     * end, and how many went straight on into another attack; the attack
+     * it is watching end */
+    u8 misses;
+    u8 follows;
+    u16 miss_motion;
     /* whom it learned all this of, and as whom */
     s16 opponent_roster;
     s16 opponent_weapon;
@@ -356,6 +519,20 @@ typedef struct {
     s8 own_attack;
     u8 own_wounds;
     u8 own_live;
+    /* and: seen to have begun (a list's attack may begin with a crouching
+     * step), frames since it was picked, its own wounds then, why */
+    u8 own_begun;
+    u8 own_age;
+    u8 own_my_wounds;
+    u8 own_why;
+    /* what each way of its in (WHY_OPENING to WHY_FIRST) has come to
+     * against him: begun, landed, and hurt in it */
+    u8 tactic_tried[TACTICS];
+    u8 tactic_landed[TACTICS];
+    u8 tactic_hurt[TACTICS];
+    /* its attacks' frames from the press to the blade, as it has used them
+     * (0: not yet) */
+    u8 blade_frames[OWN_STANCES][OWN_ATTACKS];
     /* frames since anything happened (a wound, an attack begun), as it
      * saw them; the wounds and his attack it saw last */
     u16 quiet;
@@ -369,6 +546,13 @@ typedef struct {
     /* TRUE once he has been seen out of its reach: his walking back into
      * it may be met */
     u8 meet_armed;
+    /* the thing thrown at it (or the shot) it has answered */
+    u8 projectile_answered;
+    /* frames left of a rush at him after its dirt, and of circling round
+     * him off an edge, and the way */
+    u8 rush_frames;
+    u8 circle_frames;
+    u8 circle_side;
 } PortCpuMind;
 
 static PortCpuMind g_port_cpu[PORT_DUO_FIGHTERS];
@@ -422,6 +606,18 @@ s32 port_CpuTune(s32 level, const char *field, s32 value) {
     TUNE(feint)
     TUNE(meet)
     TUNE(outside)
+    TUNE(weighs_tactics)
+    TUNE(times_openings)
+    TUNE(dodge)
+    TUNE(throws)
+    TUNE(dirt)
+    TUNE(leap)
+    TUNE(rushes)
+    TUNE(circles)
+    TUNE(holds)
+    TUNE(holds_margin)
+    TUNE(reads_answers)
+    TUNE(quick)
 #undef TUNE
     return FALSE;
 }
@@ -485,6 +681,9 @@ void port_CpuInit(s32 fighter_index) {
     mind->margin_frames = 0;
     mind->own_live = 0;
     mind->habit_motion = 0xFFFF;
+    mind->entry_frames = 0;
+    mind->was_inside = 0;
+    mind->miss_motion = 0xFFFF;
     mind->quiet = 0;
     mind->quiet_motion = 0xFFFF;
     mind->quiet_mine = 0;
@@ -492,6 +691,10 @@ void port_CpuInit(s32 fighter_index) {
     mind->lunging = 0;
     mind->feinting = 0;
     mind->meet_armed = 0;
+    mind->projectile_answered = 0;
+    mind->rush_frames = 0;
+    mind->circle_frames = 0;
+    mind->circle_side = 0;
     /* what it learned of the opponent it keeps from fight to fight of the
      * match; another opponent (another fighter, another weapon), or
      * another fighter of its own, starts it afresh */
@@ -511,8 +714,21 @@ void port_CpuInit(s32 fighter_index) {
         for (i = 0; i < (s32)sizeof(mind->landed); i++) {
             byte[i] = 0;
         }
+        for (i = 0; i < TACTICS; i++) {
+            mind->tactic_tried[i] = 0;
+            mind->tactic_landed[i] = 0;
+            mind->tactic_hurt[i] = 0;
+        }
+        byte = (u8 *)mind->blade_frames;
+        for (i = 0; i < (s32)sizeof(mind->blade_frames); i++) {
+            byte[i] = 0;
+        }
         mind->in_reach_frames = 0;
         mind->in_reach_attacks = 0;
+        mind->entries = 0;
+        mind->entry_meets = 0;
+        mind->misses = 0;
+        mind->follows = 0;
         mind->opponent_roster = g_fighters[fighter_index].other->roster_id;
         mind->opponent_weapon = g_fighters[fighter_index].other->weapon_id;
         mind->own_roster = g_fighters[fighter_index].roster_id;
@@ -528,6 +744,11 @@ s32 port_CpuScriptKind(s32 fighter_index) {
         return CPU_SCRIPT_KIND_ATTACK + 1;
     case SCRIPT_STRIKE_FALLEN:
         return CPU_SCRIPT_KIND_STRIKE_FALLEN + 1;
+    case SCRIPT_THROW:
+    case SCRIPT_DIRT:
+        return CPU_SCRIPT_KIND_THROW + 1;
+    case SCRIPT_LEAP:
+        return CPU_SCRIPT_KIND_ATTACK + 1;
     case SCRIPT_GUARD_FRONTAL:
     case SCRIPT_GUARD_REVERSE:
         return CPU_SCRIPT_KIND_GUARD + 1;
@@ -535,6 +756,12 @@ s32 port_CpuScriptKind(s32 fighter_index) {
         return 0;
     }
     return CPU_SCRIPT_KIND_FOOTWORK + 1;
+}
+
+s32 port_CpuScriptWhy(s32 fighter_index) {
+    const PortCpuMind *mind = port_CpuMindOf(fighter_index);
+
+    return mind->script != SCRIPT_NONE ? mind->why : WHY_NONE;
 }
 
 s32 port_CpuPlays(s32 fighter_index) {
@@ -548,6 +775,7 @@ s32 port_CpuPlays(s32 fighter_index) {
 #define WAIT(frames) (CPU_SCRIPT_WAIT | (frames))
 #define RELEASE(button) (CPU_SCRIPT_RELEASE | (button))
 /* the fighter's pad's buttons by number (cpu_data.c's) */
+#define B_R2 1
 #define B_R1 3
 #define B_FRONTAL 5
 #define B_REVERSE 6
@@ -568,6 +796,13 @@ static const u8 g_port_cpu_scripts[][8] = {
     [SCRIPT_GUARD_FRONTAL] = {B_FRONTAL, WAIT(2), CPU_SCRIPT_END},
     [SCRIPT_GUARD_REVERSE] = {B_REVERSE, WAIT(2), CPU_SCRIPT_END},
     [SCRIPT_STRIKE_FALLEN] = {B_R1, WAIT(2), CPU_SCRIPT_END},
+    [SCRIPT_LEAP] = {B_TOWARD, WAIT(5), B_R2, WAIT(4), B_R1, WAIT(2),
+                     CPU_SCRIPT_END},
+    /* (R2 crouches only from a stand: a walk is let go of first) */
+    [SCRIPT_THROW] = {WAIT(2), B_R2, WAIT(5), B_FRONTAL, WAIT(2),
+                      CPU_SCRIPT_END},
+    [SCRIPT_DIRT] = {WAIT(2), B_R2, WAIT(5), B_REVERSE, WAIT(2),
+                     CPU_SCRIPT_END},
 };
 
 static const u8 *port_CpuScriptBytes(Fighter *fighter, PortCpuMind *mind) {
@@ -577,8 +812,9 @@ static const u8 *port_CpuScriptBytes(Fighter *fighter, PortCpuMind *mind) {
     return g_port_cpu_scripts[mind->script];
 }
 
-static void port_CpuStart(PortCpuMind *mind, s32 script) {
+static void port_CpuStart(PortCpuMind *mind, s32 script, s32 why) {
     mind->script = (u8)script;
+    mind->why = (u8)why;
     mind->script_at = 0;
     mind->script_wait = 0;
     mind->script_buttons = 0;
@@ -627,6 +863,69 @@ static s32 port_CpuWounds(const Fighter *fighter) {
     return wounds < 0xFF ? wounds : 0xFF;
 }
 
+/* The frames till the nearest thing thrown at it arrives, as it can be
+ * seen flying: a sub-weapon in flight that has touched nothing, or a
+ * handful of dirt, of the other's, coming straight at it and near its
+ * height; PROJECTILE_NONE if nothing is. */
+static s32 port_CpuProjectile(const Fighter *fighter) {
+    s32 nearest = PROJECTILE_NONE;
+    s32 i;
+
+    for (i = 0; i < OBJECT_COUNT + DIRT_COUNT; i++) {
+        const Vec3 *pos;
+        const Vec3 *prev;
+        s32 dx;
+        s32 dz;
+        s32 dy;
+        s32 speed;
+        s32 angle;
+        s32 frames;
+
+        if (i < OBJECT_COUNT) {
+            const LooseObject *object = &g_object_pool[i];
+
+            if (object->kind == OBJECT_NONE || !object->can_hit_fighter ||
+                object->owner == fighter->index) {
+                continue;
+            }
+            pos = &object->pos;
+            prev = &object->prev_pos;
+        } else {
+            const ThrownDirt *dirt = &g_object_dirt[i - OBJECT_COUNT];
+
+            if (dirt->kind == DIRT_NONE || dirt->owner == fighter->index) {
+                continue;
+            }
+            pos = &dirt->pos;
+            prev = &dirt->prev_pos;
+        }
+        dx = fighter->world_pos.x - pos->x;
+        dz = fighter->world_pos.z - pos->z;
+        dy = fighter->foot_pos.vy - pos->y;
+        if (dy < -PROJECTILE_HEIGHT || dy > PROJECTILE_HEIGHT) {
+            continue;
+        }
+        speed = SquareRoot0((pos->x - prev->x) * (pos->x - prev->x) +
+                            (pos->z - prev->z) * (pos->z - prev->z));
+        if (speed <= 0) {
+            continue;
+        }
+        angle = (ratan2(dx, dz) - ratan2(pos->x - prev->x, pos->z - prev->z)) &
+                ANGLE_MASK;
+        if (angle > ANGLE_TURN / 2) {
+            angle -= ANGLE_TURN;
+        }
+        if (angle < -ANGLE_TURN / 32 || angle > ANGLE_TURN / 32) {
+            continue;
+        }
+        frames = SquareRoot0(dx * dx + dz * dz) / speed;
+        if (frames < nearest) {
+            nearest = frames;
+        }
+    }
+    return nearest;
+}
+
 /* What can be seen of the opponent now, written down. */
 static void port_CpuLook(Fighter *fighter, PortCpuMind *mind) {
     Fighter *other = fighter->other;
@@ -650,6 +949,9 @@ static void port_CpuLook(Fighter *fighter, PortCpuMind *mind) {
         MOVE_IS_ATTACK(other->move_kind) ? cpu_PortAttackReach(fighter) : 0;
     seen->wounds = (u8)port_CpuWounds(other);
     seen->seen = 1;
+    seen->y = other->ground_y;
+    seen->projectile = (s16)port_CpuProjectile(fighter);
+    seen->gun = WEAPON_IS_GUN(other->weapon_id) && other->ammo != 0;
 }
 
 /* What it saw `ago` frames back, or the oldest it has. A fighter played
@@ -835,6 +1137,11 @@ static u8 *port_CpuUsable(const Fighter *fighter, u8 *attack) {
     return script;
 }
 
+/* TRUE if its weapon is a gun with shots in it. */
+static s32 port_CpuShoots(const Fighter *fighter) {
+    return WEAPON_IS_GUN(fighter->weapon_id) && fighter->ammo != 0;
+}
+
 /* The farthest an attack of the list is meant for (cpu.h, CPU_ATTACK_...):
  * kinds 0 and 7 between their two distances, kinds 1 to 4 for an opponent
  * nearer than the first; with the fighter's reach and the level's slack. */
@@ -845,6 +1152,11 @@ static s32 port_CpuAttackFar(
                   ? attack[CPU_ATTACK_FAR]
                   : attack[CPU_ATTACK_NEAR];
 
+    /* a gun with shots in it fires from any distance, as the game's CPU
+     * has it */
+    if (port_CpuShoots(fighter)) {
+        return CPU_ANY_DISTANCE;
+    }
     return far * MOTION_REACH_UNIT + fighter->reach_bonus + level->slack;
 }
 
@@ -874,12 +1186,34 @@ static s32 port_CpuListReach(
     return most;
 }
 
+/* How many frames from its press an attack of its list takes to bring
+ * its blade, as it knows its moves: as it has seen it do in the match, or
+ * else by its buttons (one that crouches first, with R2, comes the later
+ * by the step); 0 if it does not judge by that (the levels that do not
+ * know their speeds). */
+static s32 port_CpuBladeFrames(const Fighter *fighter, const PortCpuMind *mind,
+                               s32 index, const u8 *script) {
+    s32 at;
+
+    if (fighter->stance < OWN_STANCES && index < OWN_ATTACKS &&
+        mind->blade_frames[fighter->stance][index] != 0) {
+        return mind->blade_frames[fighter->stance][index];
+    }
+    for (at = 0; at < SCRIPT_LOOK_BYTES && script[at] != CPU_SCRIPT_END; at++) {
+        if (!(script[at] & (CPU_SCRIPT_WAIT | CPU_SCRIPT_RELEASE)) &&
+            (script[at] & CPU_SCRIPT_BUTTON) == B_R2) {
+            return BLADE_GUESS_CROUCHING;
+        }
+    }
+    return BLADE_GUESS;
+}
+
 /* An attack of its stance's list that suits the distance, picked at random
  * by how each has done (from the adept up): its offset in the list, or -1.
  * The list's attacks are the motion file's, each with the distances it is
  * meant for (cpu.h, CPU_ATTACK_...): the moves a player knows. */
 static s32 port_CpuPickAttack(Fighter *fighter, PortCpuMind *mind, s32 distance,
-                              s32 *index_out, s32 *far_out) {
+                              s32 within, s32 *index_out, s32 *far_out) {
     const PortCpuLevel *level = &g_port_cpu_levels[mind->level];
     u16 *list = fighter->cpu_stance_scripts[fighter->stance];
     s32 best = -1;
@@ -901,8 +1235,13 @@ static s32 port_CpuPickAttack(Fighter *fighter, PortCpuMind *mind, s32 distance,
             continue;
         }
         far = port_CpuAttackFar(fighter, level, attack);
-        if (distance >= far ||
-            ((kind == 0 || kind == CPU_ATTACK_KIND_LAST) && distance <= near)) {
+        if (distance >= far || ((kind == 0 || kind == CPU_ATTACK_KIND_LAST) &&
+                                distance <= near && !port_CpuShoots(fighter))) {
+            continue;
+        }
+        /* none too slow for it, as far as it knows its moves */
+        if (within >= 0 &&
+            port_CpuBladeFrames(fighter, mind, index, script) > within) {
             continue;
         }
         score = 1 + (s32)(port_CpuRandom(mind) & 0xFF);
@@ -924,23 +1263,33 @@ static s32 port_CpuPickAttack(Fighter *fighter, PortCpuMind *mind, s32 distance,
     return best;
 }
 
-/* Begins an attack that suits the distance, if one does, and counts it
- * tried; FALSE if none does. */
-static s32 port_CpuStrike(Fighter *fighter, PortCpuMind *mind, s32 distance) {
+/* Begins an attack that suits the distance (and whose blade comes within
+ * `within` frames, if that is not -1, as far as it knows), if one does,
+ * and counts it tried; FALSE if none does. */
+static s32 port_CpuStrikeWithin(
+    Fighter *fighter, PortCpuMind *mind, s32 distance, s32 within, s32 why) {
     s32 index = -1;
     s32 far = 0;
-    s32 offset = port_CpuPickAttack(fighter, mind, distance, &index, &far);
+    s32 offset =
+        port_CpuPickAttack(fighter, mind, distance, within, &index, &far);
 
     if (offset < 0) {
         return FALSE;
     }
-    port_CpuStart(mind, SCRIPT_ATTACK);
+    port_CpuStart(mind, SCRIPT_ATTACK, why);
     mind->attack = (u16)offset;
     mind->attack_far = (s16)(far < S16_MOST ? far : S16_MOST);
     mind->own_stance = (s8)fighter->stance;
     mind->own_attack = (s8)index;
     mind->own_wounds = (u8)port_CpuWounds(fighter->other);
     mind->own_live = 1;
+    mind->own_begun = 0;
+    mind->own_age = 0;
+    mind->own_my_wounds = (u8)port_CpuWounds(fighter);
+    mind->own_why = (u8)why;
+    if (why < TACTICS && mind->tactic_tried[why] < 0xFF) {
+        mind->tactic_tried[why]++;
+    }
     /* something happened: the less patience it has lost */
     mind->quiet /= 2;
     if (fighter->stance < OWN_STANCES && index < OWN_ATTACKS &&
@@ -950,20 +1299,99 @@ static s32 port_CpuStrike(Fighter *fighter, PortCpuMind *mind, s32 distance) {
     return TRUE;
 }
 
-/* Its own attack's end: landed if he is the worse for it. */
+static s32 port_CpuStrike(
+    Fighter *fighter, PortCpuMind *mind, s32 distance, s32 why) {
+    return port_CpuStrikeWithin(fighter, mind, distance, -1, why);
+}
+
+/* Its own attack, once a frame: the frames to its blade as it begins,
+ * and at its end, landed if he is the worse for it, or hurt if it is. */
 static void port_CpuOwnAttackDone(Fighter *fighter, PortCpuMind *mind) {
-    if (!mind->own_live || MOVE_IS_ATTACK(fighter->move_kind) ||
-        mind->script == SCRIPT_ATTACK) {
+    s32 known = mind->own_stance >= 0 && mind->own_stance < OWN_STANCES &&
+                mind->own_attack >= 0 && mind->own_attack < OWN_ATTACKS;
+    s32 landed;
+    s32 hurt;
+
+    if (!mind->own_live) {
+        return;
+    }
+    if (mind->own_age < 0xFF) {
+        mind->own_age++;
+    }
+    if (MOVE_IS_ATTACK(fighter->move_kind)) {
+        if (!mind->own_begun) {
+            s32 hit_start = fighter->hit_start_frames[0] != 0xFF
+                                ? fighter->hit_start_frames[0]
+                                : fighter->hit_start_frames[1];
+            s32 speed = fighter->speed > 0 ? fighter->speed : FIGHTER_SPEED_ONE;
+
+            mind->own_begun = 1;
+            /* how quick it is, as a player knows his moves */
+            if (known && hit_start != 0xFF) {
+                s32 blade =
+                    mind->own_age + hit_start * FIGHTER_SPEED_ONE / speed;
+
+                mind->blade_frames[mind->own_stance][mind->own_attack] =
+                    (u8)(blade < 0xFF ? blade : 0xFF);
+            }
+        }
+        return;
+    }
+    /* a list's attack may begin with a step: waited for a while */
+    if (mind->script == SCRIPT_ATTACK ||
+        (!mind->own_begun && mind->own_age < OWN_BEGIN_FRAMES)) {
         return;
     }
     mind->own_live = 0;
-    if ((port_CpuWounds(fighter->other) > mind->own_wounds ||
-         fighter->other->is_defeated) &&
-        mind->own_stance >= 0 && mind->own_stance < OWN_STANCES &&
-        mind->own_attack >= 0 && mind->own_attack < OWN_ATTACKS &&
+    landed = port_CpuWounds(fighter->other) > mind->own_wounds ||
+             fighter->other->is_defeated;
+    hurt = !landed && (port_CpuWounds(fighter) > mind->own_my_wounds ||
+                       fighter->is_defeated);
+    if (landed && known &&
         mind->landed[mind->own_stance][mind->own_attack] < 0xFF) {
         mind->landed[mind->own_stance][mind->own_attack]++;
     }
+    if (mind->own_why < TACTICS) {
+        if (landed && mind->tactic_landed[mind->own_why] < 0xFF) {
+            mind->tactic_landed[mind->own_why]++;
+        }
+        if (hurt && mind->tactic_hurt[mind->own_why] < 0xFF) {
+            mind->tactic_hurt[mind->own_why]++;
+        }
+    }
+}
+
+/* Of 256: how a way in has done against him, as a weight on its chance
+ * (the levels that weigh them): (landed + 1) / (hurt + 1), from a quarter
+ * to twice. A way that has got it hurt more than it has landed it uses
+ * less; one that lands, more. */
+static s32 port_CpuTacticWeight(
+    const PortCpuMind *mind, const PortCpuLevel *level, s32 why) {
+    s32 weight;
+
+    if (!level->weighs_tactics || why >= TACTICS) {
+        return CHANCE_BYTE;
+    }
+    weight = (mind->tactic_landed[why] + 1) * CHANCE_BYTE /
+             (mind->tactic_hurt[why] + 1);
+    if (weight < CHANCE_BYTE / 4) {
+        weight = CHANCE_BYTE / 4;
+    }
+    return weight < 2 * CHANCE_BYTE ? weight : 2 * CHANCE_BYTE;
+}
+
+/* The most frames to its blade it allows a strike at him free to answer
+ * it (meeting him, striking first, after a lunge's step): the level's
+ * `quick`, or -1 for any. */
+static s32 port_CpuQuick(const PortCpuLevel *level) {
+    return level->quick != 0 ? level->quick : -1;
+}
+
+/* A chance of 256 weighed by how that way in has done against him. */
+static s32 port_CpuWeighed(
+    const PortCpuMind *mind, const PortCpuLevel *level, s32 why, s32 chance) {
+    chance = chance * port_CpuTacticWeight(mind, level, why) / CHANCE_BYTE;
+    return chance < CHANCE_MOST ? chance : CHANCE_MOST;
 }
 
 /* ---- deciding ---- */
@@ -1055,6 +1483,310 @@ static s32 port_CpuPressure(
     return pressure < PRESSURE_ALL ? pressure : PRESSURE_ALL;
 }
 
+/* port_CpuDodge's and port_CpuFromAfar's: a script begun (their buttons
+ * else) */
+#define DODGE_STARTED 0xFFFFFFFFU
+
+/* A step aside, to whichever side is clear: its script, or SCRIPT_NONE. */
+static s32 port_CpuSideStep(const Fighter *fighter, PortCpuMind *mind) {
+    s32 first =
+        (port_CpuRandom(mind) & 1) ? CPU_PROBE_SIDE_A : CPU_PROBE_SIDE_B;
+    s32 second =
+        first == CPU_PROBE_SIDE_A ? CPU_PROBE_SIDE_B : CPU_PROBE_SIDE_A;
+
+    if (port_CpuClear(fighter, first)) {
+        return first == CPU_PROBE_SIDE_A ? SCRIPT_STEP_SIDE_A
+                                         : SCRIPT_STEP_SIDE_B;
+    }
+    if (port_CpuClear(fighter, second)) {
+        return second == CPU_PROBE_SIDE_A ? SCRIPT_STEP_SIDE_A
+                                          : SCRIPT_STEP_SIDE_B;
+    }
+    return SCRIPT_NONE;
+}
+
+/* Something thrown at it seen coming (a sub-weapon, dirt), or a gun seen
+ * aimed at it and about to fire: a step aside out of its line where there
+ * is time (by the level's `dodge`), else, for a thing thrown, the guard as
+ * it comes (an attack just begun beats a thrown thing aside). All from
+ * what it saw its reaction time back: the thing's flight, the gun raised.
+ * DODGE_STARTED with a script begun, or 0. */
+static u32 port_CpuDodge(
+    Fighter *fighter, PortCpuMind *mind, const PortCpuLevel *level,
+    const PortCpuSeen *seen, s32 distance, s32 ago) {
+    s32 frames;
+    s32 step;
+
+    if (seen->gun && MOVE_IS_ATTACK(seen->move_kind) &&
+        seen->hit_start != 0xFF && seen->move_frame <= seen->hit_start) {
+        /* the shot comes at its blade's first frame */
+        frames = port_CpuFramesTo(seen, seen->hit_start, ago);
+        if (mind->threat_motion != seen->motion_index) {
+            mind->threat_motion = seen->motion_index;
+            mind->projectile_answered = 0;
+        }
+    } else if (seen->projectile != PROJECTILE_NONE) {
+        /* it has flown on meanwhile */
+        frames = seen->projectile - ago;
+    } else if ((seen->move_kind == MOVE_KIND_SUBWEP ||
+                seen->move_kind == MOVE_KIND_DIRT) &&
+               distance > DODGE_THROW_NEAR) {
+        /* seen winding up to throw, far enough off for the step to be in
+         * time */
+        frames = DODGE_FRAMES_LEAST;
+    } else {
+        mind->projectile_answered = 0;
+        return 0;
+    }
+    if (mind->projectile_answered) {
+        return 0;
+    }
+    if (frames >= DODGE_FRAMES_LEAST) {
+        mind->projectile_answered = 1;
+        if (port_CpuChance(mind, level->dodge, CHANCE_BYTE) &&
+            (step = port_CpuSideStep(fighter, mind)) != SCRIPT_NONE) {
+            port_CpuStart(mind, step, WHY_DODGE);
+            return DODGE_STARTED;
+        }
+        return 0;
+    }
+    if (frames <= 1 && !seen->gun) {
+        mind->projectile_answered = 1;
+        port_CpuStart(mind, SCRIPT_GUARD_FRONTAL, WHY_GUARD);
+        return DODGE_STARTED;
+    }
+    return 0;
+}
+
+/* TRUE if he stands on its level, not above or below it. */
+static s32 port_CpuSameHeight(const Fighter *fighter, const PortCpuSeen *seen) {
+    s32 dy = seen->y - fighter->ground_y;
+
+    return dy > -CPU_LEVEL_HEIGHT && dy < CPU_LEVEL_HEIGHT;
+}
+
+/* TRUE if he is seen in a motion that keeps him from answering for a
+ * while: an opening (port_CpuSeenOpen), or an attack of his that missed
+ * with `frames` or more to go. */
+static s32 port_CpuSeenBusy(const PortCpuSeen *seen, s32 ago, s32 frames) {
+    if (port_CpuFramesTo(seen, seen->frames, ago) < frames) {
+        return FALSE;
+    }
+    return port_CpuSeenOpen(seen) || (MOVE_IS_ATTACK(seen->move_kind) &&
+                                      seen->move_frame > seen->hit_end);
+}
+
+/* The ways at range a player has (docs/CPU.md, "From afar"): a gun's shots
+ * and its reload; a sub-weapon or dirt thrown at him from beyond his
+ * reach; the leaping attack from its distance; an opening seen far off run
+ * in on, leapt at or thrown at (the levels that rush); and off an edge or
+ * a wall that crowds it, round him (the levels that circle), or in on him
+ * where his back is to one. The buttons, DODGE_STARTED with a script
+ * begun, or 0; `want`, where it likes to stand, may be brought in. */
+static u32 port_CpuFromAfar(
+    Fighter *fighter, PortCpuMind *mind, const PortCpuLevel *level,
+    const PortCpuSeen *seen, s32 distance, s32 angle, s32 my_reach,
+    s32 his_reach, s32 pressure, s32 ago, s32 *want) {
+    s32 standing = fighter->move_kind == MOVE_KIND_STANCE;
+    /* (a thing is thrown, a shot fired, a leap made from a walk as well) */
+    s32 afoot = standing || fighter->move_kind == MOVE_KIND_WALK;
+    s32 level_ground = port_CpuSameHeight(fighter, seen);
+    s32 his_free = seen->move_kind == MOVE_KIND_STANCE ||
+                   seen->move_kind == MOVE_KIND_WALK;
+    s32 busy = port_CpuSeenBusy(seen, ago, RUSH_FRAMES_LEAST);
+    s32 past = fighter->cpu_probes[CPU_PROBE_PAST_OPPONENT];
+
+    /* -- a gun -- */
+    if (WEAPON_IS_GUN(fighter->weapon_id)) {
+        if (fighter->ammo == 0) {
+            /* reloaded out of his reach (the stance button, as the game's
+             * CPU reloads) */
+            if (standing && fighter->reloads_left != 0 &&
+                fighter->off_arm_ok != 0 &&
+                distance > his_reach + THREAT_MARGIN) {
+                return FIGHTER_PAD_STANCE;
+            }
+        } else {
+            /* aimed and fired, from where he cannot reach it */
+            if (afoot && angle < ANGLE_TURN / 32 && level_ground &&
+                distance > his_reach &&
+                cpu_PortFindObstacle(fighter, seen->x, seen->z) >= distance &&
+                port_CpuChance(
+                    mind,
+                    busy ? CHANCE_FRAME / 2 : level->initiative + level->throws,
+                    CHANCE_FRAME) &&
+                port_CpuStrike(fighter, mind, distance, WHY_SHOT)) {
+                return DODGE_STARTED;
+            }
+            /* and kept off him */
+            if (*want < his_reach + GUN_STANDOFF) {
+                *want = his_reach + GUN_STANDOFF;
+            }
+        }
+        return 0;
+    }
+
+    /* -- a sub-weapon thrown -- */
+    if (level->throws != 0 && afoot && fighter->sub_weapon_count != 0 &&
+        fighter->off_arm_ok != 0 &&
+        (fighter->two_sword_ready == 0 || fighter->sub_weapon_count >= 2) &&
+        fighter->stance_class != STANCE_CLASS_SHEATHED && level_ground &&
+        angle < ANGLE_TURN / 32 && distance > THROW_NEAR &&
+        distance > my_reach && distance < THROW_FAR && (his_free || busy) &&
+        cpu_PortFindObstacle(fighter, seen->x, seen->z) >= distance &&
+        port_CpuChance(
+            mind, level->throws * (busy && level->rushes ? RUSH_THROWS : 1),
+            CHANCE_FRAME)) {
+        port_CpuStart(mind, SCRIPT_THROW, WHY_THROW);
+        mind->quiet /= 2;
+        return DODGE_STARTED;
+    }
+    /* -- dirt thrown, and in after it -- */
+    if (level->dirt != 0 && afoot &&
+        SURFACE_IN(fighter->surface, SURFACES_LOOSE) &&
+        fighter->off_arm_ok != 0 && level_ground && angle < ANGLE_TURN / 32 &&
+        distance > DIRT_NEAR && distance > my_reach &&
+        distance < CPU_DIRT_RANGE && his_free &&
+        port_CpuChance(mind, level->dirt, CHANCE_FRAME)) {
+        port_CpuStart(mind, SCRIPT_DIRT, WHY_DIRT);
+        mind->rush_frames = level->rushes ? DIRT_RUSH_FRAMES : 0;
+        mind->quiet /= 2;
+        return DODGE_STARTED;
+    }
+    if (mind->rush_frames > 0) {
+        mind->rush_frames--;
+    }
+    /* -- the leap: pressing, or at an opening far off -- */
+    if (level->leap != 0 && afoot && level_ground && distance > CPU_LEAP_NEAR &&
+        distance < CPU_LEAP_FAR && angle < ANGLE_TURN / 16 &&
+        !MOVE_IS_ATTACK(seen->move_kind) &&
+        fighter->cpu_probes[CPU_PROBE_FAR_TOWARD] != CPU_FOUND_NO_FLOOR &&
+        fighter->cpu_probes[CPU_PROBE_FAR_TOWARD] !=
+            CPU_FOUND_BLOCKED_NO_FLOOR &&
+        port_CpuClear(fighter, CPU_PROBE_TOWARD) &&
+        (level->rushes
+             ? (port_CpuSeenBusy(seen, ago, LEAP_FRAMES_LEAST) &&
+                port_CpuChance(mind, level->punish, CHANCE_BYTE))
+             : port_CpuChance(
+                   mind,
+                   level->leap * pressure / PRESSURE_ALL + level->leap / 4,
+                   CHANCE_FRAME))) {
+        port_CpuStart(mind, SCRIPT_LEAP, WHY_LEAP);
+        mind->quiet /= 2;
+        return DODGE_STARTED;
+    }
+    /* -- an opening far off, run in on (the strike is the opening's) -- */
+    if (level->rushes && (busy || mind->rush_frames > 0) &&
+        distance > my_reach + OPENING_MARGIN && distance < RUSH_FAR &&
+        level_ground && *want > my_reach - PRESS_DEPTH) {
+        *want = my_reach - PRESS_DEPTH;
+        if (angle < ANGLE_TURN / 16 &&
+            port_CpuClear(fighter, CPU_PROBE_TOWARD) &&
+            fighter->cpu_route.count == 0) {
+            return distance > my_reach + RUSH_RUN ? FIGHTER_PAD_TOWARD | PADL1
+                                                  : FIGHTER_PAD_TOWARD;
+        }
+    }
+    /* -- an edge -- */
+    if (level->circles) {
+        /* crowded: in his reach, the ground behind it gone or walled, or
+         * both sides walled: round him, along whichever side is clear */
+        s32 crowded =
+            distance < his_reach &&
+            (!port_CpuClear(fighter, CPU_PROBE_AWAY) &&
+             (fighter->cpu_probes[CPU_PROBE_AWAY] == CPU_FOUND_NO_FLOOR ||
+              fighter->cpu_probes[CPU_PROBE_AWAY] == CPU_FOUND_DROP ||
+              fighter->cpu_probes[CPU_PROBE_BACK_A] == CPU_FOUND_NO_FLOOR ||
+              fighter->cpu_probes[CPU_PROBE_BACK_B] == CPU_FOUND_NO_FLOOR ||
+              !port_CpuClear(fighter, CPU_PROBE_SIDE_A) ||
+              !port_CpuClear(fighter, CPU_PROBE_SIDE_B)));
+
+        if (crowded && mind->circle_frames == 0 &&
+            !MOVE_IS_ATTACK(seen->move_kind)) {
+            mind->circle_frames = CIRCLE_FRAMES;
+            mind->circle_side =
+                port_CpuClear(fighter, CPU_PROBE_SIDE_A) ? 0
+                : port_CpuClear(fighter, CPU_PROBE_SIDE_B)
+                    ? 1
+                    : (u8)(port_CpuRandom(mind) & 1);
+        }
+        if (mind->circle_frames > 0) {
+            mind->circle_frames--;
+            if (!MOVE_IS_ATTACK(seen->move_kind) &&
+                (standing || fighter->move_kind == MOVE_KIND_WALK)) {
+                /* sidling round him keeps him in front, the edge falling
+                 * behind to the side */
+                return mind->circle_side ? FIGHTER_PAD_SIDE_B
+                                         : FIGHTER_PAD_SIDE_A;
+            }
+        }
+        /* his back to a drop or a wall: he cannot step back from a blow,
+         * so in on him */
+        if ((past == CPU_FOUND_NO_FLOOR || past == CPU_FOUND_DROP ||
+             past == CPU_FOUND_BLOCKED || past == CPU_FOUND_BLOCKED_NO_FLOOR) &&
+            distance < his_reach + CORNER_DISTANCE &&
+            *want > my_reach - PRESS_DEPTH) {
+            *want = my_reach - PRESS_DEPTH;
+        }
+    }
+    return 0;
+}
+
+/* Once a frame, for the levels that read his answers: how he answers its
+ * coming into his reach (does he strike at it at once: he "meets"), and
+ * what he does after an attack of his has missed (does he go straight on
+ * into another: he "follows"), as it saw them. */
+static void port_CpuReadAnswers(
+    PortCpuMind *mind, const PortCpuSeen *seen, s32 distance, s32 his_reach) {
+    s32 inside = distance < his_reach;
+    s32 attack = MOVE_IS_ATTACK(seen->move_kind);
+
+    if (inside && !mind->was_inside && mind->entry_frames == 0 && !attack) {
+        if (mind->entries < 0xFF) {
+            mind->entries++;
+        }
+        mind->entry_frames = 1;
+    } else if (mind->entry_frames != 0) {
+        if (attack && seen->move_frame < ENTRY_SEEN_FRAMES) {
+            if (mind->entry_meets < 0xFF) {
+                mind->entry_meets++;
+            }
+            mind->entry_frames = 0;
+        } else if (++mind->entry_frames > ENTRY_FRAMES) {
+            mind->entry_frames = 0;
+        }
+    }
+    mind->was_inside = (u8)inside;
+    /* an attack of his past its blade: watched to its end */
+    if (attack && seen->move_frame > seen->hit_end &&
+        mind->miss_motion == 0xFFFF) {
+        mind->miss_motion = seen->motion_index;
+    } else if (mind->miss_motion != 0xFFFF &&
+               (!attack || seen->motion_index != mind->miss_motion)) {
+        if (mind->misses < 0xFF) {
+            mind->misses++;
+        }
+        if (attack && mind->follows < 0xFF) {
+            mind->follows++;
+        }
+        mind->miss_motion = 0xFFFF;
+    }
+}
+
+/* TRUE if he has been seen to strike at it as it comes into his reach,
+ * more often than not (a prior of one time in two). */
+static s32 port_CpuHeMeets(const PortCpuMind *mind) {
+    return mind->entries >= ANSWERS_LEAST &&
+           2 * (mind->entry_meets + 1) > mind->entries + 2;
+}
+
+/* TRUE if he has been seen to go straight on from an attack that missed
+ * into another, more often than not. */
+static s32 port_CpuHeFollows(const PortCpuMind *mind) {
+    return mind->misses >= ANSWERS_LEAST &&
+           2 * (mind->follows + 1) > mind->misses + 2;
+}
+
 /* The frame's decision (the file's head says the order): the buttons to
  * hold, or 0 with a script begun. */
 static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
@@ -1075,6 +1807,7 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
     s32 want;
     s32 pressure;
     s32 pressed;
+    s32 meeter;
 
     if (list_reach < my_reach) {
         my_reach = list_reach;
@@ -1109,9 +1842,18 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         return 0;
     }
 
+    /* -- something thrown at it, or a gun aimed at it -- */
+    {
+        u32 dodge = port_CpuDodge(fighter, mind, level, seen, distance, ago);
+
+        if (dodge != 0) {
+            return dodge == DODGE_STARTED ? 0 : dodge;
+        }
+    }
+
     /* -- a threat -- */
     if (MOVE_IS_ATTACK(seen->move_kind) && seen->hit_start != 0xFF &&
-        seen->move_frame <= seen->hit_end) {
+        seen->move_frame <= seen->hit_end && !seen->gun) {
         s32 to_hit = port_CpuFramesTo(seen, seen->hit_start, ago);
 
         if (mind->threat_motion != seen->motion_index || seen->move_frame < 2) {
@@ -1133,13 +1875,21 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
             mind->lunging = 0;
             mind->feinting = 0;
 
+            /* short: let go by, to punish it as it misses (seen->reach
+             * has the threat margin in it already) */
+            if (level->holds &&
+                distance > seen->reach - THREAT_MARGIN + level->holds_margin) {
+                mind->threat_answered = 1;
+                return 0;
+            }
+
             /* time enough to be out of reach: a step back */
             if (to_hit >= 6 && distance + 1500 > seen->reach &&
                 port_CpuClear(fighter, CPU_PROBE_AWAY) &&
                 fighter->move_kind != MOVE_KIND_RUN &&
                 port_CpuChance(mind, level->evade, CHANCE_BYTE)) {
                 mind->threat_answered = 1;
-                port_CpuStart(mind, SCRIPT_STEP_AWAY);
+                port_CpuStart(mind, SCRIPT_STEP_AWAY, WHY_EVADE);
                 return 0;
             }
             /* the guard, as the blade comes */
@@ -1151,7 +1901,8 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
                     kind = !kind;
                 }
                 port_CpuStart(
-                    mind, kind ? SCRIPT_GUARD_FRONTAL : SCRIPT_GUARD_REVERSE);
+                    mind, kind ? SCRIPT_GUARD_FRONTAL : SCRIPT_GUARD_REVERSE,
+                    WHY_GUARD);
                 return 0;
             }
             /* meanwhile backs off, if there is room */
@@ -1167,21 +1918,60 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         fighter->move_kind == MOVE_KIND_WALK) {
         s32 open = port_CpuSeenOpen(seen);
 
-        /* an attack that missed, and has frames to go */
+        /* an attack that missed, and has frames to go (more, against one
+         * who goes on from a miss into another) */
         if (MOVE_IS_ATTACK(seen->move_kind) &&
             seen->move_frame > seen->hit_end &&
-            port_CpuFramesTo(seen, seen->frames, ago) > level->punish_frames) {
+            port_CpuFramesTo(seen, seen->frames, ago) >
+                level->punish_frames +
+                    (level->reads_answers && port_CpuHeFollows(mind)
+                         ? FOLLOWER_FRAMES
+                         : 0)) {
             open = TRUE;
         }
         if (open && distance < my_reach + OPENING_MARGIN &&
             angle < ANGLE_TURN / 12) {
+            /* the frames he has still to go in it, as it saw them, and a
+             * few as he comes out of it */
+            s32 within = -1;
+
+            if (level->times_openings) {
+                within =
+                    port_CpuFramesTo(seen, seen->frames, ago) + OPENING_GRACE;
+                if (within < 0) {
+                    within = 0;
+                }
+            }
+
             if (mind->noticed_motion != seen->motion_index) {
                 mind->noticed_motion = seen->motion_index;
-                mind->noticed =
-                    port_CpuChance(mind, level->punish, CHANCE_BYTE);
+                mind->noticed = port_CpuChance(
+                    mind,
+                    port_CpuWeighed(mind, level, WHY_OPENING, level->punish),
+                    CHANCE_BYTE);
             }
-            if (mind->noticed && port_CpuStrike(fighter, mind, distance)) {
+            if (mind->noticed && port_CpuStrikeWithin(fighter, mind, distance,
+                                                      within, WHY_OPENING)) {
                 return 0;
+            }
+        } else if (
+            open && level->rushes && distance >= my_reach &&
+            distance < my_reach + LUNGE_DISTANCE && angle < ANGLE_TURN / 12 &&
+            port_CpuFramesTo(seen, seen->frames, ago) >= LUNGE_FRAMES_LEAST &&
+            port_CpuClear(fighter, CPU_PROBE_TOWARD)) {
+            /* just out of its reach, and time enough: a step in, and the
+             * blow after it */
+            if (mind->noticed_motion != seen->motion_index) {
+                mind->noticed_motion = seen->motion_index;
+                mind->noticed = port_CpuChance(
+                    mind,
+                    port_CpuWeighed(mind, level, WHY_OPENING, level->punish),
+                    CHANCE_BYTE);
+                if (mind->noticed) {
+                    mind->lunging = 1;
+                    port_CpuStart(mind, SCRIPT_STEP_TOWARD, WHY_LUNGE);
+                    return 0;
+                }
             }
         } else if (!open) {
             mind->noticed_motion = 0xFFFF;
@@ -1191,7 +1981,7 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
             distance < CPU_STRIKE_FALLEN_RANGE && angle < ANGLE_TURN / 12 &&
             port_CpuChance(
                 mind, level->punish, CHANCE_BYTE * FALLEN_CHANCE_SHARE)) {
-            port_CpuStart(mind, SCRIPT_STRIKE_FALLEN);
+            port_CpuStart(mind, SCRIPT_STRIKE_FALLEN, WHY_FALLEN);
             return 0;
         }
     }
@@ -1206,8 +1996,11 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
                (standing || fighter->move_kind == MOVE_KIND_WALK) &&
                angle < ANGLE_TURN / 12) {
         mind->meet_armed = 0;
-        if (port_CpuChance(mind, level->meet, CHANCE_BYTE) &&
-            port_CpuStrike(fighter, mind, distance)) {
+        if (port_CpuChance(
+                mind, port_CpuWeighed(mind, level, WHY_MEET, level->meet),
+                CHANCE_BYTE) &&
+            port_CpuStrikeWithin(
+                fighter, mind, distance, port_CpuQuick(level), WHY_MEET)) {
             return 0;
         }
     }
@@ -1217,14 +2010,15 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         mind->lunging = 0;
         if (distance < my_reach + OPENING_MARGIN && angle < ANGLE_TURN / 12 &&
             !MOVE_IS_ATTACK(seen->move_kind) &&
-            port_CpuStrike(fighter, mind, distance)) {
+            port_CpuStrikeWithin(
+                fighter, mind, distance, port_CpuQuick(level), WHY_LUNGE)) {
             return 0;
         }
     }
     if (mind->feinting) {
         mind->feinting = 0;
         if (port_CpuClear(fighter, CPU_PROBE_AWAY)) {
-            port_CpuStart(mind, SCRIPT_STEP_AWAY);
+            port_CpuStart(mind, SCRIPT_STEP_AWAY, WHY_FEINT);
             return 0;
         }
     }
@@ -1247,6 +2041,9 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
                 mind->in_reach_attacks++;
             }
         }
+    }
+    if (level->reads_answers) {
+        port_CpuReadAnswers(mind, seen, distance, his_reach);
     }
 
     /* -- the distance -- */
@@ -1284,17 +2081,31 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         want = NEAREST_WANTED;
     }
 
+    /* -- from afar: a gun, a thing thrown, dirt, a leap; a rush at an
+     * opening; off an edge -- */
+    {
+        u32 far = port_CpuFromAfar(fighter, mind, level, seen, distance, angle,
+                                   my_reach, his_reach, pressure, ago, &want);
+
+        if (far != 0) {
+            return far == DODGE_STARTED ? 0 : far;
+        }
+    }
+
     /* -- a strike of its own: standing, or pressing and walking in -- */
     /* (pressing, a lesser level swings from as far as it misjudges) */
     if ((standing || (pressure > 0 && fighter->move_kind == MOVE_KIND_WALK)) &&
         distance <
             my_reach + (pressure > 0 && level->slack > 0 ? level->slack : 0) &&
         angle < ANGLE_TURN / 12 && !MOVE_IS_ATTACK(seen->move_kind) &&
-        port_CpuChance(mind,
-                       level->initiative * (seen->wounds != 0 ? 2 : 1) +
-                           level->aggression * pressure / PRESSURE_ALL,
-                       CHANCE_FRAME)) {
-        if (port_CpuStrike(fighter, mind, distance)) {
+        port_CpuChance(
+            mind,
+            (level->initiative * (seen->wounds != 0 ? 2 : 1) +
+             level->aggression * pressure / PRESSURE_ALL) *
+                port_CpuTacticWeight(mind, level, WHY_FIRST) / CHANCE_BYTE,
+            CHANCE_FRAME)) {
+        if (port_CpuStrikeWithin(
+                fighter, mind, distance, port_CpuQuick(level), WHY_FIRST)) {
             return 0;
         }
     }
@@ -1305,22 +2116,29 @@ static u32 port_CpuDecide(Fighter *fighter, PortCpuMind *mind) {
         angle < ANGLE_TURN / 12 && !MOVE_IS_ATTACK(seen->move_kind) &&
         port_CpuClear(fighter, CPU_PROBE_TOWARD) &&
         port_CpuChance(
-            mind, level->lunge * pressure / PRESSURE_ALL, CHANCE_FRAME)) {
+            mind,
+            level->lunge * pressure / PRESSURE_ALL *
+                port_CpuTacticWeight(mind, level, WHY_LUNGE) / CHANCE_BYTE,
+            CHANCE_FRAME)) {
         mind->lunging = 1;
-        port_CpuStart(mind, SCRIPT_STEP_TOWARD);
+        port_CpuStart(mind, SCRIPT_STEP_TOWARD, WHY_LUNGE);
         return 0;
     }
     /* a feint: a step into his reach and out again, to draw a blow that
      * misses (an opening, above) */
-    if (level->feint != 0 && pressure >= FEINT_PRESSURE_LEAST &&
-        pressure <= FEINT_PRESSURE_MOST && standing && distance > his_reach &&
+    meeter = level->reads_answers && port_CpuHeMeets(mind);
+    if (level->feint != 0 &&
+        (meeter || (pressure >= FEINT_PRESSURE_LEAST &&
+                    pressure <= FEINT_PRESSURE_MOST)) &&
+        standing && distance > his_reach &&
         distance < his_reach + FEINT_DISTANCE && angle < ANGLE_TURN / 12 &&
         (seen->move_kind == MOVE_KIND_STANCE ||
          seen->move_kind == MOVE_KIND_WALK) &&
         port_CpuClear(fighter, CPU_PROBE_TOWARD) &&
-        port_CpuChance(mind, level->feint, CHANCE_FRAME)) {
+        port_CpuChance(
+            mind, level->feint * (meeter ? MEETER_FEINTS : 1), CHANCE_FRAME)) {
         mind->feinting = 1;
-        port_CpuStart(mind, SCRIPT_STEP_TOWARD);
+        port_CpuStart(mind, SCRIPT_STEP_TOWARD, WHY_FEINT);
         return 0;
     }
 

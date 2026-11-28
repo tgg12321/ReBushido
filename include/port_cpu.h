@@ -33,6 +33,8 @@ extern s32 port_CpuPlays(s32 fighter_index);
 /* The kind of pad script it is playing (enum CpuScriptKind, 1 up), or 0:
  * for --cpu-log. */
 extern s32 port_CpuScriptKind(s32 fighter_index);
+/* Why it began that script (src/port/cpu.c, WHY_...), or 0: for --cpu-log. */
+extern s32 port_CpuScriptWhy(s32 fighter_index);
 /* Its pad for this frame, as fighter_ReadPad gives a player's. */
 extern void port_CpuBuildPad(s32 fighter_index, PadState *pad_out);
 

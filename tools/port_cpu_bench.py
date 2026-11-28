@@ -79,14 +79,18 @@ shot = false
 '''
 
 
-def fight_args(k, a, b, stages, fighters):
+def fight_args(k, a, b, stages, fighters, weapons=None, second_weapons=None):
     """The k-th fight: its stage, its two fighters and the CPUs of the first
-    and the second place, with which of A and B is first."""
+    and the second place, with which of A and B is first. `weapons` are the
+    first fighter's to draw from (WEAPONS if none), `second_weapons` the
+    second's (the same if none)."""
+    weapons = weapons or WEAPONS
+    second_weapons = second_weapons or weapons
     stage = stages[k % len(stages)]
     first = fighters[(k * 7 + 1) % len(fighters)]
     second = fighters[(k * 5 + 3) % len(fighters)]
-    w1 = WEAPONS[(k * 3) % len(WEAPONS)]
-    w2 = WEAPONS[(k * 5 + 2) % len(WEAPONS)]
+    w1 = weapons[(k * 3) % len(weapons)]
+    w2 = second_weapons[(k * 5 + 2) % len(second_weapons)]
     swapped = (k // 1) % 2 == 1
     cpus = (b, a) if swapped else (a, b)
     return stage, '%s:%s' % (first, w1), '%s:%s' % (second, w2), cpus, swapped
@@ -146,6 +150,10 @@ def main():
     parser.add_argument('--limit', type=int, default=24000, help='blanks before a fight is a draw')
     parser.add_argument('--stages', nargs='*', default=STAGES)
     parser.add_argument('--fighters', nargs='*', default=FIGHTERS)
+    parser.add_argument('--weapons', nargs='*', default=WEAPONS,
+                        help="the first place's weapons to draw from (long-gun, short-gun: a gun's fights)")
+    parser.add_argument('--second-weapons', nargs='*',
+                        help="the second place's, if not the first's")
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'cpu_bench'))
     parser.add_argument('--image', help="the player's disc (the play tests' own if not given)")
     parser.add_argument('--tune', action='append', default=[], help='LEVEL:FIELD=VALUE,... (--cpu-tune), to try numbers')
@@ -169,7 +177,8 @@ def main():
     jobs = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.j) as pool:
         for k in range(args.first, args.first + args.fights):
-            stage, f1, f2, cpus, swapped = fight_args(k, args.a, args.b, args.stages, args.fighters)
+            stage, f1, f2, cpus, swapped = fight_args(k, args.a, args.b, args.stages, args.fighters,
+                                                      args.weapons, args.second_weapons)
             out = os.path.join(args.out, 'fight%04d' % k)
             jobs.append((k, stage, f1, f2, cpus, swapped,
                          pool.submit(run_fight, program, plan, order, out, stage, f1, f2, cpus,

@@ -46,7 +46,7 @@ def read(path):
     with open(path, encoding='utf-8', errors='replace') as f:
         for line in f:
             w = line.split()
-            if len(w) != 18 or w[0] != 'f':
+            if len(w) < 18 or w[0] != 'f':
                 continue
             v = [int(x) for x in w[1:]]
             keys = ('frame', 'fighter', 'who', 'kind', 'motion', 'move_frame', 'hit_start', 'attack_kind',
