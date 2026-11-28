@@ -13,6 +13,10 @@
 #include "src/main/psxsdk/libspu/s_rmp.c"
 #include "runtime/runtime.h"
 
+/* The system's memory, which the remastered mix would take (port_host.h):
+ * the runtime's. */
+void *port_HostAllocate(u32 size) { return test_Alloc(size); }
+
 static u16 g_made_regs[PORT_SPU_REG_COUNT];
 
 #define MADE_WAVE 0x1000 /* where the made-up waveforms go */

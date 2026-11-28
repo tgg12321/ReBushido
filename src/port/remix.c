@@ -45,6 +45,7 @@
  * the game's state (config/port_state.txt): nothing of the game reads
  * it, and a step run again by netplay is mixed again from here on. */
 #include "common.h"
+#include "port_host.h"
 #include "port_remix.h"
 #include "port_spu.h"
 #include "bb2.h"
@@ -434,8 +435,13 @@ static struct {
     PortRemixPlace places[PORT_REMIX_SOURCES];
     PortRemixHead head[PLACE_STEPS + 1];
     u32 band_start[PORT_REMIX_BANDS];
-    s16 kernels[KERNEL_COEFS];
-    PortRemixReverb reverb;
+    /* the two large parts, in memory the system gives (port_HostAllocate):
+     * as variables they would stand among the data before the game's
+     * state, in the Windows program, and push it out of the space its
+     * ordering tables can name (docs/PORT.md, "Where the program's
+     * variables are") */
+    s16 *kernels; /* KERNEL_COEFS of them */
+    PortRemixReverb *reverb;
 } g_remix;
 
 s32 g_port_remix_live;
@@ -559,14 +565,22 @@ static void port_RemixMakeHead(void) {
         (s64)32768 * 32768, 32768 + g_remix.head[SPEAKER_STEP].far_gain);
 }
 
-/* The tables, made once (port_remix.h). */
-void port_RemixPrepare(void) {
+/* The tables, made once (port_remix.h): 0 if the system had no memory
+ * for them. */
+s32 port_RemixPrepare(void) {
     s32 bessel_beta;
     u32 band;
     u32 start = 0;
 
     if (g_remix.made) {
-        return;
+        return 1;
+    }
+    if (g_remix.kernels == NULL) {
+        g_remix.kernels = port_HostAllocate(KERNEL_COEFS * sizeof(s16));
+        g_remix.reverb = port_HostAllocate(sizeof(PortRemixReverb));
+    }
+    if (g_remix.kernels == NULL || g_remix.reverb == NULL) {
+        return 0;
     }
     bessel_beta = port_RemixBessel(KAISER_BETA);
     for (band = 0; band < PORT_REMIX_BANDS; band++) {
@@ -575,13 +589,14 @@ void port_RemixPrepare(void) {
         start += (PORT_REMIX_PHASES + 1) * g_port_remix_bands[band].taps;
     }
     port_RemixMakeHead();
-    g_remix.reverb.room = PORT_REMIX_ROOM_NONE;
+    g_remix.reverb->room = PORT_REMIX_ROOM_NONE;
     for (band = 0; band < LOOK_AHEAD; band++) {
         g_remix.needs[band] = LIMIT_ONE;
     }
     g_remix.level = LIMIT_ONE;
     g_remix.least = LIMIT_ONE;
     g_remix.made = 1;
+    return 1;
 }
 
 /* ---- the settings ---- */
@@ -594,7 +609,10 @@ void port_SetSoundRemastered(s32 is_on) {
         u8 *bytes;
         u32 i;
 
-        port_RemixPrepare();
+        if (!port_RemixPrepare()) {
+            /* no memory for it: the chip's own sound */
+            return;
+        }
         bytes = (u8 *)g_remix.voices;
         for (i = 0; i < sizeof(g_remix.voices); i++) {
             bytes[i] = 0;
@@ -873,19 +891,19 @@ static void port_RemixRunReverb(
 
 void port_RemixReverbReset(u32 room) {
     port_RemixPrepare();
-    port_RemixClearReverb(&g_remix.reverb);
-    port_RemixSetRoom(&g_remix.reverb, room);
+    port_RemixClearReverb(g_remix.reverb);
+    port_RemixSetRoom(g_remix.reverb, room);
 }
 
 void port_RemixReverbRun(s32 in_left, s32 in_right, s32 *out) {
-    port_RemixRunReverb(&g_remix.reverb, in_left, in_right, out);
+    port_RemixRunReverb(g_remix.reverb, in_left, in_right, out);
 }
 
 /* ---- the mix ---- */
 
 void port_RemixBegin(s32 stage) {
     u32 room = port_RemixStageRoom(stage);
-    PortRemixReverb *reverb = &g_remix.reverb;
+    PortRemixReverb *reverb = g_remix.reverb;
 
     port_RemixPrepare();
     if ((s32)room != g_remix.room) {
@@ -1040,7 +1058,7 @@ static void port_RemixLimit(s32 left, s32 right, s32 *out) {
  * (or the chip's out of a fight), the limiter, the main volume. */
 void port_RemixFrame(const s32 *cd, const s32 *chip_wet, const s32 *main_volume,
                      s32 unmuted, s16 *out) {
-    PortRemixReverb *reverb = &g_remix.reverb;
+    PortRemixReverb *reverb = g_remix.reverb;
     s32 wet[2] = {0, 0};
     s32 mixed[2];
     s32 side;

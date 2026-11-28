@@ -108,9 +108,10 @@ extern void port_RemixPlaceRun(
 /* The far ear's delay for a source panned all the way, in 256ths of a
  * sample. */
 extern s32 port_RemixMostDelay(void);
-/* The resampler's kernels and the head's table made, once: by the first
- * remastered sample, or the setting turned on, or the tests. */
-extern void port_RemixPrepare(void);
+/* The resampler's kernels and the head's table made, once, in memory
+ * the system gives: as the setting is turned on, or by the tests. 0 if
+ * there was no memory (the setting then stays off). */
+extern s32 port_RemixPrepare(void);
 
 /* The rooms (remix.c's table, docs/PORT.md). */
 enum {

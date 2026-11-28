@@ -13,6 +13,10 @@
 #include "src/main/psxsdk/libspu/s_rmp.c"
 #include "runtime/runtime.h"
 
+/* The system's memory, which the mix takes its tables and its reverb
+ * from (port_host.h): the runtime's. */
+void *port_HostAllocate(u32 size) { return test_Alloc(size); }
+
 #define TONE_N 4096
 #define TONE_WARM 256
 #define TONE_AMPLITUDE 16000.0
@@ -224,7 +228,7 @@ static void test_Room(u32 room) {
                port_RemixRoomDecay(room), port_RemixRoomWet(room));
     for (i = 0; i < LINES; i++) {
         test_Print(
-            " line %u %d", g_remix.reverb.length[i], g_remix.reverb.gain[i]);
+            " line %u %d", g_remix.reverb->length[i], g_remix.reverb->gain[i]);
     }
     test_Print("\n");
     test_Print("energy %u", room);
@@ -310,7 +314,7 @@ static void test_RoomNoise(u32 room) {
         }
         for (i = 0; i < LINES; i++) {
             s32 v =
-                g_remix.reverb.lines[i][(g_remix.reverb.at - 1) & LINE_MASK];
+                g_remix.reverb->lines[i][(g_remix.reverb->at - 1) & LINE_MASK];
 
             if ((v < 0 ? -v : v) > line_peak) {
                 line_peak = v < 0 ? -v : v;
