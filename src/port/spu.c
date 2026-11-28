@@ -34,6 +34,7 @@
  *     with none.
  */
 #include "common.h"
+#include "port_remix.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -420,6 +421,12 @@ static void port_AdvanceSpuVoice(PortSpuVoice *voice, u32 index) {
     voice->recent[1] = voice->recent[2];
     voice->recent[2] = voice->recent[3];
     voice->recent[3] = voice->block[voice->sample_index++];
+    if (g_port_remix_live) {
+        /* the remastered mix's own copy (port_remix.h), under the
+         * envelope as it is now */
+        port_RemixPush(
+            index, (voice->recent[3] * voice->level) >> VOLUME_SHIFT);
+    }
 }
 
 /* ---- the envelope ---- */
@@ -641,8 +648,9 @@ static void port_StepSpuVoice(u32 index, u32 modulated) {
     regs[PORT_SPU_VOICE_ENVELOPE] = (u16)voice->level;
 }
 
-/* One sample of voice `index`, left and right. */
-static void port_RunSpuVoice(u32 index, s32 *out) {
+/* One sample of voice `index`, left and right; the step it went on by
+ * into `stepped`. */
+static void port_RunSpuVoice(u32 index, s32 *out, u32 *stepped) {
     PortSpuVoice *voice = &g_port_spu.voices[index];
     u16 *regs = g_port_spu.regs + index * PORT_SPU_VOICE_REGS;
     u32 bit = 1U << index;
@@ -660,6 +668,7 @@ static void port_RunSpuVoice(u32 index, s32 *out) {
     if (step > PITCH_MAX) {
         step = PITCH_LIMIT;
     }
+    *stepped = step;
     if (port_ReadSpuVoiceBits(PORT_SPU_NOISE) & bit) {
         sample = (s16)g_port_spu.noise_level;
         g_port_spu.counts.noise_samples++;
@@ -906,11 +915,20 @@ s32 g_port_spu_quiet;
  * the reverb's; all of it at the main volume, within 16 bits. */
 void port_RunSpu(
     const s16 *cd, const s16 *heard_cd, s16 *out, s16 *heard_out, u32 frames) {
+    port_RunSpuRemastered(cd, heard_cd, out, heard_out, NULL, frames);
+}
+
+/* The same, with the sound remastered beside it (port_spu.h): the chip
+ * hands the remastered mix what it works out of each voice and the disc,
+ * and computes nothing differently for it. */
+void port_RunSpuRemastered(const s16 *cd, const s16 *heard_cd, s16 *out,
+                           s16 *heard_out, s16 *remastered, u32 frames) {
     u16 *regs = g_port_spu.regs;
     u32 frame;
     u32 index;
     u32 side;
 
+    g_port_remix_live = remastered != NULL;
     port_TakeSpuKeys();
     for (frame = 0; frame < frames; frame++) {
         u32 control = regs != NULL ? regs[PORT_SPU_CONTROL] : 0;
@@ -920,7 +938,10 @@ void port_RunSpu(
          * stands in for the disc's */
         s32 instead[2] = {0, 0};
         s32 wet[2];
+        /* the disc's sound as the remastered mix hears it */
+        s32 remix_cd[2] = {0, 0};
         u32 reverb_voices;
+        u32 noise_voices;
 
         g_port_spu.counts.samples++;
         if (!(control & PORT_SPU_CONTROL_ON)) {
@@ -929,6 +950,10 @@ void port_RunSpu(
             if (heard_cd != NULL) {
                 heard_out[frame * 2] = 0;
                 heard_out[frame * 2 + 1] = 0;
+            }
+            if (remastered != NULL) {
+                remastered[frame * 2] = 0;
+                remastered[frame * 2 + 1] = 0;
             }
             continue;
         }
@@ -945,13 +970,27 @@ void port_RunSpu(
                 heard_out[frame * 2] = 0;
                 heard_out[frame * 2 + 1] = 0;
             }
+            if (remastered != NULL) {
+                remastered[frame * 2] = 0;
+                remastered[frame * 2 + 1] = 0;
+            }
             continue;
         }
         reverb_voices = port_ReadSpuVoiceBits(PORT_SPU_REVERB_VOICES);
+        noise_voices =
+            remastered != NULL ? port_ReadSpuVoiceBits(PORT_SPU_NOISE) : 0;
         for (index = 0; index < PORT_SPU_VOICES; index++) {
             s32 voice[2];
+            u32 step;
 
-            port_RunSpuVoice(index, voice);
+            port_RunSpuVoice(index, voice, &step);
+            if (remastered != NULL) {
+                PortSpuVoice *it = &g_port_spu.voices[index];
+
+                port_RemixVoice(
+                    index, it->counter, step,
+                    (s32)((noise_voices >> index) & 1), it->out, it->volume);
+            }
             sum[0] += voice[0];
             sum[1] += voice[1];
             if ((reverb_voices >> index) & 1) {
@@ -975,6 +1014,7 @@ void port_RunSpu(
                                      VOLUME_SHIFT) -
                                     sample;
                 }
+                remix_cd[side] = sample + instead[side];
             }
         }
         port_CaptureSpuSample(CAPTURE_CD_LEFT, cd != NULL ? cd[frame * 2] : 0);
@@ -1013,5 +1053,11 @@ void port_RunSpu(
             }
             out[frame * 2 + side] = (s16)port_ClampSample(sample);
         }
+        if (remastered != NULL) {
+            port_RemixFrame(
+                remix_cd, wet, g_port_spu.main_volume,
+                control & PORT_SPU_CONTROL_UNMUTED, remastered + frame * 2);
+        }
     }
+    g_port_remix_live = FALSE;
 }

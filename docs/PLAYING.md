@@ -248,7 +248,9 @@ and keeps it in `rebushido.cfg`, and the program starts with it. With
 instead. **Difficulty** (Hard, which the game starts with, or Easy),
 **Music** and **Monitor** (Color, or black and white) are the game's
 own options, taken at the next frame of the main menu and written into
-the game's save as its options page did.
+the game's save as its options page did. **Sound** and **Headphones**,
+beside them, are the program's own: the sound remastered or the chip's
+("The sound: Original and Remastered", below), at once.
 
 **CPU**, in *The game*, picks who plays the CPU's fighters: **Original**
 (the game's own CPU, as it is, and what the program starts with), or one
@@ -467,6 +469,38 @@ nothing at all while Graphics is Original.
 | `dressing` | `on`, `off` | A **Remastered Classic stage's dressing**: grass, bushes, reeds and flowers that sway in the stage's wind and are pushed aside by the fighters and the sweep of a blade near the ground; water that reflects the sky, the stage and the fighters, foams along its shore and ripples where a fighter wades; rain and puddles on the building's roof and in its garage; candle smoke, sea spray, shafts of light with the dust hanging in them through the halls' doors and windows; dust kicked up by steps, leaves and petals falling, embers rising from the fires, fireflies at night. Every stage has some (the program ships them, `mods/dressing/`); a mod of yours can add to them or change them ([`MODS.md`](MODS.md), "Dressing"). It grows from the stage's own ground and takes its colours from the stage's own textures, is lit by the stage's light, the sun's shadows, the stage's lamps and the time of day, and never touches the fight: a fight, a replay and a game online are the same with it and without it. Graphics Remastered only; nothing on a Classic stage; turned on in a fight, it shows from the next stage loaded. **`on` with nothing said.** |
 | `effect_lights` | `on`, `off` | **The flash where blades meet**, of a hit and of a shot, and the glow of the sparks, as short lights of their own colours that light the fighters and the ground about them for the few frames the game lights the fighters itself. Graphics Remastered only; changes nothing the game computes. **`on` with nothing said.** |
 | `movies` | `enhanced`, `smooth`, `original` | How the **opening movie** is shown: `enhanced`, the frames cleaned of the decoder's blocks, colour stairs and ringing and made larger along their edges on the graphics card -- or, where you have made it, the movie made four times larger from your disc by a learned upscaler ([`MODS.md`](MODS.md), "The movie made larger"); `smooth`, stretched smooth; `original`, the console's frames as `filter` says ([`PORT.md`](PORT.md), "The movie made better"). |
+
+## The sound: Original and Remastered
+
+`sound` in `rebushido.cfg` (the settings menu's **Sound**, in *The
+game*; `--sound` on the command line) is what you hear:
+
+- **`remastered`, with nothing said**: the game's own sounds, played
+  better. Each sound is brought to the speakers' rate by a finer
+  resampler than the PlayStation's sound chip has, so the swords, steps
+  and voices keep their top and lose the chip's faint ringing; each stage
+  has a **reverb of its own** -- the dojo a wooden room, the halls and
+  the Kabuki stage larger rooms, the Purple Cavern a long echoing cave,
+  the tunnel, the dam, the garage and the station hard and long, the
+  courtyards a little, the bamboo a short bright thicket, the fields, the
+  coast and the rooftops only a faint, distant answer; and the loudest
+  moments, which the console cuts off flat, are turned down for an
+  instant instead. Out of a fight (the menus, the select screens) there
+  is no reverb but the game's own, as on the console;
+- **`original`**: the sound chip's own sound, exactly as the program made
+  it before, to the bit.
+
+`headphones` (the menu's **Headphones**; `--headphones on`) places the
+remastered sound **for headphones**: each sound comes from where its
+left and right put it, as a head hears it -- the ear away from it hears
+it a little later, softer and darker -- and the music is two speakers in
+front of you instead of one in each ear. **Off with nothing said**: on
+speakers, which place the sound themselves, leave it off. It changes
+nothing of `sound = original`.
+
+Neither changes the game: a fight, a replay and a game online are the
+same whichever you choose, and two players online may each have their
+own ([`PORT.md`](PORT.md), "The sound remastered").
 
 ## Kinds of stage
 

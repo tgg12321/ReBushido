@@ -48,6 +48,7 @@
 #include "portmap.h"
 #include "port_music.h"
 #include "port_remaster.h"
+#include "port_remix.h"
 #include "port_play.h"
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
@@ -1417,6 +1418,10 @@ int main(int argc, char **argv) {
     /* a mod's music, or the game's own (docs/MODS.md, "Music"); the
      * command line's --music-mods comes after and has the last word */
     port_MusicSetOn(g_port_settings.music_mods);
+    /* the sound remastered or the chip's own, and for headphones (the
+     * command line's --sound and --headphones have the last word) */
+    port_SetSoundRemastered(g_port_settings.sound == PORT_SOUND_REMASTERED);
+    port_SetSoundHeadphones(g_port_settings.headphones);
     /* the kind of stage the stages start as (port_stage_choice.h) */
     port_SetStageKindDefault(g_port_settings.stage_kind);
     /* ... and the time of day they start at */

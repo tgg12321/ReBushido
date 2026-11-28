@@ -111,6 +111,11 @@ extern void port_TakeSpuKeys(void);
 extern s32 g_port_spu_quiet;
 extern void port_RunSpu(
     const s16 *cd, const s16 *heard, s16 *out, s16 *heard_out, u32 frames);
+/* The same, and if `remastered` is not NULL the sound remastered
+ * (port_remix.h) into it, a left and a right for each sample: the chip
+ * and `out` are as they would be without it, to the bit. */
+extern void port_RunSpuRemastered(const s16 *cd, const s16 *heard, s16 *out,
+                                  s16 *heard_out, s16 *remastered, u32 frames);
 extern const PortSpuCounts *port_GetSpuCounts(void);
 /* Called as a voice is keyed on, if not NULL: for a run's log. The
  * address of a voice of the second bank is PORT_SPU_RAM_BYTES on. */

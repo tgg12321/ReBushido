@@ -116,6 +116,39 @@ PORT_SETTING(music,
     .help = "The game's music; off leaves the sounds alone, from the next "
             "piece")
 
+/* The sound remastered (include/port_remix.h; docs/PORT.md, "The sound
+ * remastered"): the chip's voices resampled by a windowed sinc, a reverb
+ * of each stage's own, the sum kept within 16 bits by a limiter;
+ * `original` is the sound chip's own, to the bit (PORT_SOUND_...). Not
+ * the game's: the game and a session are the same either way. The
+ * program without a window has the original unless --sound says. */
+PORT_SETTING(sound,
+    .name = "sound", .value = "remastered",
+    .note = "original: the sound chip's own;\n"
+            "remastered: its voices resampled finer,\n"
+            "a reverb of each stage's own",
+    .read = PORT_READ_WORDS, .words = {"original", "remastered"},
+    .is = "original or remastered",
+    .menu = PORT_MENU_GAME, .rank = 32, .takes = PORT_TAKES_NOW,
+    .label = "Sound",
+    .help = "The sound chip's own, or its voices resampled finer and a "
+            "reverb of each stage's own",
+    .shown = {"Original", "Remastered"})
+
+/* The remastered sound placed for headphones (port_remix.h): each voice
+ * where its left and right volumes put it, as a head hears it, and the
+ * disc's music as two speakers in front. Off for speakers, which place
+ * the sound themselves; it changes nothing of `sound = original`. */
+PORT_SETTING(headphones,
+    .name = "headphones", .value = "off",
+    .note = "on: the remastered sound placed for\n"
+            "headphones, each voice where a head would\n"
+            "hear it; off for speakers",
+    .menu = PORT_MENU_GAME, .rank = 34, .takes = PORT_TAKES_NOW,
+    .label = "Headphones",
+    .help = "The remastered sound placed for headphones, as a head hears "
+            "it; off for speakers")
+
 PORT_SETTING(monitor,
     .name = "monitor", .value = "color",
     .note = "color or bw: the game's own Monitor, black\n"

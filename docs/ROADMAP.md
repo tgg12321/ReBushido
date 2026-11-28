@@ -884,3 +884,25 @@ the stage").
     a reverb of each stage's own (the dojo, the cave, the open), sound
     placed for headphones (HRTF), and better resampling of the game's
     samples than the chip's own.
+    **Done on the port** ([`PORT.md`](PORT.md), "The sound remastered";
+    [`PLAYING.md`](PLAYING.md), "The sound: Original and Remastered"):
+    `sound = remastered` (the window's default; the program without a
+    window keeps the original unless `--sound` says) mixes the chip's
+    voices a second time beside the chip, which stays to the bit what it
+    was: each through a Kaiser-windowed sinc of 32 to 64 taps (flat
+    within 0.002 dB to 0.35 of the rate, what else is heard 75 dB down,
+    where the chip's own table loses up to 8 dB at the top and lets
+    images 20 to 35 dB down through), a reverb of eight delay lines whose
+    room the stage chooses (19 rooms for the 38 stages), and a limiter in
+    place of the chip's cut at 16 bits; `headphones = on` places each
+    voice by its volumes round a spherical head (Woodworth's delay,
+    Brown and Duda's shadow, no measured data) and the music as two
+    speakers. Whole numbers only, the same in both sizes; output, never
+    the game's state. Proved by `tests/port/remix.c` and `.py` (tones,
+    folding back, each room's decay, the head's delays and levels, the
+    chip unchanged beside it) and `--wav` runs of six stages and
+    `port_sound`'s plan, byte for byte the same as main's with
+    `original`. Left: the owner's ears (`tmp/sound/`), and the rooms'
+    levels and the stage table tuned by them; the reverb heard on a step
+    netplay runs again is not put back with the game's state (a short
+    doubling of its tail at a rollback).

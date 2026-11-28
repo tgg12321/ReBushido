@@ -94,6 +94,7 @@ outside  src/port/replay.c      the replays: the fight being recorded, the one b
 outside  src/port/stats.c       the player's record: what the step noted, the fight's end waiting to be final
 outside  src/port/stats_store.c  the player's record: the fights read from its file and written to it
 outside  src/port/remaster.c    the remastered picture's side channel: its epoch only goes forward
+outside  src/port/remix.c       the sound remastered: its voices' copies, its reverb and the head, for the ears alone
 outside  src/port/state.c       the snapshot's own bookkeeping, which must survive a load
 outside  src/port/step.c        the host's count of steps and whether a step is run again
 outside  src/port/theatre.c     the replay theatre's and photo mode's view, and the states and inputs its looks run from

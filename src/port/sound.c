@@ -33,6 +33,7 @@
 #include "port_host.h"
 #include "port_music.h"
 #include "port_profile.h"
+#include "port_remix.h"
 #include "port_spu.h"
 #include "src/main/psxsdk/libspu/libspu_internal.h"
 /* Sony's two headers declare one function twice between them. */
@@ -460,6 +461,10 @@ static void port_MixSound(u32 frames) {
 
     s16 *heard = NULL;
     const s16 *music;
+    /* the sound remastered (port_remix.h), where it is on and someone
+     * hears it: never for a frame run ahead */
+    s16 *remastered =
+        port_IsSoundRemastered() && !g_port_ahead ? g_port_remix_out : NULL;
     s32 was = port_ProfileSwitch(PORT_PROFILE_SOUND);
 
     port_PlayDisc(frames);
@@ -469,7 +474,12 @@ static void port_MixSound(u32 frames) {
      * chip made */
     music = port_PlayMusic(frames, &heard);
     g_port_spu_quiet = g_port_ahead && g_port_ahead_quiet;
-    port_RunSpu(cd, music, out, heard, frames);
+    if (remastered != NULL) {
+        port_RemixBegin(g_sys_screen == SCREEN_FIGHT_UPDATE
+                            ? port_ArenaSoundStage(g_fight_stage)
+                            : -1);
+    }
+    port_RunSpuRemastered(cd, music, out, heard, remastered, frames);
     g_port_spu_quiet = FALSE;
     port_ProfileSwitch(was);
     g_port_sample_count += frames;
@@ -478,7 +488,8 @@ static void port_MixSound(u32 frames) {
      * not played yet */
     if (g_port_rerun) {
         if (g_port_rerun_sound_hook != NULL) {
-            g_port_rerun_sound_hook(out, frames);
+            g_port_rerun_sound_hook(
+                remastered != NULL ? remastered : out, frames);
         }
         return;
     }
@@ -489,6 +500,9 @@ static void port_MixSound(u32 frames) {
     }
     if (music == NULL) {
         heard = out;
+    }
+    if (remastered != NULL) {
+        heard = remastered;
     }
     if (port_IsWavOn()) {
         port_AppendWav(heard, frames);
@@ -551,6 +565,15 @@ void port_PrintSoundSummary(void) {
     port_Print("sound reverb_samples %u clipped_samples %u\n",
                counts->reverb_samples, counts->clipped);
     port_Print("sound xa_sectors %u\n", port_GetXaSectorCount());
+    if (port_IsSoundRemastered()) {
+        const PortRemixCounts *remix = port_GetRemixCounts();
+
+        port_Print("sound remastered samples %u clipped_samples %u "
+                   "limited_samples %u room %s rooms %u headphones %s\n",
+                   remix->samples, remix->clipped, remix->limited,
+                   port_RemixRoomName(remix->room), remix->rooms,
+                   port_IsSoundHeadphones() ? "on" : "off");
+    }
     if (!g_port_spu_mapped) {
         return;
     }
