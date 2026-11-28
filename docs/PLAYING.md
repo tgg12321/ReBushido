@@ -868,8 +868,10 @@ The dummy is the second fighter, played only by what training gives the
 second pad, as a player's pad would be. **Dummy** in the settings says
 what it does: **Stands**; **Guards**, pressing the attack button the
 game's CPU answers that kind of attack with a frame before your blow can
-land (as the game has it, a blade met by a blade); or **Plays back** what
-you recorded for it, round and round.
+land (as the game has it, a blade met by a blade), but only a blow that
+reaches it: one swung from too far off, by the game's CPU's own measure
+of how far that attack reaches, it lets go by; or **Plays back** what you
+recorded for it, round and round.
 
 Hold **Select** (Right Shift on the keyboard, Back on a controller) and
 press:
@@ -895,7 +897,11 @@ it was held, the direction as an arrow and the buttons as their shapes
 the **Hit areas**: every point of each body as a disc where a blade
 wounds, with a red core where it kills (the head, the chest, the hips),
 the arms and legs in their own colours, and each weapon's blade from the
-hand to its point, red while it is in its frames of hitting.
+hand to its point, red while it is in its frames of hitting, with the
+sweep it was tested by that frame: the game tests a blade not where it is
+but over the stretch it swept since the frame before, two triangles (four
+where its point moved far), and those are drawn shaded as the test has
+them (a pole arm's blade and its shaft each).
 
 The *Training* page of the settings menu (from Training Options, or the
 pause menu's Select):

@@ -80,9 +80,17 @@ static void port_TrainingShow(s32 pad, u16 buttons) {
  * attack's button against an attack begun with the second kind, the
  * reverse attack's against one begun with the first, pressed from a frame
  * before the blow can land. Those are Circle and Cross in the game's own
- * button configuration (pad.c, pad_ResetConfig). */
+ * button configuration (pad.c, pad_ResetConfig).
+ *
+ * Only a blow that reaches: as the CPU judges an attack coming (cpu.c,
+ * the threat's CPU_THREAT_NEAR, its reach at least the fighters'
+ * distance), the motion's reach, the weapon's for the kind of move (by
+ * the attacker's own move, cpu_PortBlowReach) and the attacker's size;
+ * one that falls short is let by, as a player would let a swing at the
+ * air go by. */
 static u16 port_TrainingGuard(void) {
-    const Fighter *player = &g_fighters[0];
+    PortTraining *training = &g_port_training;
+    Fighter *player = &g_fighters[0];
     s32 start = player->hit_start_frames[0] != NO_FRAME
                     ? player->hit_start_frames[0]
                     : player->hit_start_frames[1];
@@ -91,6 +99,11 @@ static u16 port_TrainingGuard(void) {
         player->move_frame + GUARD_LEAD < start || player->move_frame > start) {
         return 0;
     }
+    if (cpu_PortBlowReach(player) < g_fight_distance) {
+        training->let_by++;
+        return 0;
+    }
+    training->guards++;
     return (player->attack_kind & 1) ? FIGHTER_PAD_FRONTAL_ATTACK
                                      : FIGHTER_PAD_REVERSE_ATTACK;
 }
@@ -321,6 +334,95 @@ static u8 port_TrainingAreaGroup(s32 point) {
                                   : 3;
 }
 
+/* Before the frame's hit tests: where each blade was the frame before,
+ * which its sweep goes from (fighter.c gives a fighter's first frame
+ * its first point's, before this), whether the tests are the plain ones
+ * (fight_UpdateFighterPair: not a lock's, not a paired move's), and
+ * whose weapon they sweep. */
+void port_TrainingNoteSweep(void) {
+    PortTrainingAreas *areas = &g_port_training_areas;
+    u16 kind = g_fighters[0].move_kind;
+    s32 side;
+    s32 i;
+
+    if (!g_port_training.is_on) {
+        return;
+    }
+    areas->sweep_path = (u8)(!MOVE_IS_LOCK(kind) && kind != MOVE_KIND_PAIRED);
+    for (side = 0; side < 2; side++) {
+        const Fighter *fighter = &g_fighters[side];
+
+        /* tested against the other, as fight_TestBladesOnBodies has it
+         * before the blow: the weapon out, its holder standing and not
+         * the victim's */
+        areas->sweep_count[side] =
+            (u8)(!fighter->is_defeated &&
+                 fighter->weapon_live_state != WEAPON_LIVE_OFF &&
+                 fighter->frames_alive != 0 &&
+                 fighter->roster_id != ROSTER_VICTIM);
+        for (i = 0; i < PORT_TRAINING_BLADE_POINTS; i++) {
+            areas->sweep_last[side][i] = fighter->prev_weapon_points[i];
+        }
+    }
+}
+
+/* The corners of a sweep's triangles, as fight_TestBladesOnBodies takes
+ * them: 0 and 1 the segment now, 2 and 3 the frame before, 4 and 5 the
+ * halves between (SWEEP_HALFWAY); four where the far end moved this far,
+ * and two otherwise. */
+#define SWEEP_SPLIT_DISTANCE 2500
+static const u8 g_sweep_two[2][3] = {{2, 3, 1}, {0, 1, 2}};
+static const u8 g_sweep_four[4][3] = {
+    {3, 2, 5}, {5, 4, 2}, {5, 4, 1}, {1, 0, 4}};
+
+/* A segment's sweep, from `near` to `far` of the weapon's points, into
+ * the window's triangles. */
+static void port_TrainingNoteSegment(s32 side, s32 segment, s32 near, s32 far) {
+    PortTrainingAreas *areas = &g_port_training_areas;
+    Vec3 corner[6];
+    s16 x[6];
+    s16 y[6];
+    u8 seen[6];
+    s32 dx;
+    s32 dy;
+    s32 dz;
+    s32 count;
+    s32 t;
+    s32 k;
+
+    corner[0] = SPAD->weapon_points[side][near];
+    corner[1] = SPAD->weapon_points[side][far];
+    corner[2] = areas->sweep_last[side][near];
+    corner[3] = areas->sweep_last[side][far];
+    corner[4].x = (corner[0].x + corner[2].x) / 2;
+    corner[4].y = (corner[0].y + corner[2].y) / 2;
+    corner[4].z = (corner[0].z + corner[2].z) / 2;
+    corner[5].x = (corner[1].x + corner[3].x) / 2;
+    corner[5].y = (corner[1].y + corner[3].y) / 2;
+    corner[5].z = (corner[1].z + corner[3].z) / 2;
+    dx = corner[1].x - corner[3].x;
+    dy = corner[1].y - corner[3].y;
+    dz = corner[1].z - corner[3].z;
+    count = dx * dx + dy * dy + dz * dz >=
+                    SWEEP_SPLIT_DISTANCE * SWEEP_SPLIT_DISTANCE
+                ? 4
+                : 2;
+    for (k = 0; k < 6; k++) {
+        seen[k] = (u8)port_TrainingProject(&corner[k], 0, &x[k], &y[k], NULL);
+    }
+    areas->sweep_triangles[side][segment] = (u8)count;
+    for (t = 0; t < count; t++) {
+        const u8 *tri = count == 2 ? g_sweep_two[t] : g_sweep_four[t];
+
+        areas->sweep_seen[side][segment][t] =
+            (u8)(seen[tri[0]] && seen[tri[1]] && seen[tri[2]]);
+        for (k = 0; k < 3; k++) {
+            areas->sweep[side][segment][t][k][0] = x[tri[k]];
+            areas->sweep[side][segment][t][k][1] = y[tri[k]];
+        }
+    }
+}
+
 /* The frame's hit areas into what the window reads (port_training.h). */
 void port_TrainingNoteAreas(void) {
     PortTrainingAreas *areas = &g_port_training_areas;
@@ -367,6 +469,18 @@ void port_TrainingNoteAreas(void) {
             areas->blade_seen[side][i] = (u8)port_TrainingProject(
                 &SPAD->weapon_points[side][i], 0, &areas->blade[side][i][0],
                 &areas->blade[side][i][1], NULL);
+        }
+        /* the sweeps, as fight_TestBladesOnBodies tests this fighter's
+         * weapon against the other: the plain test, the blades not met,
+         * the weapon out (and its holder not the victim's) */
+        if (!areas->sweep_path || g_fight_blades_met >= 0) {
+            areas->sweep_count[side] = 0;
+        }
+        if (areas->sweep_count[side] != 0) {
+            areas->sweep_count[side] = (u8)(areas->blade_points[side] - 1);
+            for (i = 0; i < areas->sweep_count[side]; i++) {
+                port_TrainingNoteSegment(side, i, i, i + 1);
+            }
         }
     }
 }

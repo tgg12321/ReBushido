@@ -21,7 +21,11 @@ and whose checkpoints must hold what training did.
   the pause menu's Return to Main Menu leaves, training off.
 - train_guard: --training-dummy guard: the first fighter's strikes are
   answered, the dummy given the guard's button (Circle or Cross) as the
-  blow comes.
+  blow comes, and the blow's sweep noted for the hit areas as the hit
+  test made it (one segment, two or four triangles).
+- train_guard_far: --training-dummy guard: the first fighter steps back
+  and swings where he starts, out of reach, and the dummy lets every
+  blow go by (the guard weighs the distance).
 - train_playback: --training-dummy playback: a recording, then the dummy
   plays it round and round by itself, the slot's frames counted again
   from the start each time round.
@@ -253,7 +257,31 @@ name = "guard"
 when = "port_training_p2_shown != 0"
 at_frame = true
 within = 3000
-expect = ["port_training_dummy == 1", "port_training_p2_shown == 32 || port_training_p2_shown == 64"]
+expect = ["port_training_dummy == 1", "port_training_p2_shown == 32 || port_training_p2_shown == 64",
+          "port_training_guards > 0", "port_training_sweep_p1 == 1",
+          "port_training_sweep_tris_p1 == 2 || port_training_sweep_tris_p1 == 4"]
+'''
+# The guard weighs the distance: the first fighter swings where he
+# starts, stepping back before each, out of reach, and the dummy lets
+# every blow go by.
+GUARD_FAR = 'about = "Training: the dummy lets a blow out of reach go by (tools/port_training.py)"\n' + HEAD + \
+    '''input = [%(opening)s,
+    %(menu)s,
+    %(swings_fight)s,
+]
+''' + COMPARE.replace('"p1_defeated"', '"port_training_guards", "port_training_let_by", "fight_distance", '
+                      '"p1_defeated"') + START + '''
+[[checkpoint]]
+name = "let_by"
+when = "port_training_let_by > 0"
+at_frame = true
+within = 3000
+shot = false
+expect = ["port_training_guards == 0", "port_training_p2_shown == 0"]
+[[checkpoint]]
+name = "swung"
+after = 600
+expect = ["port_training_guards == 0", "port_training_let_by >= 8", "p2_defeated == 0"]
 '''
 
 PLAYBACK = 'about = "Training: the dummy plays its slot back round and round (tools/port_training.py)"\n' + \
@@ -302,12 +330,14 @@ def values():
                 freeze=chord('played+20f', 'TRIANGLE'), step=chord('frozen2+4f', 'SQUARE'),
                 run_on=chord('stepped+4f', 'TRIANGLE'), slow=chord('normal+4f', 'L2'),
                 slow_off=chord('slow2+4f', 'L2'), put_back=chord('unslow+10f', 'R1'),
-                strikes=fight_presses().replace('"fight+', '"back+'), strikes_fight=fight_presses())
+                strikes=fight_presses().replace('"fight+', '"back+'), strikes_fight=fight_presses(),
+                swings_fight=fight_presses(rounds=14, pattern=[(5, 'LEFT hold 15f'), (40, 'CIRCLE')]))
 
 
 PLANS = [
     ('train', TRAIN, RB_ARGS + ['--match', 'single']),
     ('train_guard', GUARD, RB_ARGS + ['--match', 'single', '--training-dummy', 'guard']),
+    ('train_guard_far', GUARD_FAR, RB_ARGS + ['--match', 'single', '--training-dummy', 'guard']),
     ('train_playback', PLAYBACK.replace('%(record_stop)s', '%(record_stop_short)s'),
      RB_ARGS + ['--match', 'single', '--training-dummy', 'playback']),
 ]
@@ -357,7 +387,8 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'training'))
     parser.add_argument('--shots', default=None)
-    parser.add_argument('--only', nargs='*', help='the plans to run (train, train_guard, train_playback)')
+    parser.add_argument('--only', nargs='*',
+                        help='the plans to run (train, train_guard, train_guard_far, train_playback)')
     parser.add_argument('--rollback', action='store_true',
                         help='train through tools/port_rollback.py instead, rolled back every 24 frames')
     args = parser.parse_args(argv[1:])

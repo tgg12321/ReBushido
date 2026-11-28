@@ -10652,7 +10652,11 @@ armed and its first hit frame is this frame or the next, the frontal
 attack's button against an attack of the second kind, the reverse's
 against the first, as `cpu.c`'s threat answers with
 `g_cpu_script_guard_a`/`_b`; it reads the Fighter, it is no part of the
-CPU's decisions); a slot's frame; or, recording, the first pad's own
+CPU's decisions; and only where the blow reaches, as the CPU judges an
+attack coming, `CPU_THREAT_NEAR`: the reach `cpu_PortBlowReach` gives,
+`cpu.c`'s `cpu_AttackReach` by the table of the attacker's own move, at
+least `g_fight_distance`; a blow out of reach is let by, counted in
+`let_by`, a guard in `guards`); a slot's frame; or, recording, the first pad's own
 (which its fighter does not get). Both pads' buttons as given are pushed
 onto the input display's lists (`shown`, the newest first with the
 frames it was held). The slots (four of `PORT_TRAINING_SLOT_FRAMES`, a
@@ -10710,7 +10714,18 @@ GTE's plane and offset), each point's sphere by its radius and its core
 (`g_fighter_body_points`, `BodyPoint.radius`, `core_radius`: the head,
 the chest and the hips have one; a blade that reaches it kills, one that
 reaches the sphere wounds, `fighter_TakeHit`), into
-`g_port_training_areas` (outside the state: the picture's). The canvas
+`g_port_training_areas` (outside the state: the picture's). With them,
+each weapon's sweep as `fight_TestBladesOnBodies` tested it that frame:
+`port_TrainingNoteSweep`, just before `fight_UpdateFighterPair`, notes
+where the blade was the frame before (`prev_weapon_points`, which the
+pair's update then overwrites) and whether the frame's test is the plain
+one (not a lock's or a paired move's) and the weapon is out; after it,
+`port_TrainingNoteAreas` makes each segment's triangles of its six
+corners (the segment now and before and the halves between) as the test
+does, two, or four where the far end moved `SWEEP_SPLIT_DISTANCE` or
+more, none where the blades met (`g_fight_blades_met`), a pole arm's
+blade and shaft each; the window fills them (top-left rule, so that two
+sharing an edge do not lay it twice) under the blade's line. The canvas
 of the areas is as large as they are, beyond the 4:3 area where the
 picture is wider. It is drawn over either picture, the software one and
 the remastered one alike, and not over the pause menu. With run-ahead the
@@ -10733,8 +10748,11 @@ blanks where 60 ran before), puts the moment back (the fight's count of
 frames back to where it was kept, the recording kept), strikes until the
 dummy falls (both start again: still the fight, nobody fallen, one
 restart), and leaves by the pause menu's Return to Main Menu (training
-off); `train_guard`, the dummy guarding the first fighter's strikes;
-`train_playback`, a recording of 30 frames played round and round by
+off); `train_guard`, the dummy guarding the first fighter's strikes (its
+answer pressed, and the strike's sweep noted, one segment of two or four
+triangles); `train_guard_far`, the first fighter stepping back before
+each swing where he starts, out of reach, and the dummy guarding none of
+them (`guards` 0, `let_by` 8 and more); `train_playback`, a recording of 30 frames played round and round by
 itself. The `train` plan run with `--run-ahead 2` prints the same trace
 as without, its moments kept and put back included. `--rollback` runs
 `train` through `tools/port_rollback.py`, moments and all: rolled back
@@ -10754,11 +10772,14 @@ change sides: the game turns the second fighter's left and right by
 its place in the fight, not by where it stands on the screen
 (`fighter_ReadPad`: the second fighter's pad always has left and right
 exchanged, so that its "towards" is a fixed button), and a slot plays
-back towards and away as they were recorded. The guard does not look at the distance, so it also
-swings at a blow that would miss. No replay of a training fight; a
-recording does not outlive the program. The hit areas show the body's
-spheres and the blade's points, not the sweep between two frames that
-the hit test actually tests (`fight_TestBladesOnBodies`).
+back towards and away as they were recorded. The guard weighs the
+distance by the CPU's estimate of a move's reach (its motion's and its
+weapon's), not by where the blade will be: a blow whose reach the
+estimate gets wrong is answered or let by wrongly, as the CPU's is. No
+replay of a training fight; a recording does not outlive the program.
+The sweep drawn is the main weapon's; an off hand's blade (a sidearm's)
+and a gun's shot are not, and nor is a paired move's blow, which tests
+one fighter's blade alone. Pictures of the sweep: `tmp/training2/`.
 
 ## A local tournament
 

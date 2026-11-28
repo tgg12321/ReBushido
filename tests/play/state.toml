@@ -163,6 +163,11 @@ port_training_restarts = "g_port_training+36:u32"   # kills that started both ag
 port_training_holds = "g_port_training+40:u32"      # frames held
 port_training_p1_shown = "g_port_training+44:u16"   # the first pad's newest buttons shown
 port_training_p2_shown = "g_port_training+108:u16"  # the second's (the dummy's)
+port_training_guards = "g_port_training+172:u32"    # frames the guard pressed its answer
+port_training_let_by = "g_port_training+176:u32"    # ... let a blow by, out of its reach
+fight_distance = "g_fight_distance:s32"             # between the fighters (fight_UpdateDistance)
+port_training_sweep_p1 = "g_port_training_areas+483:u8"     # segments of the first's blade swept by the hit test
+port_training_sweep_tris_p1 = "g_port_training_areas+560:u8" # triangles of its first segment's sweep (2 or 4)
 # -- the native port's two on two (port_duo.h): fighter 1 and 3 the first team, 2 and 4 the second --
 port_duo_on = "g_port_duo+0:u8"               # this fight is two on two
 port_duo_decided = "g_port_duo+2:u8"          # a team is out
