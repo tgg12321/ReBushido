@@ -183,20 +183,22 @@ def reserved_ports():
 
 
 def net_base():
-    """port-net's first UDP port: one of ninety bases 200 apart from
+    """port-net's first UDP port: one of forty-five bases 400 apart from
     47000, chosen by the checkout's path, so that two checkouts' gates at
     once do not meet (tools/port_net.py takes 144 from its base: 24 for
-    each of its six whats but the lobby's). A base whose ports, or
+    each of its six whats but the lobby's; port_net_lobby.py's windows
+    cases about 350 from theirs, its four-player batches after the
+    rest). A base whose ports, or
     port-net-windows' (WINDOWS_BELOW) or the lobby cases' (20000 below),
     meet a range Windows has reserved is passed over for the next."""
-    first = zlib.crc32(REPO.replace('\\', '/').lower().encode()) % 90
+    first = zlib.crc32(REPO.replace('\\', '/').lower().encode()) % 45
     reserved = reserved_ports()
-    for step in range(90):
-        base = 47000 + 200 * ((first + step) % 90)
-        spans = [(base - below, base - below + 199) for below in (0, WINDOWS_BELOW, 20000)]
+    for step in range(45):
+        base = 47000 + 400 * ((first + step) % 45)
+        spans = [(base - below, base - below + 399) for below in (0, WINDOWS_BELOW, 20000)]
         if not any(a <= hi and lo <= b for a, b in spans for lo, hi in reserved):
             return base
-    return 47000 + 200 * first
+    return 47000 + 400 * first
 
 
 def in_wsl(cmd, mirror=True):

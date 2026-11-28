@@ -498,7 +498,7 @@ headers several builds write (`build/modern/include/`,
 `build/port/include/`) are written whole and only when they change, so
 that builds side by side never read one half written. `port-net` takes
 144 UDP ports of 127.0.0.1 from a base chosen by the checkout's path (one
-of ninety, 200 apart, passing over one whose ports, or port-net-windows'
+of forty-five, 400 apart (the lobby's Windows cases take about 350), passing over one whose ports, or port-net-windows'
 and the lobby cases' below it, meet a range Windows has reserved:
 `netsh int ipv4 show excludedportrange`, where a bind fails with
 WinError 10013)
